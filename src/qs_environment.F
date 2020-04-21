@@ -459,6 +459,10 @@ CONTAINS
          CALL almo_scf_env_create(qs_env)
       ENDIF
 
+      IF (dft_control%qs_control%do_tidft) THEN
+         CALL tidft_env_create(qs_env)
+      ENDIF
+
       ! see if we have atomic relativistic corrections
       CALL get_qs_env(qs_env, rel_control=rel_control)
       IF (rel_control%rel_method /= rel_none) THEN
@@ -1019,7 +1023,8 @@ CONTAINS
       ! decide what conditions need mo_derivs
       ! right now, this only appears to be OT
       IF (dft_control%qs_control%do_ls_scf .OR. &
-          dft_control%qs_control%do_almo_scf) THEN
+          dft_control%qs_control%do_almo_scf .OR. &
+          dft_control%qs_control%do_tidft) THEN
          CALL set_qs_env(qs_env=qs_env, requires_mo_derivs=.FALSE.)
       ELSE
          IF (scf_control%use_ot) THEN
@@ -1571,7 +1576,8 @@ CONTAINS
 
          ! Print the SCF parameters
          IF ((.NOT. dft_control%qs_control%do_ls_scf) .AND. &
-             (.NOT. dft_control%qs_control%do_almo_scf)) THEN
+             (.NOT. dft_control%qs_control%do_almo_scf) .AND. &
+             (.NOT. dft_control%qs_control%do_tidft)) THEN
             CALL scf_c_write_parameters(scf_control, dft_section)
          ENDIF
       ENDIF

@@ -725,6 +725,7 @@ CONTAINS
 
       CALL section_vals_val_get(qs_section, "LS_SCF", l_val=qs_control%do_ls_scf)
       CALL section_vals_val_get(qs_section, "ALMO_SCF", l_val=qs_control%do_almo_scf)
+      CALL section_vals_val_get(qs_section, "TIDFT", l_val=qs_control%do_tidft)
       CALL section_vals_val_get(qs_section, "KG_METHOD", l_val=qs_control%do_kg)
 
       ! Logicals

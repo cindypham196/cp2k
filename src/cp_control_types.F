@@ -277,6 +277,7 @@ MODULE cp_control_types
                                               progression_factor, &
                                               relative_cutoff
       LOGICAL                              :: do_almo_scf
+      LOGICAL                              :: do_tidft
       LOGICAL                              :: do_ls_scf
       LOGICAL                              :: do_kg
       LOGICAL                              :: commensurate_mgrids

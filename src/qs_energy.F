@@ -82,6 +82,8 @@ CONTAINS
             CALL ls_scf(qs_env=qs_env)
          ELSE IF (dft_control%qs_control%do_almo_scf) THEN
             CALL almo_entry_scf(qs_env=qs_env, calc_forces=my_calc_forces)
+         ELSE IF (dft_control%qs_control%do_tidft) THEN
+            CALL vm_tidft_entry(qs_env=qs_env, calc_forces=my_calc_forces)
          ELSE
             CALL scf(qs_env=qs_env)
 
