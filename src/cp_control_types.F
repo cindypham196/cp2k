@@ -362,6 +362,7 @@ MODULE cp_control_types
       LOGICAL                              :: do_almo_scf = .FALSE.
       LOGICAL                              :: do_ls_scf = .FALSE.
       LOGICAL                              :: do_kg = .FALSE.
+      LOGICAL                              :: do_tidft = .FALSE.
       LOGICAL                              :: commensurate_mgrids = .FALSE.
       LOGICAL                              :: realspace_mgrids = .FALSE.
       LOGICAL                              :: gapw = .FALSE., gapw_xc = .FALSE., gpw = .FALSE., pao = .FALSE.
