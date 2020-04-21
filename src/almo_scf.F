@@ -135,6 +135,8 @@ CONTAINS
       ! get a pointer to the almo environment
       CALL get_qs_env(qs_env, almo_scf_env=almo_scf_env)
 
+! Hello Cindy!!
+
       ! initialize scf
       CALL almo_scf_init(qs_env, almo_scf_env, calc_forces)
 
