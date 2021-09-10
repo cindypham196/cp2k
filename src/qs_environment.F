@@ -18,6 +18,7 @@
 ! **************************************************************************************************
 MODULE qs_environment
    USE almo_scf_env_methods,            ONLY: almo_scf_env_create
+   USE tidft_env_methods,               ONLY: tidft_env_create
    USE atom_kind_orbitals,              ONLY: calculate_atomic_relkin
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE auto_basis,                      ONLY: create_lri_aux_basis_set,&

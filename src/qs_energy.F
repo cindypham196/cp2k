@@ -13,6 +13,7 @@
 ! **************************************************************************************************
 MODULE qs_energy
    USE almo_scf,                        ONLY: almo_entry_scf
+   USE tidft,                           ONLY: tidft_entry
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_external_control,             ONLY: external_control
    USE dm_ls_scf,                       ONLY: ls_scf

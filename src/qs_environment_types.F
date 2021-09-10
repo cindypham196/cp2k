@@ -16,6 +16,8 @@ MODULE qs_environment_types
                                               admm_type
    USE almo_scf_types,                  ONLY: almo_scf_env_release,&
                                               almo_scf_env_type
+   USE tidft_types,                     ONLY: tidft_env_release,&
+                                              tidft_env_type
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE atprop_types,                    ONLY: atprop_type
    USE cell_types,                      ONLY: cell_release,&
@@ -235,6 +237,7 @@ MODULE qs_environment_types
       INTEGER                                               :: sim_step = -1
       TYPE(ls_scf_env_type), POINTER                        :: ls_scf_env => NULL()
       TYPE(almo_scf_env_type), POINTER                      :: almo_scf_env => NULL()
+      TYPE(tidft_env_type), POINTER                         :: tidft_env => NULL()
       TYPE(transport_env_type), POINTER                     :: transport_env => NULL()
       TYPE(cell_type), POINTER                              :: super_cell => NULL()
       TYPE(mo_set_type), DIMENSION(:), POINTER              :: mos => NULL()
@@ -469,6 +472,7 @@ CONTAINS
 !> \param forces_up_to_date ...
 !> \param mscfg_env ...
 !> \param almo_scf_env ...
+!> \param tidft_env ...
 !> \param gradient_history ...
 !> \param variable_history ...
 !> \param embed_pot ...
@@ -506,6 +510,7 @@ CONTAINS
                          rho_external, external_vxc, mask, mp2_env, bs_env, kg_env, &
                          WannierCentres, atprop, ls_scf_env, do_transport, transport_env, v_hartree_rspace, &
                          s_mstruct_changed, rho_changed, potential_changed, forces_up_to_date, mscfg_env, almo_scf_env, &
+                         tidft_env, &
                          gradient_history, variable_history, embed_pot, spin_embed_pot, polar_env, mos_last_converged, rhs)
       TYPE(qs_environment_type), INTENT(IN)              :: qs_env
       TYPE(atomic_kind_type), DIMENSION(:), OPTIONAL, &
@@ -635,6 +640,7 @@ CONTAINS
       TYPE(molecular_scf_guess_env_type), OPTIONAL, &
          POINTER                                         :: mscfg_env
       TYPE(almo_scf_env_type), OPTIONAL, POINTER         :: almo_scf_env
+      TYPE(tidft_env_type), OPTIONAL, POINTER            :: tidft_env
       REAL(KIND=dp), DIMENSION(:, :), OPTIONAL, POINTER  :: gradient_history, variable_history
       TYPE(pw_r3d_rs_type), OPTIONAL, POINTER            :: embed_pot, spin_embed_pot
       TYPE(polar_env_type), OPTIONAL, POINTER            :: polar_env
@@ -693,6 +699,7 @@ CONTAINS
       IF (PRESENT(rtp)) rtp => qs_env%rtp
       IF (PRESENT(ls_scf_env)) ls_scf_env => qs_env%ls_scf_env
       IF (PRESENT(almo_scf_env)) almo_scf_env => qs_env%almo_scf_env
+      IF (PRESENT(tidft_env)) tidft_env => qs_env%tidft_env
       IF (PRESENT(do_transport)) do_transport = qs_env%do_transport
       IF (PRESENT(transport_env)) transport_env => qs_env%transport_env
       IF (PRESENT(mscfg_env)) mscfg_env => qs_env%molecular_scf_guess_env
@@ -847,6 +854,7 @@ CONTAINS
 
       NULLIFY (qs_env%ls_scf_env)
       NULLIFY (qs_env%almo_scf_env)
+      NULLIFY (qs_env%tidft_env)
       NULLIFY (qs_env%transport_env)
       NULLIFY (qs_env%image_matrix)
       NULLIFY (qs_env%ipiv)
@@ -1017,6 +1025,7 @@ CONTAINS
 !> \param kpoints ...
 !> \param WannierCentres ...
 !> \param almo_scf_env ...
+!> \param tidft_env ...
 !> \param gradient_history ...
 !> \param variable_history ...
 !> \param embed_pot ...
@@ -1042,7 +1051,8 @@ CONTAINS
                          se_taper, se_store_int_env, se_nddo_mpole, se_nonbond_env, admm_env, ls_scf_env, &
                          do_transport, transport_env, lri_env, lri_density, exstate_env, ec_env, dispersion_env, &
                          harris_env, gcp_env, mp2_env, bs_env, kg_env, force, &
-                         kpoints, WannierCentres, almo_scf_env, gradient_history, variable_history, embed_pot, &
+                         kpoints, WannierCentres, almo_scf_env, tidft_env, &
+                         gradient_history, variable_history, embed_pot, &
                          spin_embed_pot, polar_env, mos_last_converged, rhs)
 
       TYPE(qs_environment_type), INTENT(INOUT)           :: qs_env
@@ -1115,6 +1125,7 @@ CONTAINS
       TYPE(wannier_centres_type), DIMENSION(:), &
          OPTIONAL, POINTER                               :: WannierCentres
       TYPE(almo_scf_env_type), OPTIONAL, POINTER         :: almo_scf_env
+      TYPE(tidft_env_type), OPTIONAL, POINTER            :: tidft_env
       REAL(KIND=dp), DIMENSION(:, :), OPTIONAL, POINTER  :: gradient_history, variable_history
       TYPE(pw_r3d_rs_type), OPTIONAL, POINTER            :: embed_pot, spin_embed_pot
       TYPE(polar_env_type), OPTIONAL, POINTER            :: polar_env
@@ -1138,6 +1149,7 @@ CONTAINS
       IF (PRESENT(mos_last_converged)) qs_env%mos_last_converged => mos_last_converged
       IF (PRESENT(ls_scf_env)) qs_env%ls_scf_env => ls_scf_env
       IF (PRESENT(almo_scf_env)) qs_env%almo_scf_env => almo_scf_env
+      IF (PRESENT(tidft_env)) qs_env%tidft_env => tidft_env
       IF (PRESENT(do_transport)) qs_env%do_transport = do_transport
       IF (PRESENT(transport_env)) qs_env%transport_env => transport_env
       ! if intels checking (-C) complains here, you have rediscovered a bug in the intel
@@ -1673,6 +1685,10 @@ CONTAINS
          CALL molecular_scf_guess_env_destroy(qs_env%molecular_scf_guess_env)
          DEALLOCATE (qs_env%molecular_scf_guess_env)
       END IF
+
+      IF (ASSOCIATED(qs_env%tidft_env)) THEN
+         CALL tidft_env_release(qs_env%tidft_env)
+      ENDIF
 
       IF (ASSOCIATED(qs_env%transport_env)) THEN
          CALL transport_env_release(qs_env%transport_env)

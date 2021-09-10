@@ -260,6 +260,14 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="TIDFT", &
+                          description="Peform variational optimization of Kohn-Sham orbitals "// &
+                          "of ground and excited states within time-independent DFT (TIDFT) formalism", &
+                          usage="TIDFT", lone_keyword_l_val=.TRUE., &
+                          default_l_val=.FALSE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL keyword_create(keyword, __LOCATION__, name="TRANSPORT", &
                           description="Perform transport calculations (coupling CP2K and OMEN)", &
                           usage="TRANSPORT", lone_keyword_l_val=.TRUE., &

@@ -53,6 +53,7 @@ MODULE input_cp2k_dft
         use_restart_wfn, use_rt_restart, use_scf_wfn, weight_type_mass, weight_type_unit
    USE input_cp2k_almo,                 ONLY: create_almo_scf_section
    USE input_cp2k_as,                   ONLY: create_active_space_section
+   USE input_cp2k_tidft,                ONLY: create_tidft_section
    USE input_cp2k_ec,                   ONLY: create_ec_section
    USE input_cp2k_exstate,              ONLY: create_exstate_section
    USE input_cp2k_external,             ONLY: create_ext_den_section,&
@@ -333,6 +334,10 @@ CONTAINS
       CALL section_release(subsection)
 
       CALL create_almo_scf_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      CALL create_tidft_section(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
