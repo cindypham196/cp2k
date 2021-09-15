@@ -14,7 +14,7 @@
     &END QS
 
     &TIDFT
-      NSTATES                    4
+      N_EXCITED_STATES           4 1 10
       EPS_FILTER                 1.0E-8
     &END TIDFT
 

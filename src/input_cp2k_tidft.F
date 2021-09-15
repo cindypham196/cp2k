@@ -24,6 +24,11 @@ MODULE input_cp2k_tidft
         spd_inversion_dense_cholesky, spd_inversion_ls_hotelling, spd_inversion_ls_taylor, &
         trustr_cauchy, trustr_dogleg, trustr_steihaug, xalmo_prec_domain, xalmo_prec_full, &
         xalmo_prec_zero, xalmo_trial_r0_out, xalmo_trial_simplex
+   USE input_val_types,                 ONLY: char_t,&
+                                              integer_t,&
+                                              lchar_t,&
+                                              logical_t,&
+                                              real_t
    USE input_keyword_types,             ONLY: keyword_create,&
                                               keyword_release,&
                                               keyword_type
@@ -75,15 +80,22 @@ CONTAINS
 
       NULLIFY (keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="NSTATES", &
-                          description="Number of electronic states.", &
-                          usage="NSTATES 5", default_i_val=2)
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
+      !CALL keyword_create(keyword, __LOCATION__, name="NSTATES", &
+      !                    description="Number of electronic states.", &
+      !                    usage="NSTATES 5", default_i_val=2)
+      !CALL section_add_keyword(section, keyword)
+      !CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_FILTER", &
                           description="Matrix sparsity filter.", &
                           usage="EPS_FILTER 1.e-6", default_r_val=1.e-9_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="N_EXCITED_STATES", &
+                          description="Specifies the number of excited states: singlet, doublet, triplet, ...", &
+                          usage="N_EXCITED_STATES 3 1 4 0", &
+                          n_var=-1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

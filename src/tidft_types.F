@@ -43,32 +43,42 @@ MODULE tidft_types
 
    END TYPE penalty_type
 
+   ! This structure describes a single Slater determinant
+   TYPE slater_det_type
+
+      ! The number of spins can be:
+      ! 1 (closed-shell), 2 (open-shell), 3 (restricted open-shell)
+      INTEGER                                            :: nspins, nelectrons_total, nbasis
+      ! Electrons of different spin (spin)
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nelectrons_spin
+
+      ! Occupied MO coeff NxO (spinJ)
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: matrix_t
+
+   END TYPE slater_det_type
+
+   ! This structure decribes an electronic state
+   TYPE e_state_type
+
+      ! Number of Slater determinants describing the electronic state
+      INTEGER                                            :: nslater, multiplicity
+      TYPE(slater_det_type), DIMENSION(:), ALLOCATABLE   :: slater_det
+
+   END TYPE e_state_type
+
    ! the structure contains general info about the system
    TYPE tidft_env_type
 
       TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
-      ! Number of electronic states
-      INTEGER                                            :: nstates
-
-      INTEGER                                            :: nspins, nelectrons_total, naos
-      INTEGER                                            :: natoms, nmolecules, &
-                                                            ndomains
-      ! Electrons of different spin (state, spin)
-      INTEGER, DIMENSION(:,:), ALLOCATABLE               :: nelectrons_spin
-
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nbasis_of_domain
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: first_atom_of_domain
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: last_atom_of_domain
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: domain_index_of_ao
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: domain_index_of_atom
-      ! Number of electrons of each spin for a given state(1), domain(2), spin(3)
-      ! Note that some domains can be populated only with alpha or beta electrons.
-      INTEGER, DIMENSION(:,:,:), ALLOCATABLE             :: nocc_of_domain
-      INTEGER, DIMENSION(:,:,:), ALLOCATABLE             :: nvirt_of_domain
-      INTEGER, DIMENSION(:,:), ALLOCATABLE               :: charge_of_domain
-      INTEGER, DIMENSION(:,:), ALLOCATABLE               :: multiplicity_of_domain
+      ! Electronic states
+      ! Number of multiplicities
+      INTEGER                                            :: nmultips
+      ! Number of states of each multiplictiy
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
+      ! Descriptors of electronic states (example: singlets, triplets, ...)
+      TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
 
       REAL(KIND=dp)                                      :: eps_filter
       INTEGER                                            :: order_lanczos
@@ -79,7 +89,7 @@ MODULE tidft_types
       LOGICAL                                            :: calc_forces, &
                                                             orthogonal_basis
 
-      ! Options for various optimizers collected neatly
+      ! Options for various optimizers
       TYPE(optimizer_options_type)                       :: opt_pcg
       TYPE(optimizer_options_type)                       :: opt_trustr
 
@@ -88,17 +98,16 @@ MODULE tidft_types
       !!!!!!!!!!!!!!!!!!!!!!!
 
       ! Basis fucntions overlap NxN
-      TYPE(dbcsr_type), DIMENSION(1)                     :: matrix_s
-      ! Occupied MO coeff NxO (state, spin)
-      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: matrix_t
-      ! MO overlap OxO (stateI, stateJ, spin)
-      TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: matrix_sigma
-
-      ! Overlap of electronic states
-      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: matrix_phi
-
-      ! Kohn-Sham Hamiltonian NxN (state, spin)
+      TYPE(dbcsr_type)                                   :: matrix_s
+      ! Kohn-Sham Hamiltonian NxN (slater, spin)
       TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: matrix_ks
+
+      ! MO overlap OxO (stateI, stateJ)
+      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: matrix_sigma
+
+      ! Overlap of electronic states (stateI, stateJ, multiplicity)
+      ! RZK-warning better structure is required
+      REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: matrix_phi
 
    END TYPE tidft_env_type
 

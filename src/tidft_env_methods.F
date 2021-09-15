@@ -63,9 +63,9 @@ CONTAINS
       ! get basic quantities from the qs_env
       CALL get_qs_env(qs_env, input=input, dft_control=dft_control)
 
-!tiidft      ! parse the almo_scf section and set appropriate quantities
-!tiidft      CALL almo_scf_init_read_write_input(input, almo_scf_env)
-!tiidft
+      ! parse the input file and set appropriate quantities
+      CALL tidft_read_write_input(input, tidft_env)
+
 !tiidft      ! set up the buffer for the history of matrices
 !tiidft      almo_scf_env%nspins = dft_control%nspins
 !tiidft      almo_scf_env%almo_history%nstore = almo_scf_env%almo_extrapolation_order
@@ -88,30 +88,34 @@ CONTAINS
 
    END SUBROUTINE tidft_env_create
 
-!tiidft! **************************************************************************************************
-!tiidft!> \brief Parses the ALMO input section
-!tiidft!> \param input ...
-!tiidft!> \param almo_scf_env ...
-!tiidft!> \par History
-!tiidft!>       2011.05 created [Rustam Z Khaliullin]
-!tiidft!> \author Rustam Z Khaliullin
-!tiidft! **************************************************************************************************
-!tiidft   SUBROUTINE almo_scf_init_read_write_input(input, almo_scf_env)
-!tiidft      TYPE(section_vals_type), POINTER                   :: input
-!tiidft      TYPE(almo_scf_env_type), INTENT(INOUT)             :: almo_scf_env
-!tiidft
-!tiidft      CHARACTER(len=*), PARAMETER :: routineN = 'almo_scf_init_read_write_input', &
-!tiidft         routineP = moduleN//':'//routineN
-!tiidft
-!tiidft      INTEGER                                            :: handle
-!tiidft      TYPE(section_vals_type), POINTER :: almo_analysis_section, almo_opt_diis_section, &
-!tiidft         almo_opt_pcg_section, almo_scf_section, matrix_iterate_section, nlmo_opt_pcg_section, &
-!tiidft         penalty_section, xalmo_opt_newton_pcg_section, xalmo_opt_pcg_section, &
-!tiidft         xalmo_opt_trustr_section
-!tiidft
-!tiidft      CALL timeset(routineN, handle)
-!tiidft
-!tiidft      almo_scf_section => section_vals_get_subs_vals(input, "DFT%ALMO_SCF")
+! **************************************************************************************************
+!> \brief Parses the ALMO input section
+!> \param input ...
+!> \param almo_scf_env ...
+!> \par History
+!>       2021.09 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_read_write_input(input, tidft_env)
+      TYPE(section_vals_type), POINTER                   :: input
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_read_write_input', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: handle, n_rep, &
+                                                            counter_i, k, jj, &
+                                                            nmultips
+      INTEGER, DIMENSION(:), POINTER                     :: tmplist
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
+      TYPE(section_vals_type), POINTER :: almo_analysis_section, almo_opt_diis_section, &
+         almo_opt_pcg_section, tidft_section, matrix_iterate_section, nlmo_opt_pcg_section, &
+         penalty_section, xalmo_opt_newton_pcg_section, xalmo_opt_pcg_section, &
+         xalmo_opt_trustr_section
+
+      CALL timeset(routineN, handle)
+
+      tidft_section => section_vals_get_subs_vals(input, "DFT%TIDFT")
 !tiidft      almo_opt_diis_section => section_vals_get_subs_vals(almo_scf_section, &
 !tiidft                                                          "ALMO_OPTIMIZER_DIIS")
 !tiidft      almo_opt_pcg_section => section_vals_get_subs_vals(almo_scf_section, &
@@ -128,12 +132,31 @@ CONTAINS
 !tiidft      matrix_iterate_section => section_vals_get_subs_vals(almo_scf_section, &
 !tiidft                                                           "MATRIX_ITERATE")
 !tiidft
-!tiidft      ! read user input
-!tiidft      ! common ALMO options
-!tiidft      CALL section_vals_val_get(almo_scf_section, "EPS_FILTER", &
-!tiidft                                r_val=almo_scf_env%eps_filter)
-!tiidft      CALL section_vals_val_get(almo_scf_section, "ALMO_SCF_GUESS", &
-!tiidft                                i_val=almo_scf_env%almo_scf_guess)
+
+      CALL section_vals_val_get(tidft_section, "EPS_FILTER", &
+                                r_val=tidft_env%eps_filter)
+      !CALL section_vals_val_get(tidft_section, "NSTATES", &
+      !                          i_val=tidft_env%nstates)
+
+      ! Read in the number of excited state
+      CALL section_vals_val_get(tidft_section,"N_EXCITED_STATES",&
+             i_rep_val=1, i_vals=tmplist)
+      nmultips = SIZE(tmplist)
+      ALLOCATE(nstates(nmultips))
+      DO jj = 1, nmultips
+         !WRITE(*,*) "Multiplicity: ", jj, "nstates: ", tmplist(jj)
+         nstates(jj)=tmplist(jj)
+      ENDDO
+
+      WRITE(*,*) "In TIDFT we got EXCITED STATES: ", nstates(:)
+      ! CINDY: remove states with incompatible multiplicities
+      !GS_multip = 2
+      !tidft_env%nmultips=nmultips
+      !tidft_env%nstates=nstates
+      !CPABORT("Your error message")
+      ! end CINDY
+
+      DEALLOCATE(nstates)
 !tiidft      CALL section_vals_val_get(almo_scf_section, "ALMO_ALGORITHM", &
 !tiidft                                i_val=almo_scf_env%almo_update_algorithm)
 !tiidft      CALL section_vals_val_get(almo_scf_section, "XALMO_ALGORITHM", &
@@ -391,19 +414,6 @@ CONTAINS
 !tiidft      !CALL section_vals_val_get(almo_scf_section,"ENVELOPE_AMPLITUDE",&
 !tiidft      !                          r_val=almo_scf_env%envelope_amplitude)
 !tiidft
-!tiidft      !! how to read lists
-!tiidft      !CALL section_vals_val_get(almo_scf_section,"INT_LIST01", &
-!tiidft      !        n_rep_val=n_rep)
-!tiidft      !counter_i = 0
-!tiidft      !DO k = 1,n_rep
-!tiidft      !  CALL section_vals_val_get(almo_scf_section,"INT_LIST01",&
-!tiidft      !          i_rep_val=k,i_vals=tmplist)
-!tiidft      !   DO jj = 1,SIZE(tmplist)
-!tiidft      !      counter_i=counter_i+1
-!tiidft      !      almo_scf_env%charge_of_domain(counter_i)=tmplist(jj)
-!tiidft      !   ENDDO
-!tiidft      !ENDDO
-!tiidft
 !tiidft      almo_scf_env%domain_layout_aos = almo_domain_layout_molecular
 !tiidft      almo_scf_env%domain_layout_mos = almo_domain_layout_molecular
 !tiidft      almo_scf_env%mat_distr_aos = almo_mat_distr_molecular
@@ -541,10 +551,10 @@ CONTAINS
 !tiidft         ENDIF
 !tiidft
 !tiidft      ENDIF ! end analysis settings
-!tiidft
-!tiidft      CALL timestop(handle)
-!tiidft
-!tiidft   END SUBROUTINE almo_scf_init_read_write_input
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_read_write_input
 
 END MODULE tidft_env_methods
 

@@ -200,47 +200,46 @@ CONTAINS
       ! set optimizers' types
       tidft_env%opt_pcg%optimizer_type = optimizer_pcg
       tidft_env%opt_trustr%optimizer_type = optimizer_trustr
-tidft_env%nstates=1
-
-      ! get info from the qs_env
-      CALL get_qs_env(qs_env, &
-                      nelectron_total=tidft_env%nelectrons_total, &
-                      matrix_s=matrix_s, &
-                      dft_control=dft_control, &
-                      molecule_set=molecule_set, &
-                      input=input, &
-                      has_unit_metric=tidft_env%orthogonal_basis, &
-                      para_env=tidft_env%para_env, &
-                      blacs_env=tidft_env%blacs_env, &
-                      nelectron_spin=tidft_env%nelectrons_spin)
-      CALL cp_para_env_retain(tidft_env%para_env)
-      CALL cp_blacs_env_retain(tidft_env%blacs_env)
-
-      ! copy basic quantities
-      tidft_env%nspins = dft_control%nspins
-      tidft_env%natoms = dbcsr_nblkrows_total(matrix_s(1)%matrix)
-      tidft_env%nmolecules = SIZE(molecule_set)
-      CALL dbcsr_get_info(matrix_s(1)%matrix, nfullrows_total=naos)
-      tidft_env%naos = naos
-
-      ! convenient local varibales
-      nspins = tidft_env%nspins
-      nstates = tidft_env%nstates
-      ! Always use molecular domains
-      ! Do not use atomic domains, partition the system into atoms instead
-      tidft_env%ndomains = tidft_env%nmolecules
-
-      ! allocate domain descriptors
-      ndomains = tidft_env%ndomains
-      ALLOCATE (tidft_env%domain_index_of_atom(tidft_env%natoms))
-      ALLOCATE (tidft_env%domain_index_of_ao(naos))
-      ALLOCATE (tidft_env%first_atom_of_domain(ndomains))
-      ALLOCATE (tidft_env%last_atom_of_domain(ndomains))
-      ALLOCATE (tidft_env%nbasis_of_domain(ndomains))
-      ALLOCATE (tidft_env%nocc_of_domain(nstates, ndomains, nspins))
-      ALLOCATE (tidft_env%nvirt_of_domain(nstates, ndomains, nspins))
-      ALLOCATE (tidft_env%charge_of_domain(nstates, ndomains))
-      ALLOCATE (tidft_env%multiplicity_of_domain(nstates, ndomains))
+!tidft_env%nstates=1
+!
+!      ! get info from the qs_env
+!      CALL get_qs_env(qs_env, &
+!                      nelectron_total=tidft_env%nelectrons_total, &
+!                      matrix_s=matrix_s, &
+!                      dft_control=dft_control, &
+!                      input=input, &
+!                      has_unit_metric=tidft_env%orthogonal_basis, &
+!                      para_env=tidft_env%para_env, &
+!                      blacs_env=tidft_env%blacs_env, &
+!                      nelectron_spin=tidft_env%nelectrons_spin)
+!      CALL cp_para_env_retain(tidft_env%para_env)
+!      CALL cp_blacs_env_retain(tidft_env%blacs_env)
+!
+!      ! copy basic quantities
+!      tidft_env%nspins = dft_control%nspins
+!      tidft_env%natoms = dbcsr_nblkrows_total(matrix_s(1)%matrix)
+!      tidft_env%nmolecules = SIZE(molecule_set)
+!      CALL dbcsr_get_info(matrix_s(1)%matrix, nfullrows_total=naos)
+!      tidft_env%naos = naos
+!
+!      ! convenient local varibales
+!      nspins = tidft_env%nspins
+!      nstates = tidft_env%nstates
+!      ! Always use molecular domains
+!      ! Do not use atomic domains, partition the system into atoms instead
+!      tidft_env%ndomains = tidft_env%nmolecules
+!
+!      ! allocate domain descriptors
+!      ndomains = tidft_env%ndomains
+!      ALLOCATE (tidft_env%domain_index_of_atom(tidft_env%natoms))
+!      ALLOCATE (tidft_env%domain_index_of_ao(naos))
+!      ALLOCATE (tidft_env%first_atom_of_domain(ndomains))
+!      ALLOCATE (tidft_env%last_atom_of_domain(ndomains))
+!      ALLOCATE (tidft_env%nbasis_of_domain(ndomains))
+!      ALLOCATE (tidft_env%nocc_of_domain(nstates, ndomains, nspins))
+!      ALLOCATE (tidft_env%nvirt_of_domain(nstates, ndomains, nspins))
+!      ALLOCATE (tidft_env%charge_of_domain(nstates, ndomains))
+!      ALLOCATE (tidft_env%multiplicity_of_domain(nstates, ndomains))
 
       !!fill-out ! fill out domain descriptors and group descriptors
       !!fill-out ! get domain info from molecule_set
@@ -2688,15 +2687,15 @@ tidft_env%nstates=1
 !tiidft         DEALLOCATE (tidft_env%domain_map(ispin)%index1)
 !tiidft      ENDDO
 !tiidft      DEALLOCATE (tidft_env%domain_map)
-      DEALLOCATE (tidft_env%domain_index_of_ao)
-      DEALLOCATE (tidft_env%domain_index_of_atom)
-      DEALLOCATE (tidft_env%first_atom_of_domain)
-      DEALLOCATE (tidft_env%last_atom_of_domain)
-      DEALLOCATE (tidft_env%nbasis_of_domain)
-      DEALLOCATE (tidft_env%nocc_of_domain)
-      DEALLOCATE (tidft_env%nvirt_of_domain)
-      DEALLOCATE (tidft_env%charge_of_domain)
-      DEALLOCATE (tidft_env%multiplicity_of_domain)
+!      DEALLOCATE (tidft_env%domain_index_of_ao)
+!      DEALLOCATE (tidft_env%domain_index_of_atom)
+!      DEALLOCATE (tidft_env%first_atom_of_domain)
+!      DEALLOCATE (tidft_env%last_atom_of_domain)
+!      DEALLOCATE (tidft_env%nbasis_of_domain)
+!      DEALLOCATE (tidft_env%nocc_of_domain)
+!      DEALLOCATE (tidft_env%nvirt_of_domain)
+!      DEALLOCATE (tidft_env%charge_of_domain)
+!      DEALLOCATE (tidft_env%multiplicity_of_domain)
 !tiidft      DEALLOCATE (tidft_env%real_ne_of_domain)
 !tiidft      DEALLOCATE (tidft_env%mu_of_domain)
 !tiidft      DEALLOCATE (tidft_env%cpu_of_domain)
