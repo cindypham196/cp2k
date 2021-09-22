@@ -149,6 +149,7 @@ CONTAINS
       ENDDO
 
       WRITE(*,*) "In TIDFT we got EXCITED STATES: ", nstates(:)
+      jj = 0
       ! CINDY: remove states with incompatible multiplicities
       !GS_multip = 2
       !tidft_env%nmultips=nmultips
