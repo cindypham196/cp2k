@@ -194,35 +194,39 @@ CONTAINS
       ELSE
          unit_nr = -1
       ENDIF
-
-      tidft_env%calc_forces = calc_forces
-
-      ! set optimizers' types
-      tidft_env%opt_pcg%optimizer_type = optimizer_pcg
-      tidft_env%opt_trustr%optimizer_type = optimizer_trustr
-!tidft_env%nstates=1
+!
+!      tidft_env%calc_forces = calc_forces
+!
+!      ! set optimizers' types
+!      tidft_env%opt_pcg%optimizer_type = optimizer_pcg
+!      tidft_env%opt_trustr%optimizer_type = optimizer_trustr
 !
 !      ! get info from the qs_env
 !      CALL get_qs_env(qs_env, &
-!                      nelectron_total=tidft_env%nelectrons_total, &
+!                      nelectron_total=tidft_env%gstate_nelectrons_total, &
+!                      nelectron_spin=tidft_env%gstate_nelectrons_spin, &
 !                      matrix_s=matrix_s, &
 !                      dft_control=dft_control, &
 !                      input=input, &
 !                      has_unit_metric=tidft_env%orthogonal_basis, &
 !                      para_env=tidft_env%para_env, &
-!                      blacs_env=tidft_env%blacs_env, &
-!                      nelectron_spin=tidft_env%nelectrons_spin)
+!                      blacs_env=tidft_env%blacs_env)
 !      CALL cp_para_env_retain(tidft_env%para_env)
 !      CALL cp_blacs_env_retain(tidft_env%blacs_env)
 !
 !      ! copy basic quantities
-!      tidft_env%nspins = dft_control%nspins
+!      tidft_env%gstate_nspins = dft_control%nspins
+!      IF (dft_control%nspins == 1 .OR. dft_control%nspins == 3) THEN
+!         tidft_env%restricted = .TRUE.
+!      ELSE
+!         tidft_env%restricted = .FALSE.
+!      ENDIF
 !      tidft_env%natoms = dbcsr_nblkrows_total(matrix_s(1)%matrix)
 !      tidft_env%nmolecules = SIZE(molecule_set)
 !      CALL dbcsr_get_info(matrix_s(1)%matrix, nfullrows_total=naos)
 !      tidft_env%naos = naos
-!
-!      ! convenient local varibales
+
+      ! convenient local varibales
 !      nspins = tidft_env%nspins
 !      nstates = tidft_env%nstates
 !      ! Always use molecular domains
@@ -295,17 +299,13 @@ CONTAINS
       !ALLOCATE (tidft_env%domain_index_of_mo_block(ndomains))
       !tidft_env%domain_index_of_mo_block(:) = (/(i, i=1, ndomains)/)
 
-!tiidft      ! create all matrices
-!tiidft      CALL tidft_env_create_matrices(tidft_env, matrix_s(1)%matrix)
+      ! create all matrices
+      CALL tidft_env_create_matrices(tidft_env, matrix_s(1)%matrix)
 !tiidft
 !tiidft      ! set up matrix S and all required functions of S
 !tiidft      tidft_env%s_inv_done = .FALSE.
 !tiidft      tidft_env%s_sqrt_done = .FALSE.
 !tiidft      CALL tidft_init_ao_overlap(matrix_s(1)%matrix, tidft_env)
-!tiidft
-!tiidft      ! create the quencher (imposes sparsity template)
-!tiidft      CALL tidft_construct_quencher(qs_env, tidft_env)
-!tiidft      CALL distribute_domains(tidft_env)
 !tiidft
 !tiidft      ! FINISH setting job parameters here, print out job info
 !tiidft      CALL tidft_print_job_info(tidft_env, unit_nr)
@@ -2058,28 +2058,28 @@ CONTAINS
 !tiidft
 !tiidft   END SUBROUTINE almo_scf_post
 !tiidft
-!tiidft! **************************************************************************************************
-!tiidft!> \brief create various matrices
-!tiidft!> \param almo_scf_env ...
-!tiidft!> \param matrix_s0 ...
-!tiidft!> \par History
-!tiidft!>       2011.07 created [Rustam Z Khaliullin]
-!tiidft!> \author Rustam Z Khaliullin
-!tiidft! **************************************************************************************************
-!tiidft   SUBROUTINE almo_scf_env_create_matrices(almo_scf_env, matrix_s0)
-!tiidft
-!tiidft      TYPE(almo_scf_env_type), INTENT(INOUT)             :: almo_scf_env
-!tiidft      TYPE(dbcsr_type), INTENT(IN)                       :: matrix_s0
-!tiidft
-!tiidft      CHARACTER(len=*), PARAMETER :: routineN = 'almo_scf_env_create_matrices', &
-!tiidft         routineP = moduleN//':'//routineN
-!tiidft
-!tiidft      INTEGER                                            :: handle, ispin, nspins
-!tiidft
-!tiidft      CALL timeset(routineN, handle)
-!tiidft
-!tiidft      nspins = almo_scf_env%nspins
-!tiidft
+! **************************************************************************************************
+!> \brief create various matrices
+!> \param tidft_env ...
+!> \param matrix_s0 ...
+!> \par History
+!>       2021.09 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_env_create_matrices(tidft_env, matrix_s0)
+
+      TYPE(tidft_env_type), INTENT(INOUT)             :: tidft_env
+      TYPE(dbcsr_type), INTENT(IN)                       :: matrix_s0
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_env_create_matrices', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: handle, ispin, nspins
+
+      CALL timeset(routineN, handle)
+
+!      nspins = almo_scf_env%nspins
+
 !tiidft      ! AO overlap matrix and its various functions
 !tiidft      CALL matrix_almo_create(matrix_new=almo_scf_env%matrix_s(1), &
 !tiidft                              matrix_qs=matrix_s0, &
@@ -2513,10 +2513,10 @@ CONTAINS
 !tiidft                                 spin_key=ispin, &
 !tiidft                                 init_domains=.TRUE.)
 !tiidft      ENDDO
-!tiidft
-!tiidft      CALL timestop(handle)
-!tiidft
-!tiidft   END SUBROUTINE almo_scf_env_create_matrices
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_env_create_matrices
 
 ! **************************************************************************************************
 !> \brief clean up procedure for tidft

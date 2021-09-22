@@ -46,14 +46,41 @@ MODULE tidft_types
    ! This structure describes a single Slater determinant
    TYPE slater_det_type
 
-      ! The number of spins can be:
-      ! 1 (closed-shell), 2 (open-shell), 3 (restricted open-shell)
-      INTEGER                                            :: nspins, nelectrons_total, nbasis
-      ! Electrons of different spin (spin)
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nelectrons_spin
+      INTEGER                                            :: nelectrons
+      ! For a single determinant, multiplicity only means
+      ! the difference between the number of alpha and beta electrons:
+      ! multiplicity = nalpha - nbeta + 1
+      INTEGER                                            :: multiplicity
+      INTEGER                                            :: nalpha
+      INTEGER                                            :: nbeta
 
-      ! Occupied MO coeff NxO (spinJ)
-      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: matrix_t
+      ! Number of MO matrices
+      ! If unrestricted then nmatrices = 2 (alpha and beta)
+      ! If restricted then nmatrices = 1(singlet) or 2(other)
+      !               singly-occ alpha  singly-occ beta  doubly-occupied
+      !      singlet:        0                  0              rest
+      !      doublet:        1                  0              rest
+      !      triplet:        2                  0              rest
+      !   quadruplet:        3                  0              rest
+      !    pentuplet:        4                  0              rest
+      !    sextuplet:        5                  0              rest
+      ! If restricted open-shell then nmatrices =
+      !               singly-occ alpha  singly-occ beta  doubly-occupied
+      !      singlet:        0                  0              rest
+      !      doublet:        1                  0              rest
+      !      triplet:        2                  0              rest
+      !   quadruplet:        3                  0              rest
+      !    pentuplet:        4                  0              rest
+      !    sextuplet:        5                  0              rest
+      INTEGER                                            :: nmatrices
+      ! Number of columns in each matrix
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: ncolumns
+
+      ! Occupied MO coefficients NxO(spin)
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_t
+
+      ! Kohn-Sham Hamiltonian NxN (spin)
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
 
    END TYPE slater_det_type
 
@@ -61,7 +88,7 @@ MODULE tidft_types
    TYPE e_state_type
 
       ! Number of Slater determinants describing the electronic state
-      INTEGER                                            :: nslater, multiplicity
+      INTEGER                                            :: nslater
       TYPE(slater_det_type), DIMENSION(:), ALLOCATABLE   :: slater_det
 
    END TYPE e_state_type
@@ -73,6 +100,8 @@ MODULE tidft_types
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
       ! Electronic states
+      INTEGER                                            :: nbasis
+      LOGICAL                                            :: restricted ! (ROKS or UKS)
       ! Number of multiplicities
       INTEGER                                            :: nmultips
       ! Number of states of each multiplictiy
@@ -98,16 +127,14 @@ MODULE tidft_types
       !!!!!!!!!!!!!!!!!!!!!!!
 
       ! Basis fucntions overlap NxN
-      TYPE(dbcsr_type)                                   :: matrix_s
-      ! Kohn-Sham Hamiltonian NxN (slater, spin)
-      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: matrix_ks
+      TYPE(dbcsr_type)                                   :: mat_s
 
       ! MO overlap OxO (stateI, stateJ)
-      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: matrix_sigma
+      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: mat_sigma
 
       ! Overlap of electronic states (stateI, stateJ, multiplicity)
       ! RZK-warning better structure is required
-      REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: matrix_phi
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi
 
    END TYPE tidft_env_type
 
