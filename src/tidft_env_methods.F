@@ -104,10 +104,9 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       INTEGER                                            :: handle, n_rep, &
-                                                            counter_i, k, jj, &
-                                                            nmultips
+                                                            jj, nmultips, GS_multips
       INTEGER, DIMENSION(:), POINTER                     :: tmplist
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates 
       TYPE(section_vals_type), POINTER :: almo_analysis_section, almo_opt_diis_section, &
          almo_opt_pcg_section, tidft_section, matrix_iterate_section, nlmo_opt_pcg_section, &
          penalty_section, xalmo_opt_newton_pcg_section, xalmo_opt_pcg_section, &
@@ -131,33 +130,33 @@ CONTAINS
 !tiidft                                                                 "XALMO_NEWTON_PCG_SOLVER")
 !tiidft      matrix_iterate_section => section_vals_get_subs_vals(almo_scf_section, &
 !tiidft                                                           "MATRIX_ITERATE")
-!tiidft
-
-      CALL section_vals_val_get(tidft_section, "EPS_FILTER", &
-                                r_val=tidft_env%eps_filter)
-      !CALL section_vals_val_get(tidft_section, "NSTATES", &
-      !                          i_val=tidft_env%nstates)
+!tiidft      
 
       ! Read in the number of excited state
-      CALL section_vals_val_get(tidft_section,"N_EXCITED_STATES",&
-             i_rep_val=1, i_vals=tmplist)
+      CALL section_vals_val_get(tidft_section,"N_EXCITED_STATES",i_rep_val=1, i_vals=tmplist)
       nmultips = SIZE(tmplist)
+      GS_multips = 3
       ALLOCATE(nstates(nmultips))
       DO jj = 1, nmultips
-         !WRITE(*,*) "Multiplicity: ", jj, "nstates: ", tmplist(jj)
-         nstates(jj)=tmplist(jj)
-      ENDDO
+       IF (MOD(GS_multips,2) == 0 .AND. 2*jj-1 < nmultips .AND. tmplist(2*jj-1) /= 0) THEN
+        CPABORT("Incorrect state entry! Number of electrons is even!") 
+       ELSE IF (MOD(GS_multips,2) == 1 .AND. 2*jj < nmultips .AND. tmplist(2*jj) /= 0) THEN
+	CPABORT("Incorrect state entry!")
+       ELSE  
+       END IF 
+      END DO
 
+      ! Remove states with incompatible multiplicities
+      !nstates = tmplist(GS_multips:nmultips:2) 
+      nstates = tmplist(MOD(GS_multips,2)+2*MOD(GS_multips+1,2):nmultips:2)
+               
       WRITE(*,*) "In TIDFT we got EXCITED STATES: ", nstates(:)
-      jj = 0
-      ! CINDY: remove states with incompatible multiplicities
-      !GS_multip = 2
-      !tidft_env%nmultips=nmultips
-      !tidft_env%nstates=nstates
-      !CPABORT("Your error message")
-      ! end CINDY
+      
+      tidft_env%nmultips=nmultips
+      tidft_env%nstates=nstates
 
       DEALLOCATE(nstates)
+   
 !tiidft      CALL section_vals_val_get(almo_scf_section, "ALMO_ALGORITHM", &
 !tiidft                                i_val=almo_scf_env%almo_update_algorithm)
 !tiidft      CALL section_vals_val_get(almo_scf_section, "XALMO_ALGORITHM", &
