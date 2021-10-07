@@ -268,6 +268,7 @@ CONTAINS
          ENDIF
       ENDIF
 
+      nstates=tidft_env%nstates
       ALLOCATE(tidft_env%e_states(nstates))
       nslater = 1
       IF (tidft_env%spin_pure) nslater = 2
@@ -356,7 +357,6 @@ CONTAINS
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
               symmetry_new = dbcsr_type_symmetric)
 
-WRITE(*,*) "S is created. Start creating matrices"
       nstates = tidft_env%nstates
       nspins = tidft_env%nspins
       nvars = tidft_env%nvars
@@ -415,23 +415,25 @@ WRITE(*,*) "S is created. Start creating matrices"
 
       ENDDO ! ispin
 
-      DO ivar = 1, nvars
+      ! RZK-STOPPED HERE: small matrices cannot be distributed yet on many Cores
+      ! ALSO: Fix bug with zero doubly-occupied orbitals
+      !DO ivar = 1, nvars
 
-         DO stateI = 1, nstates
+      !   DO stateI = 1, nstates
 
-            nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+      !      nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
 
-            CALL matrix_layout( &
-                    matrix_ao_template = matrix_s0, &
-                    matrix_new = tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar) , &
-                    name_new = 'm_X_Ia', &
-                    orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
-                    symmetry_new = dbcsr_type_no_symmetry, &
-                    nmos = (/-1, nmos_stateI/) )
+      !      CALL matrix_layout( &
+      !              matrix_ao_template = matrix_s0, &
+      !              matrix_new = tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar) , &
+      !              name_new = 'm_X_Ia', &
+      !              orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+      !              symmetry_new = dbcsr_type_no_symmetry, &
+      !              nmos = (/-1, nmos_stateI/) )
 
-         ENDDO ! stateI
+      !   ENDDO ! stateI
 
-      ENDDO ! ivar
+      !ENDDO ! ivar
 
       CALL timestop(handle)
 

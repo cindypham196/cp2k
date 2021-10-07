@@ -149,7 +149,6 @@ CONTAINS
             block_sizes_new(:) = blk_sizes(:)
             distr_new_array(:) = blk_distr(:)
 
-WRITE(*,*) "Matrix blk_distr: ", blk_distr(:)
          ELSE ! this dimension is not AO
 
             IF (orbital_type_new(dimen) == almo_mat_dim_occ) THEN
@@ -162,7 +161,6 @@ WRITE(*,*) "Matrix blk_distr: ", blk_distr(:)
                ELSE !columns
                   CALL dbcsr_distribution_get(dist_qs, npcols=ncores)
                ENDIF
-
                CALL create_distribute_mo_blocks( &
                        norbs = local_nmos(dimen), &
                        ncores = ncores, &
@@ -180,11 +178,15 @@ WRITE(*,*) "Matrix blk_distr: ", blk_distr(:)
 
          ! create final arrays
          IF (dimen == 1) THEN !rows
-            row_sizes_new => block_sizes_new
-            row_distr_new => distr_new_array
+            ALLOCATE (row_sizes_new(SIZE(block_sizes_new)))
+            ALLOCATE (row_distr_new(SIZE(distr_new_array)))
+            row_sizes_new = block_sizes_new
+            row_distr_new = distr_new_array
          ELSE !columns
-            col_sizes_new => block_sizes_new
-            col_distr_new => distr_new_array
+            ALLOCATE (col_sizes_new(SIZE(block_sizes_new)))
+            ALLOCATE (col_distr_new(SIZE(distr_new_array)))
+            col_sizes_new = block_sizes_new
+            col_distr_new = distr_new_array
          ENDIF
 
          IF (ASSOCIATED(block_sizes_new)) DEALLOCATE(block_sizes_new)
@@ -192,14 +194,14 @@ WRITE(*,*) "Matrix blk_distr: ", blk_distr(:)
 
       ENDDO ! both rows and columns are done
 
-      WRITE(*,*) "ROW: sizes"
-      WRITE(*,*) row_sizes_new
-      WRITE(*,*) "ROW: distr"
-      WRITE(*,*) row_distr_new
-      WRITE(*,*) "COL: sizes"
-      WRITE(*,*) col_sizes_new
-      WRITE(*,*) "COL: distr"
-      WRITE(*,*) col_distr_new
+      !WRITE(*,*) "ROW: sizes"
+      !WRITE(*,*) row_sizes_new
+      !WRITE(*,*) "ROW: distr"
+      !WRITE(*,*) row_distr_new
+      !WRITE(*,*) "COL: sizes"
+      !WRITE(*,*) col_sizes_new
+      !WRITE(*,*) "COL: distr"
+      !WRITE(*,*) col_distr_new
 
       ! Create the distribution
       CALL dbcsr_distribution_new(dist_new, template=dist_qs, &
@@ -213,6 +215,11 @@ WRITE(*,*) "Matrix blk_distr: ", blk_distr(:)
       CALL dbcsr_finalize(matrix_new)
 
       CALL dbcsr_distribution_release(dist_new)
+
+      IF (ASSOCIATED(row_sizes_new)) DEALLOCATE(row_sizes_new)
+      IF (ASSOCIATED(row_distr_new)) DEALLOCATE(row_distr_new)
+      IF (ASSOCIATED(col_sizes_new)) DEALLOCATE(col_sizes_new)
+      IF (ASSOCIATED(col_distr_new)) DEALLOCATE(col_distr_new)
 
    END SUBROUTINE matrix_layout
 
