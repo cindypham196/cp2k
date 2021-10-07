@@ -99,6 +99,19 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="MAX_UNPAIR", &
+                          description="Specifies the number of allowed electron unpairings in ROKS", &
+                          usage="MAX_UNPAIR 0", default_i_val=1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="SPIN_PURE", &
+                          description="Use ROKS to obtain spin pure electronic states.", &
+                          usage="SPIN_PURE .TRUE.", default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       !tiidftCALL keyword_create(keyword, __LOCATION__, name="ALMO_SCF_GUESS", &
       !tiidft                    description="The method to generate initial ALMOs.", &
       !tiidft                    usage="ALMO_SCF_GUESS MOLECULAR", &

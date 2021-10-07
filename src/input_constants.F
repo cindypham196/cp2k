@@ -1032,6 +1032,7 @@ MODULE input_constants
    INTEGER, PARAMETER, PUBLIC   :: optimizer_diis = 1, &
                                    optimizer_pcg = 2, &
                                    optimizer_trustr = 4, &
+                                   optimizer_bfgs = 5, &
                                    optimizer_lin_eq_pcg = 3
    INTEGER, PARAMETER, PUBLIC   :: xalmo_prec_zero = 0, &
                                    xalmo_prec_domain = 1, &

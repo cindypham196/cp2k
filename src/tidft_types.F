@@ -13,15 +13,7 @@ MODULE tidft_types
    USE almo_scf_types,                  ONLY: optimizer_options_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_para_types,                   ONLY: cp_para_env_type
-   USE dbcsr_api,                       ONLY: dbcsr_release,&
-                                              dbcsr_type
-   USE domain_submatrix_types,          ONLY: domain_map_type,&
-                                              domain_submatrix_type
-   USE input_constants,                 ONLY: &
-        cg_dai_yuan, cg_fletcher, cg_fletcher_reeves, cg_hager_zhang, cg_hestenes_stiefel, &
-        cg_liu_storey, cg_polak_ribiere, cg_zero, optimizer_diis, optimizer_pcg, optimizer_trustr, &
-        trustr_cauchy, trustr_dogleg, trustr_steihaug, xalmo_prec_domain, xalmo_prec_full, &
-        xalmo_prec_zero
+   USE dbcsr_api,                       ONLY: dbcsr_type
    USE kinds,                           ONLY: dp
 #include "./base/base_uses.f90"
 
@@ -31,56 +23,73 @@ MODULE tidft_types
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_types'
 
-   PUBLIC :: tidft_env_type, &
-             tidft_env_release
+   PUBLIC :: tidft_env_type, tidft_env_release
 
-   ! container for penalty terms that are added to the energy functional
-   TYPE penalty_type
+   ! Note that closed-shell DFT (RKS) is not explicitly considered here
+   ! because excitations unpair electrons. In the (rare) cases of
+   ! excitations of paired electrons, use ROKS with max unpairings set to 0
 
-      REAL(KIND=dp)      :: final_determinant, penalty_strength, &
-                            determinant_tolerance, penalty_strength_dec_factor, &
-                            compactification_filter_start
+   ! Key matrices: mat_var - matrices of indpendently varied coefficients,
+   !                         there are nvars of them, occupied by:
+   !                         pairs, alpha-electrons, beta-electrons
+   !               mat_t   - matrices of alpha and beta coefficients,
+   !                         there are nspins of them, nspins is 2 with
+   !                         the exception multip = 1 and max_upairings = 0
 
-   END TYPE penalty_type
+   ! Several methods are implemented:
+   !  1.   UKS-mixed - spin-contamination is accepted as unavoidable
+   !                   nspins = 2, nvars = 2
+   !                   mat_var = mat_t
+   !  2.  ROKS-mixed - single Slater determinants are used.
+   !                   This leads to mixed spin states,
+   !                   unless electrons pair up naturally during energy minimization
+   !                   In addition to the desired multiplicity,
+   !                   user specifies maximum number of allowed unpairings.
+   !                   This number is used to compute how many singly occupied
+   !                   orbitals are used in the optimization.
+   ! The table lists sizes of mat_var matrices for different settings.
+   ! The order of entries singly-occ alpha, singly-occ beta, doubly-occ
+   !               max_unpair=0      max_unpair=1      max_upair=2
+   !    singlet:    0,0,N/2           1,1,N/2-1         2,2,N/2-2
+   !    doublet:    1,0,(N-1)/2       2,1,(N-1)/2-1     3,2,(N-1)/2-2
+   !    triplet:    2,0,(N-2)/2       3,1,(N-2)/2-1     4,2,(N-2)/2-2
+   !  Special cases: IF (max_unpairings=0) THEN
+   !                   IF (singlet) nspins = 1, nvars = 1, mat_var = mat_t
+   !                   ELSE nspins = 2, nvars = 2, mat_var != mat_t
+   !                 ELSE
+   !                   nspins = 2, nvars = 3, mat_var != mat_t
+   !                 ENDIF
+   !  2B. ROKS-pure  - enforce spin pure states by traking additional determinants.
+   !                   This approach works only for closed-shell singlet ground
+   !                   states and single-excitations (i.e. max_unpairings=1).
+   !                   NOTE: It automatically produces spin pure states for max_unpairings=0
+   !                   The spin-pure flag does not require a separate storage of mat_var
+   !                   because the single-beta mat can be interpreted as alpha on-the-fly.
+   !                   However, the spin-flipped determinant requires its own alpha and beta
+   !                   densities and matrices of proper dimensions have to be created
 
    ! This structure describes a single Slater determinant
    TYPE slater_det_type
 
-      INTEGER                                            :: nelectrons
       ! For a single determinant, multiplicity only means
       ! the difference between the number of alpha and beta electrons:
-      ! multiplicity = nalpha - nbeta + 1
-      INTEGER                                            :: multiplicity
-      INTEGER                                            :: nalpha
-      INTEGER                                            :: nbeta
+      ! desired_multip = nalpha - nbeta + 1
+      ! The desired_multip is contained here (not only in tidft_env) because
+      ! ROKS-pure approach tracks states of different mutiplicity
+      INTEGER                                            :: desired_multip
+      ! Number of alpha and beta electrons (no. of cols in mat_t)
+      INTEGER, DIMENSION(2)                              :: nelectrons_ab
+      ! Number of doubly and singly occupied states (no. of cols in mat_var)
+      INTEGER, DIMENSION(3)                              :: ncols_var
 
-      ! Number of MO matrices
-      ! If unrestricted then nmatrices = 2 (alpha and beta)
-      ! If restricted then nmatrices = 1(singlet) or 2(other)
-      !               singly-occ alpha  singly-occ beta  doubly-occupied
-      !      singlet:        0                  0              rest
-      !      doublet:        1                  0              rest
-      !      triplet:        2                  0              rest
-      !   quadruplet:        3                  0              rest
-      !    pentuplet:        4                  0              rest
-      !    sextuplet:        5                  0              rest
-      ! If restricted open-shell then nmatrices =
-      !               singly-occ alpha  singly-occ beta  doubly-occupied
-      !      singlet:        0                  0              rest
-      !      doublet:        1                  0              rest
-      !      triplet:        2                  0              rest
-      !   quadruplet:        3                  0              rest
-      !    pentuplet:        4                  0              rest
-      !    sextuplet:        5                  0              rest
-      INTEGER                                            :: nmatrices
-      ! Number of columns in each matrix
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: ncolumns
+      ! Matrix of independently varied MO coefficients
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_var
 
-      ! Occupied MO coefficients NxO(spin)
+      ! Occupied MO coefficients NxOCC(spin)
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_t
 
-      ! Kohn-Sham Hamiltonian NxN (spin)
-      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
+      ! Kohn-Sham Hamiltonian NxN, most often DIM=2
+      !TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
 
    END TYPE slater_det_type
 
@@ -99,28 +108,36 @@ MODULE tidft_types
       TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
-      ! Electronic states
-      INTEGER                                            :: nbasis
-      LOGICAL                                            :: restricted ! (ROKS or UKS)
-      ! Number of multiplicities
-      INTEGER                                            :: nmultips
-      ! Number of states of each multiplictiy
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
-      ! Descriptors of electronic states (example: singlets, triplets, ...)
-      TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
-
-      REAL(KIND=dp)                                      :: eps_filter
-      INTEGER                                            :: order_lanczos
-      REAL(KIND=dp)                                      :: eps_lanczos
-      INTEGER                                            :: max_iter_lanczos
-
-      ! forces
       LOGICAL                                            :: calc_forces, &
                                                             orthogonal_basis
 
+      ! Electronic states
+      LOGICAL                                            :: restricted ! ROKS or UKS
+      ! Use corrections to obtain spin-pure states?
+      LOGICAL                                            :: spin_pure
+      ! Number of spins treated indepedently (1 or 2)
+      INTEGER                                            :: nspins
+      ! Number of matrices containing independent MO coefficients
+      INTEGER                                            :: nvars
+      ! Maximum number of electron pairs broken beyond allowed by multiplicity
+      INTEGER                                            :: unpairings
+      ! The multiplicity of states
+      INTEGER                                            :: desired_multip
+      ! Total number of electronic states
+      INTEGER                                            :: nstates
+      ! Number of electrons
+      INTEGER                                            :: nelectrons
+      ! Descriptors of electronic states
+      TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
+
+      ! Keep some numerical thresholds
+      REAL(KIND=dp)                                      :: eps_filter
+      !INTEGER                                            :: order_lanczos
+      !REAL(KIND=dp)                                      :: eps_lanczos
+      !INTEGER                                            :: max_iter_lanczos
+
       ! Options for various optimizers
-      TYPE(optimizer_options_type)                       :: opt_pcg
-      TYPE(optimizer_options_type)                       :: opt_trustr
+      TYPE(optimizer_options_type)                       :: opt_bfgs
 
       !!!!!!!!!!!!!!!!!!!!!!!
       !!!!!! MATRICES !!!!!!!
@@ -129,173 +146,29 @@ MODULE tidft_types
       ! Basis fucntions overlap NxN
       TYPE(dbcsr_type)                                   :: mat_s
 
-      ! MO overlap OxO (stateI, stateJ)
-      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: mat_sigma
+      ! MO overlap OxO (stateI, stateJ, spinS)
+      TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma
 
-      ! Overlap of electronic states (stateI, stateJ, multiplicity)
-      ! RZK-warning better structure is required
+      ! Overlap of electronic states (stateI, stateJ)
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi
 
    END TYPE tidft_env_type
 
 CONTAINS
 
-!tiidft! **************************************************************************************************
-!tiidft!> \brief Prints out the options of an optimizer
-!tiidft!> \param optimizer   options to print
-!tiidft!> \param unit_nr   output stream
-!tiidft!> \par History
-!tiidft!>       2014.10 created [Rustam Z Khaliullin]
-!tiidft!> \author Rustam Z Khaliullin
-!tiidft! **************************************************************************************************
-!tiidft   SUBROUTINE print_optimizer_options(optimizer, unit_nr)
-!tiidft
-!tiidft      TYPE(optimizer_options_type), INTENT(IN)           :: optimizer
-!tiidft      INTEGER, INTENT(IN)                                :: unit_nr
-!tiidft
-!tiidft      CHARACTER(len=*), PARAMETER :: routineN = 'print_optimizer_options', &
-!tiidft         routineP = moduleN//':'//routineN
-!tiidft
-!tiidft      CHARACTER(33)                                      :: conj_string, prec_string, type_string
-!tiidft
-!tiidft      IF (unit_nr .GT. 0) THEN
-!tiidft
-!tiidft         SELECT CASE (optimizer%optimizer_type)
-!tiidft         CASE (optimizer_diis)
-!tiidft            type_string = "DIIS"
-!tiidft         CASE (optimizer_pcg)
-!tiidft            type_string = "PCG"
-!tiidft         CASE (optimizer_trustr)
-!tiidft            type_string = "TRUST REGION"
-!tiidft         END SELECT
-!tiidft
-!tiidft         WRITE (unit_nr, '(T4,A,T48,A33)') "optimizer type:", TRIM(type_string)
-!tiidft         WRITE (unit_nr, '(T4,A,T48,I33)') "maximum iterations:", optimizer%max_iter
-!tiidft         WRITE (unit_nr, '(T4,A,T48,E33.3)') "target error:", optimizer%eps_error
-!tiidft
-!tiidft         IF (optimizer%optimizer_type .EQ. optimizer_diis) THEN
-!tiidft
-!tiidft            WRITE (unit_nr, '(T4,A,T48,I33)') "maximum DIIS history:", optimizer%ndiis
-!tiidft
-!tiidft         ENDIF
-!tiidft
-!tiidft         IF (optimizer%optimizer_type .EQ. optimizer_trustr .OR. &
-!tiidft             optimizer%optimizer_type .EQ. optimizer_pcg) THEN
-!tiidft
-!tiidft            WRITE (unit_nr, '(T4,A,T48,I33)') "maximum outer loop iterations:", &
-!tiidft               optimizer%max_iter_outer_loop
-!tiidft
-!tiidft            SELECT CASE (optimizer%preconditioner)
-!tiidft            CASE (xalmo_prec_zero)
-!tiidft               prec_string = "NONE"
-!tiidft            CASE (xalmo_prec_domain)
-!tiidft               prec_string = "0.5 KS + 0.5 S, DOMAINS"
-!tiidft            CASE (xalmo_prec_full)
-!tiidft               prec_string = "0.5 KS + 0.5 S, FULL"
-!tiidft            END SELECT
-!tiidft            WRITE (unit_nr, '(T4,A,T48,A33)') "preconditioner:", TRIM(prec_string)
-!tiidft
-!tiidft            SELECT CASE (optimizer%conjugator)
-!tiidft            CASE (cg_zero)
-!tiidft               conj_string = "Steepest descent"
-!tiidft            CASE (cg_polak_ribiere)
-!tiidft               conj_string = "Polak-Ribiere"
-!tiidft            CASE (cg_fletcher_reeves)
-!tiidft               conj_string = "Fletcher-Reeves"
-!tiidft            CASE (cg_hestenes_stiefel)
-!tiidft               conj_string = "Hestenes-Stiefel"
-!tiidft            CASE (cg_fletcher)
-!tiidft               conj_string = "Fletcher"
-!tiidft            CASE (cg_liu_storey)
-!tiidft               conj_string = "Liu-Storey"
-!tiidft            CASE (cg_dai_yuan)
-!tiidft               conj_string = "Dai-Yuan"
-!tiidft            CASE (cg_hager_zhang)
-!tiidft               conj_string = "Hager-Zhang"
-!tiidft            END SELECT
-!tiidft            WRITE (unit_nr, '(T4,A,T48,A33)') "conjugator:", TRIM(conj_string)
-!tiidft
-!tiidft         ENDIF
-!tiidft
-!tiidft         IF (optimizer%optimizer_type .EQ. optimizer_pcg) THEN
-!tiidft
-!tiidft            WRITE (unit_nr, '(T4,A,T48,E33.3)') "line search step size guess:", &
-!tiidft               optimizer%lin_search_step_size_guess
-!tiidft            WRITE (unit_nr, '(T4,A,T48,E33.3)') "line search target error:", &
-!tiidft               optimizer%lin_search_eps_error
-!tiidft
-!tiidft         ENDIF
-!tiidft
-!tiidft         IF (optimizer%optimizer_type .EQ. optimizer_trustr) THEN
-!tiidft
-!tiidft            SELECT CASE (optimizer%trustr_algorithm)
-!tiidft            CASE (trustr_steihaug)
-!tiidft               conj_string = "Steihaug's CG"
-!tiidft            CASE (trustr_cauchy)
-!tiidft               conj_string = "Cauchy point"
-!tiidft            CASE (trustr_dogleg)
-!tiidft               conj_string = "Dogleg"
-!tiidft            END SELECT
-!tiidft            WRITE (unit_nr, '(T4,A,T48,A33)') "Subproblem algorithm:", TRIM(conj_string)
-!tiidft
-!tiidft            WRITE (unit_nr, '(T4,A,T48,E33.3)') "gradient decrease accepted:", &
-!tiidft               optimizer%model_grad_norm_ratio
-!tiidft            WRITE (unit_nr, '(T4,A,T48,E33.3)') "initial trust radius:", &
-!tiidft               optimizer%initial_trust_radius
-!tiidft            WRITE (unit_nr, '(T4,A,T48,E33.3)') "max trust radius:", &
-!tiidft               optimizer%max_trust_radius
-!tiidft            WRITE (unit_nr, '(T4,A,T48,E33.3)') "rho of no update lies between .0 and .25:", &
-!tiidft               optimizer%rho_do_not_update
-!tiidft
-!tiidft         ENDIF
-!tiidft
-!tiidft      ENDIF
-!tiidft
-!tiidft   END SUBROUTINE print_optimizer_options
-
 ! **************************************************************************************************
 !> \brief release tidft envirnoment
+!> \brief It is kept in this nonstandard place to avoid circular dependencies
 !> \param tidft_env ...
 !> \par History
 !>       2020.04 created [Rustam Z Khaliullin]
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
    SUBROUTINE tidft_env_release(tidft_env)
-      TYPE(tidft_env_type), POINTER                   :: tidft_env
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_env_release', &
-         routineP = moduleN//':'//routineN
-
-      INTEGER                                            :: handle, ispin, istore
-
-      CALL timeset(routineN, handle)
-
-!tiidft      ! delete history
-!tiidft      DO ispin = 1, SIZE(almo_scf_env%almo_history%matrix_t)
-!tiidft         DO istore = 1, MIN(almo_scf_env%almo_history%istore, almo_scf_env%almo_history%nstore)
-!tiidft            CALL dbcsr_release(almo_scf_env%almo_history%matrix_p_up_down(ispin, istore))
-!tiidft         ENDDO
-!tiidft         IF (almo_scf_env%almo_history%istore .GT. 0) &
-!tiidft            CALL dbcsr_release(almo_scf_env%almo_history%matrix_t(ispin))
-!tiidft      ENDDO
-!tiidft      DEALLOCATE (almo_scf_env%almo_history%matrix_p_up_down)
-!tiidft      DEALLOCATE (almo_scf_env%almo_history%matrix_t)
-!tiidft      ! delete xalmo history
-!tiidft      DO ispin = 1, SIZE(almo_scf_env%xalmo_history%matrix_t)
-!tiidft         DO istore = 1, MIN(almo_scf_env%xalmo_history%istore, almo_scf_env%xalmo_history%nstore)
-!tiidft            CALL dbcsr_release(almo_scf_env%xalmo_history%matrix_p_up_down(ispin, istore))
-!tiidft            !CALL dbcsr_release(almo_scf_env%xalmo_history%matrix_x(ispin, istore))
-!tiidft         ENDDO
-!tiidft         IF (almo_scf_env%xalmo_history%istore .GT. 0) &
-!tiidft            CALL dbcsr_release(almo_scf_env%xalmo_history%matrix_t(ispin))
-!tiidft      ENDDO
-!tiidft      DEALLOCATE (almo_scf_env%xalmo_history%matrix_p_up_down)
-!tiidft      !DEALLOCATE (almo_scf_env%xalmo_history%matrix_x)
-!tiidft      DEALLOCATE (almo_scf_env%xalmo_history%matrix_t)
+      TYPE(tidft_env_type), POINTER                      :: tidft_env
 
       DEALLOCATE (tidft_env)
-
-      CALL timestop(handle)
 
    END SUBROUTINE tidft_env_release
 

@@ -16,8 +16,8 @@ MODULE qs_environment_types
                                               admm_type
    USE almo_scf_types,                  ONLY: almo_scf_env_release,&
                                               almo_scf_env_type
-   USE tidft_types,                     ONLY: tidft_env_release,&
-                                              tidft_env_type
+   USE tidft_types,                     ONLY: tidft_env_type,&
+                                              tidft_env_release
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE atprop_types,                    ONLY: atprop_type
    USE cell_types,                      ONLY: cell_release,&
