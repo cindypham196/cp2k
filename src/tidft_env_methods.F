@@ -31,7 +31,7 @@ MODULE tidft_env_methods
         dbcsr_get_block_p, dbcsr_get_info, dbcsr_get_num_blocks, dbcsr_get_stored_coordinates, &
         dbcsr_multiply, dbcsr_nblkcols_total, dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, &
         dbcsr_reserve_block2d, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_work_create, &
-        dbcsr_type_symmetric
+        dbcsr_type_symmetric, dbcsr_print
    USE input_constants,                 ONLY: &
         almo_constraint_distance, almo_deloc_none, almo_deloc_xalmo_1diag, &
         almo_domain_layout_atomic, almo_domain_layout_molecular, almo_frz_crystal, &
@@ -53,7 +53,7 @@ MODULE tidft_env_methods
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_env_methods'
 
-   PUBLIC :: tidft_env_create, tidft_env_deallocate
+   PUBLIC :: tidft_env_create, tidft_init, tidft_env_deallocate
 
 CONTAINS
 
@@ -99,7 +99,8 @@ CONTAINS
 !tiidft      !ALLOCATE (almo_scf_env%xalmo_history%matrix_x(almo_scf_env%nspins, nallocate))
 !tiidft      ALLOCATE (almo_scf_env%xalmo_history%matrix_t(almo_scf_env%nspins))
 
-      CALL tidft_init(qs_env, tidft_env)
+      ! Cannot call init here because qs env does not contain necessary data yet
+      !CALL tidft_init(qs_env, tidft_env)
 
       ! let qs_env know about the newly allocalted TIDFT environment
       CALL set_qs_env(qs_env, tidft_env=tidft_env)
@@ -231,17 +232,16 @@ CONTAINS
       CALL cp_blacs_env_retain(tidft_env%blacs_env)
 
       ! copy basic quantities
-      IF (dft_control%nspins == 1 .OR. dft_control%nspins == 3) THEN
-         tidft_env%restricted = .TRUE.
-      ELSE
+      IF (dft_control%uks) THEN
          tidft_env%restricted = .FALSE.
          IF (tidft_env%spin_pure) THEN
-            CPABORT("Impossbile to obtain spin-pure determinants with unrestricted methods")
+            CPABORT("Impossible to obtain spin-pure determinants with unrestricted methods")
          ENDIF
+      ELSE
+         tidft_env%restricted = .TRUE.
       ENDIF
 
-      tidft_env%desired_multip = 
-      nstates =  SUM(tidft_env%nstates_multip)
+      tidft_env%desired_multip = dft_control%multiplicity
 
       IF (tidft_env%restricted) THEN
          IF (tidft_env%unpairings .EQ. 0) THEN
@@ -356,6 +356,7 @@ CONTAINS
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
               symmetry_new = dbcsr_type_symmetric)
 
+WRITE(*,*) "S is created. Start creating matrices"
       nstates = tidft_env%nstates
       nspins = tidft_env%nspins
       nvars = tidft_env%nvars

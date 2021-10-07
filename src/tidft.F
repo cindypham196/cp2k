@@ -35,7 +35,8 @@ MODULE tidft
                                               optimizer_options_type,&
                                               print_optimizer_options
    USE tidft_types,                     ONLY: tidft_env_type
-   USE tidft_env_methods,               ONLY: tidft_env_deallocate
+   USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
+                                              tidft_init
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE bibliography,                    ONLY: Khaliullin2013,&
                                               Kolafa2004,&
@@ -136,6 +137,7 @@ CONTAINS
       WRITE(*,*) "Welcome to TIDFT -- an awesome variational method for excited states"
 
       tidft_env%calc_forces = calc_forces
+      CALL tidft_init(qs_env, tidft_env)
 
       !!! create the initial guess for ALMOs
       !!CALL almo_scf_initial_guess(qs_env, almo_scf_env)

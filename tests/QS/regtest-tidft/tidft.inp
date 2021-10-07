@@ -8,14 +8,18 @@
   &DFT
     POTENTIAL_FILE_NAME GTH_POTENTIALS
     BASIS_SET_FILE_NAME GTH_BASIS_SETS
+    MULTIPLICITY        1
+    !ROKS                TRUE
     &QS
       TIDFT T
       EPS_DEFAULT 1.0E-12
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES           1 0 0 0 3 
+      N_EXCITED_STATES           2
       EPS_FILTER                 1.0E-8
+      SPIN_PURE                  TRUE
+      MAX_UNPAIR                 1
     &END TIDFT
 
     &MGRID
@@ -37,50 +41,22 @@
     &END
     &COORD
       SCALED
-      Li 0.0 0.0 0.0 Li-plus
-      Li 0.5 0.5 0.0 Li-plus
-      Li 0.5 0.0 0.5 Li-plus
-      Li 0.0 0.5 0.5 Li-plus
-      F  0.0 0.0 0.5 F-minus
-      F  0.0 0.5 0.0 F-minus
-      F  0.5 0.0 0.0 F-minus
-      F  0.5 0.5 0.5 F-minus
+      Li 0.0 0.0 0.0
+      Li 0.5 0.5 0.0
+      Li 0.5 0.0 0.5
+      Li 0.0 0.5 0.5
+      F  0.0 0.0 0.5
+      F  0.0 0.5 0.0
+      F  0.5 0.0 0.0
+      F  0.5 0.5 0.5
     &END COORD
     &KIND Li
       BASIS_SET DZVP-GTH 
       POTENTIAL GTH-BLYP-q3
-      &BS
-        &ALPHA
-          NEL -1
-          L    0
-          N    2
-        &END
-        ! BETA FUNCTION SHOULD BE THE SAME
-        ! TO AVOID WARNINGS
-        &BETA
-          NEL -1
-          L    0 
-          N    2
-        &END
-      &END
     &END KIND
     &KIND F
       BASIS_SET DZVP-GTH
       POTENTIAL GTH-BLYP-q7
-      &BS
-        &ALPHA
-          NEL +1
-          L    1
-          N    2
-        &END
-        ! BETA FUNCTION SHOULD BE THE SAME
-        ! TO AVOID WARNINGS
-        &BETA
-          NEL +1
-          L    1 
-          N    2
-        &END
-      &END
     &END KIND
   &END SUBSYS
 &END FORCE_EVAL

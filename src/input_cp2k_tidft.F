@@ -80,12 +80,6 @@ CONTAINS
 
       NULLIFY (keyword)
 
-      !CALL keyword_create(keyword, __LOCATION__, name="NSTATES", &
-      !                    description="Number of electronic states.", &
-      !                    usage="NSTATES 5", default_i_val=2)
-      !CALL section_add_keyword(section, keyword)
-      !CALL keyword_release(keyword)
-
       CALL keyword_create(keyword, __LOCATION__, name="EPS_FILTER", &
                           description="Matrix sparsity filter.", &
                           usage="EPS_FILTER 1.e-6", default_r_val=1.e-9_dp)
@@ -93,9 +87,12 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="N_EXCITED_STATES", &
-                          description="Specifies the number of excited states: singlet, doublet, triplet, ...", &
-                          usage="N_EXCITED_STATES 3 1 4 0", &
-                          n_var=-1, type_of_var=integer_t)
+                          description="Specifies the number of excited states (same multiplicity as the ground state).", &
+                          usage="N_EXCITED_STATES 3", default_i_val=2)
+      !CALL keyword_create(keyword, __LOCATION__, name="N_EXCITED_STATES", &
+      !                    description="Specifies the number of excited states: singlet, doublet, triplet, ...", &
+      !                    usage="N_EXCITED_STATES 3 1 4 0", &
+      !                    n_var=-1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -106,7 +103,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="SPIN_PURE", &
-                          description="Use ROKS to obtain spin pure electronic states.", &
+                          description="Obtain spin pure electronic states.", &
                           usage="SPIN_PURE .TRUE.", default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
