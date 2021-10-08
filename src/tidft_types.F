@@ -117,8 +117,8 @@ MODULE tidft_types
       LOGICAL                                            :: spin_pure
       ! Number of spins treated indepedently (1 or 2)
       INTEGER                                            :: nspins
-      ! Number of matrices containing independent MO coefficients
-      INTEGER                                            :: nvars
+      ! Spin factors are 2 for doubly occupied and 1 for signly occupied orbtals
+      INTEGER, DIMENSION(3)                              :: spin_factor_var
       ! Maximum number of electron pairs broken beyond allowed by multiplicity
       INTEGER                                            :: unpairings
       ! The multiplicity of states

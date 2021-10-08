@@ -247,18 +247,27 @@ CONTAINS
       IF (suggested_blk_size .LE. 0) THEN
 
          ! Strategy 1: the number of blocks is equal to the number of ncores
-         ALLOCATE(blk_sizes(ncores), blk_distr(ncores))
+         IF (norbs .GE. ncores ) THEN
 
-         IF (norbs .LT. ncores ) CPABORT("System is too small for that many cores")
+            ALLOCATE(blk_sizes(ncores), blk_distr(ncores))
 
-         norbs_per_core = FLOOR((1.0_dp*norbs)/ncores)
-         blk_sizes(:) = norbs_per_core
+            norbs_per_core = FLOOR((1.0_dp*norbs)/ncores)
+            blk_sizes(:) = norbs_per_core
 
-         remainder = MOD(norbs, ncores)
-         IF (remainder.GT.0) blk_sizes(1:remainder)=blk_sizes(1:remainder)+1
+            remainder = MOD(norbs, ncores)
+            IF (remainder.GT.0) blk_sizes(1:remainder)=blk_sizes(1:remainder)+1
 
-         ! Simple 0,1,2,...,ncores-1 sequence
-         blk_distr(:) = (/ ( I, I = 0, ncores-1, 1) /)
+            ! Simple 0,1,2,...,ncores-1 sequence
+            blk_distr(:) = (/ ( I, I = 0, ncores-1, 1) /)
+
+         ELSE
+
+            ALLOCATE(blk_sizes(norbs), blk_distr(norbs))
+
+            blk_sizes(:) = 1
+            blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
+
+         ENDIF
 
       ELSE
          ! Strategy 2: use suggested block size to distribute blocks
