@@ -14,7 +14,8 @@ MODULE tidft_env_methods
    USE almo_scf_types,                  ONLY: almo_mat_dim_aobasis,&
                                               almo_mat_dim_occ
    USE tidft_types,                     ONLY: tidft_env_type
-   USE tidft_qs,                        ONLY: matrix_layout
+   USE tidft_qs,                        ONLY: matrix_layout,&
+                                              tidft_init_ks_matrices
    USE cp_para_env,                     ONLY: cp_para_env_release,&
                                               cp_para_env_retain
    USE cp_para_types,                   ONLY: cp_para_env_type
@@ -31,7 +32,7 @@ MODULE tidft_env_methods
         dbcsr_get_block_p, dbcsr_get_info, dbcsr_get_num_blocks, dbcsr_get_stored_coordinates, &
         dbcsr_multiply, dbcsr_nblkcols_total, dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, &
         dbcsr_reserve_block2d, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_work_create, &
-        dbcsr_type_symmetric, dbcsr_print
+        dbcsr_type_symmetric, dbcsr_print, dbcsr_add_on_diag
    USE input_constants,                 ONLY: &
         almo_constraint_distance, almo_deloc_none, almo_deloc_xalmo_1diag, &
         almo_domain_layout_atomic, almo_domain_layout_molecular, almo_frz_crystal, &
@@ -83,20 +84,6 @@ CONTAINS
       ! parse the input file and set appropriate quantities
       CALL tidft_read_write_input(input, tidft_env)
 
-!tiidft      ! set up the buffer for the history of matrices
-!tiidft      almo_scf_env%almo_history%nstore = almo_scf_env%almo_extrapolation_order
-!tiidft      almo_scf_env%almo_history%istore = 0
-!tiidft      ! do not allocate zero
-!tiidft      nallocate = MAX(1, almo_scf_env%almo_extrapolation_order)
-!tiidft      ALLOCATE (almo_scf_env%almo_history%matrix_p_up_down(almo_scf_env%nspins, nallocate))
-!tiidft      ALLOCATE (almo_scf_env%almo_history%matrix_t(almo_scf_env%nspins))
-!tiidft      almo_scf_env%xalmo_history%nstore = almo_scf_env%xalmo_extrapolation_order
-!tiidft      almo_scf_env%xalmo_history%istore = 0
-!tiidft      nallocate = MAX(1, almo_scf_env%xalmo_extrapolation_order)
-!tiidft      ALLOCATE (almo_scf_env%xalmo_history%matrix_p_up_down(almo_scf_env%nspins, nallocate))
-!tiidft      !ALLOCATE (almo_scf_env%xalmo_history%matrix_x(almo_scf_env%nspins, nallocate))
-!tiidft      ALLOCATE (almo_scf_env%xalmo_history%matrix_t(almo_scf_env%nspins))
-
       ! Cannot call init here because qs env does not contain necessary data yet
       !CALL tidft_init(qs_env, tidft_env)
 
@@ -125,7 +112,7 @@ CONTAINS
       INTEGER                                            :: handle, n_rep, &
                                                             jj, nmultips, GS_multips
       INTEGER, DIMENSION(:), POINTER                     :: tmplist
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates 
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
       TYPE(section_vals_type), POINTER :: almo_analysis_section, almo_opt_diis_section, &
          almo_opt_pcg_section, tidft_section, matrix_iterate_section, nlmo_opt_pcg_section, &
          penalty_section, xalmo_opt_newton_pcg_section, xalmo_opt_pcg_section, &
@@ -256,11 +243,25 @@ CONTAINS
          tidft_env%nspins = 2
       ENDIF
 
+      WRITE(*,*) "   QS nspins:", dft_control%nspins
+      WRITE(*,*) "TIDFT nspins:", tidft_env%nspins
+
       IF (tidft_env%spin_pure) THEN
-         IF ( .NOT. ( tidft_env%desired_multip.EQ.1 .AND. &
-              tidft_env%unpairings.EQ.1 ) ) THEN
+         IF ( ( tidft_env%desired_multip.EQ.1 .AND. tidft_env%unpairings.EQ.1 ) .OR. &
+              ( tidft_env%unpairings.EQ.0 ) ) THEN
+         ELSE
             CPABORT("Spin pure states cannot be enforced")
          ENDIF
+      ENDIF
+
+      IF (tidft_env%nspins .NE. dft_control%nspins) THEN
+         IF (tidft_env%nspins .EQ. 1 .AND. dft_control%nspins .EQ. 2) THEN
+            CPABORT("Use RKS, not ROKS, for singlets with 0 unpairings")
+         ENDIF
+         IF (tidft_env%nspins .EQ. 2 .AND. dft_control%nspins .EQ. 1) THEN
+            CPABORT("Use ROKS, not RKS, with unpaired singlets")
+         ENDIF
+         CPABORT("Number of spins in DFT and TIDFT are different")
       ENDIF
 
       nstates=tidft_env%nstates
@@ -311,12 +312,9 @@ CONTAINS
 
       CALL tidft_env_create_matrices(tidft_env, matrix_s(1)%matrix)
 
-!tiidft      CALL tidft_init_ao_overlap(matrix_s(1)%matrix, tidft_env)
-!tiidft      ! initialization of the KS matrix
-!tiidft      CALL init_almo_ks_matrix_via_qs(qs_env, &
-!tiidft                                      tidft_env%matrix_ks, &
-!tiidft                                      tidft_env%mat_distr_aos, &
-!tiidft                                      tidft_env%eps_filter)
+      CALL tidft_init_ao_overlap(tidft_env, matrix_s(1)%matrix)
+      CALL tidft_init_ks_matrices(qs_env, tidft_env)
+
 !tiidft      CALL construct_qs_mos(qs_env, tidft_env)
 
       ! FINISH setting job parameters here, print out job info
@@ -360,13 +358,18 @@ CONTAINS
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
               symmetry_new = dbcsr_type_symmetric)
 
+
       nstates = tidft_env%nstates
       nspins = tidft_env%nspins
 
       ALLOCATE(tidft_env%mat_sigma(nstates,nstates,nspins))
       DO stateI = 1, nstates
          ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_t(nspins))
-         IF (tidft_env%spin_pure) ALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_t(nspins))
+         ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(nspins))
+         IF (tidft_env%spin_pure) THEN
+            ALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_t(nspins))
+            ALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(nspins))
+         ENDIF
          ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
          ! It is not necessary to allocate mat_var for the other determinant(s)
       ENDDO
@@ -385,6 +388,8 @@ CONTAINS
                     symmetry_new = dbcsr_type_no_symmetry, &
                     nmos = (/-1, nmos_stateI/) )
 
+            CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin), template=matrix_s0)
+
             IF (tidft_env%spin_pure) THEN
 
                nmos_stateI_flip = tidft_env%e_states(stateI)%slater_det(2)%nelectrons_ab(ispin)
@@ -396,6 +401,8 @@ CONTAINS
                        orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
                        symmetry_new = dbcsr_type_no_symmetry, &
                        nmos = (/-1, nmos_stateI_flip/) )
+
+               CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin), template=matrix_s0)
 
             ENDIF
 
@@ -489,9 +496,12 @@ CONTAINS
          DO stateI = 1, nstates
 
             CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin))
+            CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin))
+
             IF (tidft_env%spin_pure) THEN
 
                CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin))
+               CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin))
 
             ENDIF
 
@@ -524,7 +534,11 @@ CONTAINS
       DEALLOCATE(tidft_env%mat_sigma)
       DO stateI = 1, nstates
          DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_t)
-         IF (tidft_env%spin_pure) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_t)
+         DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_ks)
+         IF (tidft_env%spin_pure) THEN
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_t)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_ks)
+         ENDIF
          DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
       ENDDO
 
@@ -535,14 +549,48 @@ CONTAINS
 
    END SUBROUTINE tidft_env_deallocate
 
-!tiidft! **************************************************************************************************
-!tiidft!> \brief Prints out a short summary about the TIDFT job
-!tiidft!> \param almo_scf_env ...
-!tiidft!> \param unit_nr ...
-!tiidft!> \par History
-!tiidft!>       2021.10 created [Cindy Pham]
-!tiidft!> \author Cindy Pham
-!tiidft! **************************************************************************************************
+! **************************************************************************************************
+!> \brief Initializes the TIDFT SCF copy of the AO overlap matrix
+!> \param matrix_s0 ...
+!> \param tidft_env ...
+!> \par History
+!>       2021.10 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_init_ao_overlap(tidft_env, matrix_s0)
+
+      TYPE(dbcsr_type), INTENT(IN)                       :: matrix_s0
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_init_ao_overlap', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: handle, unit_nr
+      TYPE(cp_logger_type), POINTER                      :: logger
+
+      CALL timeset(routineN, handle)
+
+      IF (tidft_env%orthogonal_basis) THEN
+         CALL dbcsr_set(tidft_env%mat_s, 0.0_dp)
+         CALL dbcsr_add_on_diag(tidft_env%mat_s, 1.0_dp)
+      ELSE
+         CALL dbcsr_copy(tidft_env%mat_s, matrix_s0)
+      ENDIF
+
+      CALL dbcsr_filter(tidft_env%mat_s, tidft_env%eps_filter)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_init_ao_overlap
+
+! **************************************************************************************************
+!> \brief Prints out a short summary about the TIDFT job
+!> \param tidft_env ...
+!> \param unit_nr ...
+!> \par History
+!>       2021.10 created [Cindy Pham]
+!> \author Cindy Pham
+! **************************************************************************************************
    SUBROUTINE tidft_print_job_info(tidft_env, unit_nr)
 
       TYPE(tidft_env_type), INTENT(INOUT)             :: tidft_env
@@ -631,10 +679,10 @@ CONTAINS
             END SELECT
 
            !DO ivar = 1, 3 ! doubly occ orbital, singly occ alpha, and singly occ beta
-              
+
               !WRITE (unit_nr, '(T2,A,T48,I4)') "Dimensionality of independent var. matrices:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
 
-              !IF ( nmos_stateI .GT. 0) WRITE (unit_nr, '(T2,A,T48,I4)') " ", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)                 
+              !IF ( nmos_stateI .GT. 0) WRITE (unit_nr, '(T2,A,T48,I4)') " ", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
            !ENDDO ! ivar
 
 	 ENDDO ! stateI

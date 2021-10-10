@@ -139,8 +139,8 @@ CONTAINS
       tidft_env%calc_forces = calc_forces
       CALL tidft_init(qs_env, tidft_env)
 
-      !!! create the initial guess for ALMOs
-      !!CALL almo_scf_initial_guess(qs_env, almo_scf_env)
+      !!! create the initial guess for the MOs of all states
+      !CALL tidft_initial_guess(qs_env, tidft_env)
 
       !!! perform SCF for block diagonal ALMOs
       !!CALL almo_scf_main(qs_env, almo_scf_env)
@@ -160,261 +160,193 @@ CONTAINS
 
    END SUBROUTINE tidft_entry
 
-!tiidft! **************************************************************************************************
-!tiidft!> \brief create the scf initial guess for ALMOs
-!tiidft!> \param qs_env ...
-!tiidft!> \param almo_scf_env ...
-!tiidft!> \par History
-!tiidft!>       2016.11 created [Rustam Z Khaliullin]
-!tiidft!>       2018.09 smearing support [Ruben Staub]
-!tiidft!> \author Rustam Z Khaliullin
-!tiidft! **************************************************************************************************
-!tiidft   SUBROUTINE almo_scf_initial_guess(qs_env, almo_scf_env)
-!tiidft      TYPE(qs_environment_type), POINTER                 :: qs_env
-!tiidft      TYPE(almo_scf_env_type), INTENT(INOUT)             :: almo_scf_env
-!tiidft
-!tiidft      CHARACTER(len=*), PARAMETER :: routineN = 'almo_scf_initial_guess', &
-!tiidft         routineP = moduleN//':'//routineN
-!tiidft
-!tiidft      CHARACTER(LEN=default_path_length)                 :: file_name, project_name
-!tiidft      INTEGER                                            :: handle, iaspc, ispin, istore, naspc, &
-!tiidft                                                            nspins, unit_nr
-!tiidft      INTEGER, DIMENSION(2)                              :: nelectron_spin
-!tiidft      LOGICAL                                            :: aspc_guess, has_unit_metric
-!tiidft      REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum
-!tiidft      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
-!tiidft      TYPE(cp_logger_type), POINTER                      :: logger
-!tiidft      TYPE(cp_para_env_type), POINTER                    :: para_env
-!tiidft      TYPE(dbcsr_distribution_type)                      :: dist
-!tiidft      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao
-!tiidft      TYPE(dft_control_type), POINTER                    :: dft_control
-!tiidft      TYPE(molecular_scf_guess_env_type), POINTER        :: mscfg_env
-!tiidft      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
-!tiidft      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
-!tiidft      TYPE(qs_rho_type), POINTER                         :: rho
-!tiidft
-!tiidft      CALL timeset(routineN, handle)
-!tiidft
-!tiidft      NULLIFY (rho, rho_ao)
-!tiidft
-!tiidft      ! get a useful output_unit
-!tiidft      logger => cp_get_default_logger()
-!tiidft      IF (logger%para_env%ionode) THEN
-!tiidft         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
-!tiidft      ELSE
-!tiidft         unit_nr = -1
-!tiidft      ENDIF
-!tiidft
-!tiidft      ! get basic quantities from the qs_env
-!tiidft      CALL get_qs_env(qs_env, &
-!tiidft                      dft_control=dft_control, &
-!tiidft                      matrix_s=matrix_s, &
-!tiidft                      atomic_kind_set=atomic_kind_set, &
-!tiidft                      qs_kind_set=qs_kind_set, &
-!tiidft                      particle_set=particle_set, &
-!tiidft                      has_unit_metric=has_unit_metric, &
-!tiidft                      para_env=para_env, &
-!tiidft                      nelectron_spin=nelectron_spin, &
-!tiidft                      mscfg_env=mscfg_env, &
-!tiidft                      rho=rho)
-!tiidft
-!tiidft      CALL qs_rho_get(rho, rho_ao=rho_ao)
-!tiidft      CPASSERT(ASSOCIATED(mscfg_env))
-!tiidft
-!tiidft      ! initial guess on the first simulation step is determined by almo_scf_env%almo_scf_guess
-!tiidft      ! the subsequent simulation steps are determined by extrapolation_order
-!tiidft      ! if extrapolation order is zero then again almo_scf_env%almo_scf_guess is used
-!tiidft      ! ... the number of stored history points will remain zero if extrapolation order is zero
-!tiidft      IF (almo_scf_env%almo_history%istore == 0) THEN
-!tiidft         aspc_guess = .FALSE.
-!tiidft      ELSE
-!tiidft         aspc_guess = .TRUE.
-!tiidft      ENDIF
-!tiidft
-!tiidft      nspins = almo_scf_env%nspins
-!tiidft
-!tiidft      ! create an initial guess
-!tiidft      IF (.NOT. aspc_guess) THEN
-!tiidft
-!tiidft         SELECT CASE (almo_scf_env%almo_scf_guess)
-!tiidft         CASE (molecular_guess)
-!tiidft
-!tiidft            DO ispin = 1, nspins
-!tiidft
-!tiidft               ! the calculations on "isolated" molecules has already been done
-!tiidft               ! all we need to do is convert the MOs of molecules into
-!tiidft               ! the ALMO matrix taking into account different distributions
-!tiidft               CALL get_matrix_from_submatrices(mscfg_env, &
-!tiidft                                                almo_scf_env%matrix_t_blk(ispin), ispin)
-!tiidft               CALL dbcsr_filter(almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                 almo_scf_env%eps_filter)
-!tiidft
-!tiidft            ENDDO
-!tiidft
-!tiidft         CASE (atomic_guess)
-!tiidft
-!tiidft            IF (dft_control%qs_control%dftb .OR. dft_control%qs_control%semi_empirical .OR. &
-!tiidft                dft_control%qs_control%xtb) THEN
-!tiidft               CALL calculate_mopac_dm(rho_ao, &
-!tiidft                                       matrix_s(1)%matrix, has_unit_metric, &
-!tiidft                                       dft_control, particle_set, atomic_kind_set, qs_kind_set, &
-!tiidft                                       nspins, nelectron_spin, &
-!tiidft                                       para_env)
-!tiidft            ELSE
-!tiidft               CALL calculate_atomic_block_dm(rho_ao, &
-!tiidft                                              matrix_s(1)%matrix, particle_set, atomic_kind_set, qs_kind_set, &
-!tiidft                                              nspins, nelectron_spin, unit_nr, para_env)
-!tiidft            ENDIF
-!tiidft
-!tiidft            DO ispin = 1, nspins
-!tiidft               ! copy the atomic-block dm into matrix_p_blk
-!tiidft               CALL matrix_qs_to_almo(rho_ao(ispin)%matrix, &
-!tiidft                                      almo_scf_env%matrix_p_blk(ispin), almo_scf_env%mat_distr_aos, &
-!tiidft                                      .FALSE.)
-!tiidft               CALL dbcsr_filter(almo_scf_env%matrix_p_blk(ispin), &
-!tiidft                                 almo_scf_env%eps_filter)
-!tiidft            ENDDO ! ispin
-!tiidft
-!tiidft            ! obtain orbitals from the density matrix
-!tiidft            ! (the current version of ALMO SCF needs orbitals)
-!tiidft            CALL almo_scf_p_blk_to_t_blk(almo_scf_env, ionic=.FALSE.)
-!tiidft
-!tiidft         CASE (restart_guess)
-!tiidft
-!tiidft            project_name = logger%iter_info%project_name
-!tiidft
-!tiidft            DO ispin = 1, nspins
-!tiidft               WRITE (file_name, '(A,I0,A)') TRIM(project_name)//"_ALMO_SPIN_", ispin, "_RESTART.mo"
-!tiidft               CALL dbcsr_get_info(almo_scf_env%matrix_t_blk(ispin), distribution=dist)
-!tiidft               CALL dbcsr_binary_read(file_name, distribution=dist, matrix_new=almo_scf_env%matrix_t_blk(ispin))
-!tiidft               cs_pos = dbcsr_checksum(almo_scf_env%matrix_t_blk(ispin), pos=.TRUE.)
-!tiidft               IF (unit_nr > 0) THEN
-!tiidft                  WRITE (unit_nr, '(T2,A,E20.8)') "Read restart ALMO "//TRIM(file_name)//" with checksum: ", cs_pos
-!tiidft               ENDIF
-!tiidft            ENDDO
-!tiidft         END SELECT
-!tiidft
-!tiidft      ELSE !aspc_guess
-!tiidft
-!tiidft         CALL cite_reference(Kolafa2004)
-!tiidft
-!tiidft         naspc = MIN(almo_scf_env%almo_history%istore, almo_scf_env%almo_history%nstore)
-!tiidft         IF (unit_nr > 0) THEN
-!tiidft            WRITE (unit_nr, FMT="(/,T2,A,/,/,T3,A,I0)") &
-!tiidft               "Parameters for the always stable predictor-corrector (ASPC) method:", &
-!tiidft               "ASPC order: ", naspc
-!tiidft         END IF
-!tiidft
-!tiidft         DO ispin = 1, nspins
-!tiidft
-!tiidft            ! extrapolation
-!tiidft            DO iaspc = 1, naspc
-!tiidft               istore = MOD(almo_scf_env%almo_history%istore - iaspc, almo_scf_env%almo_history%nstore) + 1
-!tiidft               alpha = (-1.0_dp)**(iaspc + 1)*REAL(iaspc, KIND=dp)* &
-!tiidft                       binomial(2*naspc, naspc - iaspc)/binomial(2*naspc - 2, naspc - 1)
-!tiidft               IF (unit_nr > 0) THEN
-!tiidft                  WRITE (unit_nr, FMT="(T3,A2,I0,A4,F10.6)") &
-!tiidft                     "B(", iaspc, ") = ", alpha
-!tiidft               END IF
-!tiidft               IF (iaspc == 1) THEN
-!tiidft                  CALL dbcsr_copy(almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                  almo_scf_env%almo_history%matrix_t(ispin), &
-!tiidft                                  keep_sparsity=.TRUE.)
-!tiidft                  CALL dbcsr_scale(almo_scf_env%matrix_t_blk(ispin), alpha)
-!tiidft               ELSE
-!tiidft                  CALL dbcsr_multiply("N", "N", alpha, &
-!tiidft                                      almo_scf_env%almo_history%matrix_p_up_down(ispin, istore), &
-!tiidft                                      almo_scf_env%almo_history%matrix_t(ispin), &
-!tiidft                                      1.0_dp, almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                      retain_sparsity=.TRUE.)
-!tiidft               ENDIF
-!tiidft            ENDDO !iaspc
-!tiidft
-!tiidft         ENDDO !ispin
-!tiidft
-!tiidft      ENDIF !aspc_guess?
-!tiidft
-!tiidft      DO ispin = 1, nspins
-!tiidft
-!tiidft         CALL orthogonalize_mos(ket=almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                overlap=almo_scf_env%matrix_sigma_blk(ispin), &
-!tiidft                                metric=almo_scf_env%matrix_s_blk(1), &
-!tiidft                                retain_locality=.TRUE., &
-!tiidft                                only_normalize=.FALSE., &
-!tiidft                                nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
-!tiidft                                eps_filter=almo_scf_env%eps_filter, &
-!tiidft                                order_lanczos=almo_scf_env%order_lanczos, &
-!tiidft                                eps_lanczos=almo_scf_env%eps_lanczos, &
-!tiidft                                max_iter_lanczos=almo_scf_env%max_iter_lanczos)
-!tiidft
-!tiidft         !! Application of an occupation-rescaling trick for smearing, if requested
-!tiidft         IF (almo_scf_env%smear) THEN
-!tiidft            CALL almo_scf_t_rescaling(matrix_t=almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                      mo_energies=almo_scf_env%mo_energies(:, ispin), &
-!tiidft                                      mu_of_domain=almo_scf_env%mu_of_domain(:, ispin), &
-!tiidft                                      real_ne_of_domain=almo_scf_env%real_ne_of_domain(:, ispin), &
-!tiidft                                      spin_kTS=almo_scf_env%kTS(ispin), &
-!tiidft                                      smear_e_temp=almo_scf_env%smear_e_temp, &
-!tiidft                                      ndomains=almo_scf_env%ndomains, &
-!tiidft                                      nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin))
-!tiidft         END IF
-!tiidft
-!tiidft         CALL almo_scf_t_to_proj(t=almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                 p=almo_scf_env%matrix_p(ispin), &
-!tiidft                                 eps_filter=almo_scf_env%eps_filter, &
-!tiidft                                 orthog_orbs=.FALSE., &
-!tiidft                                 nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
-!tiidft                                 s=almo_scf_env%matrix_s(1), &
-!tiidft                                 sigma=almo_scf_env%matrix_sigma(ispin), &
-!tiidft                                 sigma_inv=almo_scf_env%matrix_sigma_inv(ispin), &
-!tiidft                                 use_guess=.FALSE., &
-!tiidft                                 smear=almo_scf_env%smear, &
-!tiidft                                 algorithm=almo_scf_env%sigma_inv_algorithm, &
-!tiidft                                 eps_lanczos=almo_scf_env%eps_lanczos, &
-!tiidft                                 max_iter_lanczos=almo_scf_env%max_iter_lanczos, &
-!tiidft                                 inv_eps_factor=almo_scf_env%matrix_iter_eps_error_factor, &
-!tiidft                                 para_env=almo_scf_env%para_env, &
-!tiidft                                 blacs_env=almo_scf_env%blacs_env)
-!tiidft
-!tiidft      ENDDO
-!tiidft
-!tiidft      ! compute dm from the projector(s)
-!tiidft      IF (nspins == 1) THEN
-!tiidft         CALL dbcsr_scale(almo_scf_env%matrix_p(1), 2.0_dp)
-!tiidft         !! Rescaling electronic entropy contribution by spin_factor
-!tiidft         IF (almo_scf_env%smear) THEN
-!tiidft            almo_scf_env%kTS(1) = almo_scf_env%kTS(1)*2.0_dp
-!tiidft         END IF
-!tiidft      ENDIF
-!tiidft
-!tiidft      IF (almo_scf_env%smear) THEN
-!tiidft         kTS_sum = SUM(almo_scf_env%kTS)
-!tiidft      ELSE
-!tiidft         kTS_sum = 0.0_dp
-!tiidft      ENDIF
-!tiidft
-!tiidft      CALL almo_dm_to_almo_ks(qs_env, &
-!tiidft                              almo_scf_env%matrix_p, &
-!tiidft                              almo_scf_env%matrix_ks, &
-!tiidft                              energy, &
-!tiidft                              almo_scf_env%eps_filter, &
-!tiidft                              almo_scf_env%mat_distr_aos, &
-!tiidft                              smear=almo_scf_env%smear, &
-!tiidft                              kTS_sum=kTS_sum)
-!tiidft
-!tiidft      IF (unit_nr > 0) THEN
-!tiidft         IF (almo_scf_env%almo_scf_guess .EQ. molecular_guess) THEN
-!tiidft            WRITE (unit_nr, '(T2,A38,F40.10)') "Single-molecule energy:", &
-!tiidft               SUM(mscfg_env%energy_of_frag)
-!tiidft         ENDIF
-!tiidft         WRITE (unit_nr, '(T2,A38,F40.10)') "Energy of the initial guess:", energy
-!tiidft         WRITE (unit_nr, '()')
-!tiidft      ENDIF
-!tiidft
-!tiidft      CALL timestop(handle)
-!tiidft
-!tiidft   END SUBROUTINE almo_scf_initial_guess
-!tiidft
+!! **************************************************************************************************
+!!> \brief create the initial guess for MOs of all states
+!!> \param qs_env ...
+!!> \param tidft_env ...
+!!> \par History
+!!>       2021.10 created [Rustam Z Khaliullin]
+!!> \author Rustam Z Khaliullin
+!! **************************************************************************************************
+!   SUBROUTINE tidft_initial_guess(qs_env, tidft_env)
+!      TYPE(qs_environment_type), POINTER                 :: qs_env
+!      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+!
+!      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_initial_guess', &
+!         routineP = moduleN//':'//routineN
+!
+!      CHARACTER(LEN=default_path_length)                 :: file_name, project_name
+!      INTEGER                                            :: handle, iaspc, ispin, istore, naspc, &
+!                                                            nspins, unit_nr
+!      INTEGER, DIMENSION(2)                              :: nelectron_spin
+!      LOGICAL                                            :: aspc_guess, has_unit_metric
+!      REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum
+!      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
+!      TYPE(cp_logger_type), POINTER                      :: logger
+!      TYPE(cp_para_env_type), POINTER                    :: para_env
+!      TYPE(dbcsr_distribution_type)                      :: dist
+!      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao
+!      TYPE(dft_control_type), POINTER                    :: dft_control
+!      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+!      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
+!      TYPE(qs_rho_type), POINTER                         :: rho
+!
+!      CALL timeset(routineN, handle)
+!
+!      NULLIFY (rho, rho_ao)
+!
+!      ! get a useful output_unit
+!      logger => cp_get_default_logger()
+!      IF (logger%para_env%ionode) THEN
+!         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+!      ELSE
+!         unit_nr = -1
+!      ENDIF
+!
+!      ! get basic quantities from the qs_env
+!      CALL get_qs_env(qs_env, &
+!                      dft_control=dft_control, &
+!                      matrix_s=matrix_s, &
+!                      atomic_kind_set=atomic_kind_set, &
+!                      qs_kind_set=qs_kind_set, &
+!                      particle_set=particle_set, &
+!                      has_unit_metric=has_unit_metric, &
+!                      para_env=para_env, &
+!                      nelectron_spin=nelectron_spin, &
+!                      mscfg_env=mscfg_env, &
+!                      rho=rho)
+!
+!      CALL qs_rho_get(rho, rho_ao=rho_ao)
+!
+!      nspins = tidft_env%nspins
+!
+!      ! create an initial guess
+!      SELECT CASE (tidft_env%tidft_guess)
+!      CASE (atomic_guess, ionic_guess)
+!
+!         IF (dft_control%qs_control%dftb .OR. dft_control%qs_control%semi_empirical .OR. &
+!             dft_control%qs_control%xtb) THEN
+!            CALL calculate_mopac_dm(rho_ao, &
+!                                    matrix_s(1)%matrix, has_unit_metric, &
+!                                    dft_control, particle_set, atomic_kind_set, qs_kind_set, &
+!                                    nspins, nelectron_spin, &
+!                                    para_env)
+!         ELSE
+!            CALL calculate_atomic_block_dm(rho_ao, &
+!                                           matrix_s(1)%matrix, particle_set, atomic_kind_set, qs_kind_set, &
+!                                           nspins, nelectron_spin, unit_nr, para_env)
+!         ENDIF
+!
+!         DO ispin = 1, nspins
+!            ! copy the atomic-block dm into matrix_p_blk
+!            CALL dbcsr_copy(matrix_p_blk(ispin), rho_ao(ispin)%matrix)
+!            CALL dbcsr_filter(matrix_p_blk(ispin), tidft_env%eps_filter)
+!         ENDDO ! ispin
+!
+!         ! it is important to obtain all orbitals from the density matrix
+!
+!      CASE (restart_guess)
+!
+!         project_name = logger%iter_info%project_name
+!
+!         DO ispin = 1, nspins
+!            WRITE (file_name, '(A,I0,A)') TRIM(project_name)//"_ALMO_SPIN_", ispin, "_RESTART.mo"
+!            CALL dbcsr_get_info(almo_scf_env%matrix_t_blk(ispin), distribution=dist)
+!            CALL dbcsr_binary_read(file_name, distribution=dist, matrix_new=almo_scf_env%matrix_t_blk(ispin))
+!            cs_pos = dbcsr_checksum(almo_scf_env%matrix_t_blk(ispin), pos=.TRUE.)
+!            IF (unit_nr > 0) THEN
+!               WRITE (unit_nr, '(T2,A,E20.8)') "Read restart ALMO "//TRIM(file_name)//" with checksum: ", cs_pos
+!            ENDIF
+!         ENDDO
+!
+!      DEFAULT
+!
+!         CPABORT("Illegal initial guess")
+!
+!      END SELECT
+!
+!      CALL stitch_columns(matrix_left, matrix_right, matrix_stitched, eps_filter)
+!      DO ispin = 1, nspins
+!
+!         CALL orthogonalize_mos(ket=almo_scf_env%matrix_t_blk(ispin), &
+!                                overlap=almo_scf_env%matrix_sigma_blk(ispin), &
+!                                metric=almo_scf_env%matrix_s_blk(1), &
+!                                retain_locality=.TRUE., &
+!                                only_normalize=.FALSE., &
+!                                nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
+!                                eps_filter=almo_scf_env%eps_filter, &
+!                                order_lanczos=almo_scf_env%order_lanczos, &
+!                                eps_lanczos=almo_scf_env%eps_lanczos, &
+!                                max_iter_lanczos=almo_scf_env%max_iter_lanczos)
+!
+!         !! Application of an occupation-rescaling trick for smearing, if requested
+!         IF (almo_scf_env%smear) THEN
+!            CALL almo_scf_t_rescaling(matrix_t=almo_scf_env%matrix_t_blk(ispin), &
+!                                      mo_energies=almo_scf_env%mo_energies(:, ispin), &
+!                                      mu_of_domain=almo_scf_env%mu_of_domain(:, ispin), &
+!                                      real_ne_of_domain=almo_scf_env%real_ne_of_domain(:, ispin), &
+!                                      spin_kTS=almo_scf_env%kTS(ispin), &
+!                                      smear_e_temp=almo_scf_env%smear_e_temp, &
+!                                      ndomains=almo_scf_env%ndomains, &
+!                                      nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin))
+!         END IF
+!
+!         CALL almo_scf_t_to_proj(t=almo_scf_env%matrix_t_blk(ispin), &
+!                                 p=almo_scf_env%matrix_p(ispin), &
+!                                 eps_filter=almo_scf_env%eps_filter, &
+!                                 orthog_orbs=.FALSE., &
+!                                 nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
+!                                 s=almo_scf_env%matrix_s(1), &
+!                                 sigma=almo_scf_env%matrix_sigma(ispin), &
+!                                 sigma_inv=almo_scf_env%matrix_sigma_inv(ispin), &
+!                                 use_guess=.FALSE., &
+!                                 smear=almo_scf_env%smear, &
+!                                 algorithm=almo_scf_env%sigma_inv_algorithm, &
+!                                 eps_lanczos=almo_scf_env%eps_lanczos, &
+!                                 max_iter_lanczos=almo_scf_env%max_iter_lanczos, &
+!                                 inv_eps_factor=almo_scf_env%matrix_iter_eps_error_factor, &
+!                                 para_env=almo_scf_env%para_env, &
+!                                 blacs_env=almo_scf_env%blacs_env)
+!
+!      ENDDO
+!
+!      ! compute dm from the projector(s)
+!      IF (nspins == 1) THEN
+!         CALL dbcsr_scale(almo_scf_env%matrix_p(1), 2.0_dp)
+!         !! Rescaling electronic entropy contribution by spin_factor
+!         IF (almo_scf_env%smear) THEN
+!            almo_scf_env%kTS(1) = almo_scf_env%kTS(1)*2.0_dp
+!         END IF
+!      ENDIF
+!
+!      IF (almo_scf_env%smear) THEN
+!         kTS_sum = SUM(almo_scf_env%kTS)
+!      ELSE
+!         kTS_sum = 0.0_dp
+!      ENDIF
+!
+!      CALL almo_dm_to_almo_ks(qs_env, &
+!                              almo_scf_env%matrix_p, &
+!                              almo_scf_env%matrix_ks, &
+!                              energy, &
+!                              almo_scf_env%eps_filter, &
+!                              almo_scf_env%mat_distr_aos, &
+!                              smear=almo_scf_env%smear, &
+!                              kTS_sum=kTS_sum)
+!
+!      IF (unit_nr > 0) THEN
+!         IF (almo_scf_env%almo_scf_guess .EQ. molecular_guess) THEN
+!            WRITE (unit_nr, '(T2,A38,F40.10)') "Single-molecule energy:", &
+!               SUM(mscfg_env%energy_of_frag)
+!         ENDIF
+!         WRITE (unit_nr, '(T2,A38,F40.10)') "Energy of the initial guess:", energy
+!         WRITE (unit_nr, '()')
+!      ENDIF
+!
+!      CALL timestop(handle)
+!
+!   END SUBROUTINE tidft_initial_guess
+
 !tiidft! **************************************************************************************************
 !tiidft!> \brief store a history of matrices for later use in almo_scf_initial_guess
 !tiidft!> \param almo_scf_env ...
@@ -560,231 +492,6 @@ CONTAINS
 !tiidft      CALL timestop(handle)
 !tiidft
 !tiidft   END SUBROUTINE almo_scf_store_extrapolation_data
-!tiidft       
-!tiidft! **************************************************************************************************
-!tiidft!> \brief Template for printing TIDFT job, moved to tidf_env_methods.F
-!tiidft!> \param almo_scf_env ...
-!tiidft!> \param unit_nr ...
-!tiidft!> \par History
-!tiidft!>       2021.10 created [Cindy Pham]
-!tiidft!> \author Cindy Pham
-!tiidft! **************************************************************************************************
-!tiidft         IF (almo_scf_env%deloc_method .NE. almo_deloc_none) THEN
-!tiidft
-!tiidft            SELECT CASE (almo_scf_env%deloc_method)
-!tiidft            CASE (almo_deloc_x, almo_deloc_scf, almo_deloc_x_then_scf)
-!tiidft               WRITE (unit_nr, '(T2,A,T48,A33)') "delocalization cutoff radius:", &
-!tiidft                  "infinite"
-!tiidft               deloc_method_string = "FULL_X_THEN_SCF"
-!tiidft            CASE (almo_deloc_xalmo_1diag, almo_deloc_xalmo_x, almo_deloc_xalmo_scf)
-!tiidft               WRITE (unit_nr, '(T2,A,T48,F33.5)') "XALMO cutoff radius:", &
-!tiidft                  almo_scf_env%quencher_r0_factor
-!tiidft            END SELECT
-!tiidft
-!tiidft            IF (almo_scf_env%deloc_method .EQ. almo_deloc_xalmo_1diag) THEN
-!tiidft               ! print nothing because no actual optimization is done
-!tiidft            ELSE
-!tiidft               WRITE (unit_nr, '(T2,A)') "optimization of extended orbitals:"
-!tiidft               SELECT CASE (almo_scf_env%xalmo_update_algorithm)
-!tiidft               CASE (almo_scf_diag)
-!tiidft                  CALL print_optimizer_options(almo_scf_env%opt_xalmo_diis, unit_nr)
-!tiidft               CASE (almo_scf_trustr)
-!tiidft                  CALL print_optimizer_options(almo_scf_env%opt_xalmo_trustr, unit_nr)
-!tiidft               CASE (almo_scf_pcg)
-!tiidft                  CALL print_optimizer_options(almo_scf_env%opt_xalmo_pcg, unit_nr)
-!tiidft               END SELECT
-!tiidft            ENDIF
-!tiidft
-!tiidft         ENDIF
-!tiidft
-!tiidft         !SELECT CASE(almo_scf_env%domain_layout_mos)
-!tiidft         !CASE(almo_domain_layout_orbital)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Delocalization constraints","ORBITAL"
-!tiidft         !CASE(almo_domain_layout_atomic)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Delocalization constraints","ATOMIC"
-!tiidft         !CASE(almo_domain_layout_molecular)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Delocalization constraints","MOLECULAR"
-!tiidft         !END SELECT
-!tiidft
-!tiidft         !SELECT CASE(almo_scf_env%domain_layout_aos)
-!tiidft         !CASE(almo_domain_layout_atomic)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Basis function domains","ATOMIC"
-!tiidft         !CASE(almo_domain_layout_molecular)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Basis function domains","MOLECULAR"
-!tiidft         !END SELECT
-!tiidft
-!tiidft         !SELECT CASE(almo_scf_env%mat_distr_aos)
-!tiidft         !CASE(almo_mat_distr_atomic)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Parallel distribution for AOs","ATOMIC"
-!tiidft         !CASE(almo_mat_distr_molecular)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Parallel distribution for AOs","MOLECULAR"
-!tiidft         !END SELECT
-!tiidft
-!tiidft         !SELECT CASE(almo_scf_env%mat_distr_mos)
-!tiidft         !CASE(almo_mat_distr_atomic)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Parallel distribution for MOs","ATOMIC"
-!tiidft         !CASE(almo_mat_distr_molecular)
-!tiidft         !    WRITE(unit_nr,'(T2,A,T48,A33)') "Parallel distribution for MOs","MOLECULAR"
-!tiidft         !END SELECT
-!tiidft
-!tiidft         ! print fragment's statistics
-!tiidft         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-!tiidft         WRITE (unit_nr, '(T2,A,T48,I33)') "Total fragments:", &
-!tiidft            almo_scf_env%ndomains
-!tiidft
-!tiidft         sum_temp = SUM(almo_scf_env%nbasis_of_domain(:))
-!tiidft         WRITE (unit_nr, '(T2,A,T53,I5,F9.2,I5,I9)') &
-!tiidft            "Basis set size per fragment (min, av, max, total):", &
-!tiidft            MINVAL(almo_scf_env%nbasis_of_domain(:)), &
-!tiidft            (1.0_dp*sum_temp)/almo_scf_env%ndomains, &
-!tiidft            MAXVAL(almo_scf_env%nbasis_of_domain(:)), &
-!tiidft            sum_temp
-!tiidft         !WRITE (unit_nr, '(T2,I13,F13.3,I13,I13)') &
-!tiidft         !         MINVAL(almo_scf_env%nbasis_of_domain(:)), &
-!tiidft         !         (1.0_dp*sum_temp) / almo_scf_env%ndomains, &
-!tiidft         !         MAXVAL(almo_scf_env%nbasis_of_domain(:)), &
-!tiidft         !         sum_temp
-!tiidft
-!tiidft         sum_temp = SUM(almo_scf_env%nocc_of_domain(:, :))
-!tiidft         WRITE (unit_nr, '(T2,A,T53,I5,F9.2,I5,I9)') &
-!tiidft            "Occupied MOs per fragment (min, av, max, total):", &
-!tiidft            MINVAL(SUM(almo_scf_env%nocc_of_domain, DIM=2)), &
-!tiidft            (1.0_dp*sum_temp)/almo_scf_env%ndomains, &
-!tiidft            MAXVAL(SUM(almo_scf_env%nocc_of_domain, DIM=2)), &
-!tiidft            sum_temp
-!tiidft         !WRITE (unit_nr, '(T2,I13,F13.3,I13,I13)') &
-!tiidft         !         MINVAL( SUM(almo_scf_env%nocc_of_domain, DIM=2) ), &
-!tiidft         !         (1.0_dp*sum_temp) / almo_scf_env%ndomains, &
-!tiidft         !         MAXVAL( SUM(almo_scf_env%nocc_of_domain, DIM=2) ), &
-!tiidft         !         sum_temp
-!tiidft
-!tiidft         sum_temp = SUM(almo_scf_env%nvirt_of_domain(:, :))
-!tiidft         WRITE (unit_nr, '(T2,A,T53,I5,F9.2,I5,I9)') &
-!tiidft            "Virtual MOs per fragment (min, av, max, total):", &
-!tiidft            MINVAL(SUM(almo_scf_env%nvirt_of_domain, DIM=2)), &
-!tiidft            (1.0_dp*sum_temp)/almo_scf_env%ndomains, &
-!tiidft            MAXVAL(SUM(almo_scf_env%nvirt_of_domain, DIM=2)), &
-!tiidft            sum_temp
-!tiidft         !WRITE (unit_nr, '(T2,I13,F13.3,I13,I13)') &
-!tiidft         !         MINVAL( SUM(almo_scf_env%nvirt_of_domain, DIM=2) ), &
-!tiidft         !         (1.0_dp*sum_temp) / almo_scf_env%ndomains, &
-!tiidft         !         MAXVAL( SUM(almo_scf_env%nvirt_of_domain, DIM=2) ), &
-!tiidft         !         sum_temp
-!tiidft
-!tiidft         sum_temp = SUM(almo_scf_env%charge_of_domain(:))
-!tiidft         WRITE (unit_nr, '(T2,A,T53,I5,F9.2,I5,I9)') &
-!tiidft            "Charges per fragment (min, av, max, total):", &
-!tiidft            MINVAL(almo_scf_env%charge_of_domain(:)), &
-!tiidft            (1.0_dp*sum_temp)/almo_scf_env%ndomains, &
-!tiidft            MAXVAL(almo_scf_env%charge_of_domain(:)), &
-!tiidft            sum_temp
-!tiidft         !WRITE (unit_nr, '(T2,I13,F13.3,I13,I13)') &
-!tiidft         !         MINVAL(almo_scf_env%charge_of_domain(:)), &
-!tiidft         !         (1.0_dp*sum_temp) / almo_scf_env%ndomains, &
-!tiidft         !         MAXVAL(almo_scf_env%charge_of_domain(:)), &
-!tiidft         !         sum_temp
-!tiidft
-!tiidft         ! compute the number of neighbors of each fragment
-!tiidft         ALLOCATE (nneighbors(almo_scf_env%ndomains))
-!tiidft
-!tiidft         DO idomain = 1, almo_scf_env%ndomains
-!tiidft
-!tiidft            IF (idomain .EQ. 1) THEN
-!tiidft               index1_prev = 1
-!tiidft            ELSE
-!tiidft               index1_prev = almo_scf_env%domain_map(1)%index1(idomain - 1)
-!tiidft            ENDIF
-!tiidft
-!tiidft            SELECT CASE (almo_scf_env%deloc_method)
-!tiidft            CASE (almo_deloc_none)
-!tiidft               nneighbors(idomain) = 0
-!tiidft            CASE (almo_deloc_x, almo_deloc_scf, almo_deloc_x_then_scf)
-!tiidft               nneighbors(idomain) = almo_scf_env%ndomains - 1 ! minus self
-!tiidft            CASE (almo_deloc_xalmo_1diag, almo_deloc_xalmo_x, almo_deloc_xalmo_scf)
-!tiidft               nneighbors(idomain) = almo_scf_env%domain_map(1)%index1(idomain) - index1_prev - 1 ! minus self
-!tiidft            CASE DEFAULT
-!tiidft               nneighbors(idomain) = -1
-!tiidft            END SELECT
-!tiidft
-!tiidft         ENDDO ! cycle over domains
-!tiidft
-!tiidft         sum_temp = SUM(nneighbors(:))
-!tiidft         WRITE (unit_nr, '(T2,A,T53,I5,F9.2,I5,I9)') &
-!tiidft            "Deloc. neighbors of fragment (min, av, max, total):", &
-!tiidft            MINVAL(nneighbors(:)), &
-!tiidft            (1.0_dp*sum_temp)/almo_scf_env%ndomains, &
-!tiidft            MAXVAL(nneighbors(:)), &
-!tiidft            sum_temp
-!tiidft
-!tiidft         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-!tiidft         WRITE (unit_nr, '()')
-!tiidft
-!tiidft         IF (almo_scf_env%ndomains .LE. 64) THEN
-!tiidft
-!tiidft            ! print fragment info
-!tiidft            WRITE (unit_nr, '(T2,A10,A13,A13,A13,A13,A13)') &
-!tiidft               "Fragment", "Basis Set", "Occupied", "Virtual", "Charge", "Deloc Neig" !,"Discarded Virt"
-!tiidft            WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-!tiidft            DO idomain = 1, almo_scf_env%ndomains
-!tiidft
-!tiidft               SELECT CASE (almo_scf_env%deloc_method)
-!tiidft               CASE (almo_deloc_none)
-!tiidft                  neig_string = "NONE"
-!tiidft               CASE (almo_deloc_x, almo_deloc_scf, almo_deloc_x_then_scf)
-!tiidft                  neig_string = "ALL"
-!tiidft               CASE (almo_deloc_xalmo_1diag, almo_deloc_xalmo_x, almo_deloc_xalmo_scf)
-!tiidft                  WRITE (neig_string, '(I13)') nneighbors(idomain)
-!tiidft               CASE DEFAULT
-!tiidft                  neig_string = "N/A"
-!tiidft               END SELECT
-!tiidft
-!tiidft               WRITE (unit_nr, '(T2,I10,I13,I13,I13,I13,A13)') &
-!tiidft                  idomain, almo_scf_env%nbasis_of_domain(idomain), &
-!tiidft                  SUM(almo_scf_env%nocc_of_domain(idomain, :)), &
-!tiidft                  SUM(almo_scf_env%nvirt_of_domain(idomain, :)), &
-!tiidft                  !SUM(almo_scf_env%nvirt_disc_of_domain(idomain,:)),&
-!tiidft                  almo_scf_env%charge_of_domain(idomain), &
-!tiidft                  ADJUSTR(TRIM(neig_string))
-!tiidft
-!tiidft            ENDDO ! cycle over domains
-!tiidft
-!tiidft            SELECT CASE (almo_scf_env%deloc_method)
-!tiidft            CASE (almo_deloc_xalmo_1diag, almo_deloc_xalmo_x, almo_deloc_xalmo_scf)
-!tiidft
-!tiidft               WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-!tiidft
-!tiidft               ! print fragment neighbors
-!tiidft               WRITE (unit_nr, '(T2,A78)') &
-!tiidft                  "Neighbor lists (including self)"
-!tiidft               WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-!tiidft               DO idomain = 1, almo_scf_env%ndomains
-!tiidft
-!tiidft                  IF (idomain .EQ. 1) THEN
-!tiidft                     index1_prev = 1
-!tiidft                  ELSE
-!tiidft                     index1_prev = almo_scf_env%domain_map(1)%index1(idomain - 1)
-!tiidft                  ENDIF
-!tiidft
-!tiidft                  WRITE (unit_nr, '(T2,I10,":")') idomain
-!tiidft                  WRITE (unit_nr, '(T12,11I6)') &
-!tiidft                     almo_scf_env%domain_map(1)%pairs &
-!tiidft                     (index1_prev:almo_scf_env%domain_map(1)%index1(idomain) - 1, 1) ! includes self
-!tiidft
-!tiidft               ENDDO ! cycle over domains
-!tiidft
-!tiidft            END SELECT
-!tiidft
-!tiidft         ELSE ! too big to print details for each fragment
-!tiidft
-!tiidft          WRITE (unit_nr, '(T2,A)') "The system is too big to print details for each fragment."
-!tiidft
-!tiidft        ENDIF ! how many fragments?
-!tiidft
-!tiidft         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-!tiidft
-!tiidft         WRITE (unit_nr, '()')
-!tiidft
-!tiidft         DEALLOCATE (nneighbors)
 !tiidft
 !tiidft! **************************************************************************************************
 !tiidft!> \brief Initializes the ALMO SCF copy of the AO overlap matrix

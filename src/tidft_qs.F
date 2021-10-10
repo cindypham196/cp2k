@@ -12,6 +12,7 @@
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
 MODULE tidft_qs
+   USE tidft_types,                     ONLY: tidft_env_type
    USE almo_scf_types,                  ONLY: almo_mat_dim_aobasis,&
                                               almo_mat_dim_occ,&
                                               almo_mat_dim_virt,&
@@ -84,7 +85,7 @@ MODULE tidft_qs
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_qs'
 
-   PUBLIC :: matrix_layout
+   PUBLIC :: matrix_layout, tidft_init_ks_matrices
 
 CONTAINS
 
@@ -311,159 +312,82 @@ CONTAINS
       ENDIF
    END SUBROUTINE create_distribute_mo_blocks
 
-!tidft! **************************************************************************************************
-!tidft!> \brief convert between two types of matrices: QS style to ALMO style
-!tidft!> \param matrix_qs ...
-!tidft!> \param matrix_almo ...
-!tidft!> \param mat_distr_aos ...
-!tidft!> \param keep_sparsity ...
-!tidft!> \par History
-!tidft!>       2011.06 created [Rustam Z Khaliullin]
-!tidft!> \author Rustam Z Khaliullin
-!tidft! **************************************************************************************************
-!tidft   SUBROUTINE matrix_qs_to_almo(matrix_qs, matrix_almo, mat_distr_aos, keep_sparsity)
-!tidft
-!tidft      TYPE(dbcsr_type)                                   :: matrix_qs, matrix_almo
-!tidft      INTEGER                                            :: mat_distr_aos
-!tidft      LOGICAL, INTENT(IN)                                :: keep_sparsity
-!tidft
-!tidft      CHARACTER(len=*), PARAMETER                        :: routineN = 'matrix_qs_to_almo'
-!tidft
-!tidft      INTEGER                                            :: handle
-!tidft      TYPE(dbcsr_type)                                   :: matrix_qs_nosym
-!tidft
-!tidft      CALL timeset(routineN, handle)
-!tidft      !RZK-warning if it's not a N(AO)xN(AO) matrix then stop
-!tidft
-!tidft      SELECT CASE (mat_distr_aos)
-!tidft      CASE (almo_mat_distr_atomic)
-!tidft         ! automatic data_type conversion
-!tidft         CALL dbcsr_copy(matrix_almo, matrix_qs, &
-!tidft                         keep_sparsity=keep_sparsity)
-!tidft      CASE (almo_mat_distr_molecular)
-!tidft         ! desymmetrize the qs matrix
-!tidft         CALL dbcsr_create(matrix_qs_nosym, template=matrix_qs, &
-!tidft                           matrix_type=dbcsr_type_no_symmetry)
-!tidft         CALL dbcsr_desymmetrize(matrix_qs, matrix_qs_nosym)
-!tidft
-!tidft         ! perform the magic complete_redistribute
-!tidft         ! before calling complete_redistribute set all blocks to zero
-!tidft         ! otherwise the non-zero elements of the redistributed matrix,
-!tidft         ! which are in zero-blocks of the original matrix, will remain
-!tidft         ! in the final redistributed matrix. this is a bug in
-!tidft         ! complete_redistribute. RZK-warning it should be later corrected by calling
-!tidft         ! dbcsr_set to 0.0 from within complete_redistribute
-!tidft         CALL dbcsr_set(matrix_almo, 0.0_dp)
-!tidft         CALL dbcsr_complete_redistribute(matrix_qs_nosym, matrix_almo, &
-!tidft                                          keep_sparsity=keep_sparsity); 
-!tidft         CALL dbcsr_release(matrix_qs_nosym)
-!tidft
-!tidft      CASE DEFAULT
-!tidft         CPABORT("")
-!tidft      END SELECT
-!tidft
-!tidft      CALL timestop(handle)
-!tidft
-!tidft   END SUBROUTINE matrix_qs_to_almo
-!tidft
-!tidft! **************************************************************************************************
-!tidft!> \brief convert between two types of matrices: ALMO style to QS style
-!tidft!> \param matrix_almo ...
-!tidft!> \param matrix_qs ...
-!tidft!> \param mat_distr_aos ...
-!tidft!> \par History
-!tidft!>       2011.06 created [Rustam Z Khaliullin]
-!tidft!> \author Rustam Z Khaliullin
-!tidft! **************************************************************************************************
-!tidft   SUBROUTINE matrix_almo_to_qs(matrix_almo, matrix_qs, mat_distr_aos)
-!tidft      TYPE(dbcsr_type)                                   :: matrix_almo, matrix_qs
-!tidft      INTEGER, INTENT(IN)                                :: mat_distr_aos
-!tidft
-!tidft      CHARACTER(len=*), PARAMETER                        :: routineN = 'matrix_almo_to_qs'
-!tidft
-!tidft      INTEGER                                            :: handle
-!tidft
-!tidft      CALL timeset(routineN, handle)
-!tidft      ! RZK-warning if it's not a N(AO)xN(AO) matrix then stop
-!tidft
-!tidft      SELECT CASE (mat_distr_aos)
-!tidft      CASE (almo_mat_distr_atomic)
-!tidft         CALL dbcsr_copy_into_existing(matrix_qs, matrix_almo)
-!tidft      CASE (almo_mat_distr_molecular)
-!tidft         CALL dbcsr_set(matrix_qs, 0.0_dp)
-!tidft         CALL dbcsr_complete_redistribute(matrix_almo, matrix_qs, keep_sparsity=.TRUE.)
-!tidft      CASE DEFAULT
-!tidft         CPABORT("")
-!tidft      END SELECT
-!tidft
-!tidft      CALL timestop(handle)
-!tidft
-!tidft   END SUBROUTINE matrix_almo_to_qs
-!tidft
-!tidft! **************************************************************************************************
-!tidft!> \brief Initialization of the QS and ALMO KS matrix
-!tidft!> \param qs_env ...
-!tidft!> \param matrix_ks ...
-!tidft!> \param mat_distr_aos ...
-!tidft!> \param eps_filter ...
-!tidft!> \par History
-!tidft!>       2011.05 created [Rustam Z Khaliullin]
-!tidft!> \author Rustam Z Khaliullin
-!tidft! **************************************************************************************************
-!tidft   SUBROUTINE init_almo_ks_matrix_via_qs(qs_env, matrix_ks, mat_distr_aos, eps_filter)
-!tidft
-!tidft      TYPE(qs_environment_type), POINTER                 :: qs_env
-!tidft      TYPE(dbcsr_type), DIMENSION(:)                     :: matrix_ks
-!tidft      INTEGER                                            :: mat_distr_aos
-!tidft      REAL(KIND=dp)                                      :: eps_filter
-!tidft
-!tidft      CHARACTER(len=*), PARAMETER :: routineN = 'init_almo_ks_matrix_via_qs'
-!tidft
-!tidft      INTEGER                                            :: handle, ispin, nspin
-!tidft      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_qs_ks, matrix_qs_s
-!tidft      TYPE(dft_control_type), POINTER                    :: dft_control
-!tidft      TYPE(neighbor_list_set_p_type), DIMENSION(:), &
-!tidft         POINTER                                         :: sab_orb
-!tidft      TYPE(qs_ks_env_type), POINTER                      :: ks_env
-!tidft
-!tidft      CALL timeset(routineN, handle)
-!tidft
-!tidft      NULLIFY (sab_orb)
-!tidft
-!tidft      ! get basic quantities from the qs_env
-!tidft      CALL get_qs_env(qs_env, &
-!tidft                      dft_control=dft_control, &
-!tidft                      matrix_s=matrix_qs_s, &
-!tidft                      matrix_ks=matrix_qs_ks, &
-!tidft                      ks_env=ks_env, &
-!tidft                      sab_orb=sab_orb)
-!tidft
-!tidft      nspin = dft_control%nspins
-!tidft
-!tidft      ! create matrix_ks in the QS env if necessary
-!tidft      IF (.NOT. ASSOCIATED(matrix_qs_ks)) THEN
-!tidft         CALL dbcsr_allocate_matrix_set(matrix_qs_ks, nspin)
-!tidft         DO ispin = 1, nspin
-!tidft            ALLOCATE (matrix_qs_ks(ispin)%matrix)
-!tidft            CALL dbcsr_create(matrix_qs_ks(ispin)%matrix, &
-!tidft                              template=matrix_qs_s(1)%matrix)
-!tidft            CALL cp_dbcsr_alloc_block_from_nbl(matrix_qs_ks(ispin)%matrix, sab_orb)
-!tidft            CALL dbcsr_set(matrix_qs_ks(ispin)%matrix, 0.0_dp)
-!tidft         ENDDO
-!tidft         CALL set_ks_env(ks_env, matrix_ks=matrix_qs_ks)
-!tidft      ENDIF
-!tidft
-!tidft      ! copy to ALMO
-!tidft      DO ispin = 1, nspin
-!tidft         CALL matrix_qs_to_almo(matrix_qs_ks(ispin)%matrix, &
-!tidft                                matrix_ks(ispin), mat_distr_aos, .FALSE.)
-!tidft         CALL dbcsr_filter(matrix_ks(ispin), eps_filter)
-!tidft      ENDDO
-!tidft
-!tidft      CALL timestop(handle)
-!tidft
-!tidft   END SUBROUTINE init_almo_ks_matrix_via_qs
-!tidft
+! **************************************************************************************************
+!> \brief Initialization of the QS and TIDFT KS matrices
+!> \param qs_env ...
+!> \param tidft_env ...
+!> \param mat_distr_aos ...
+!> \param eps_filter ...
+!> \par History
+!>       2021.10 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_init_ks_matrices(qs_env, tidft_env)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(tidft_env_type)                               :: tidft_env
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_init_ks_matrices'
+
+      INTEGER                                            :: handle, ispin, nspins, &
+                                                            stateI
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_qs_ks, matrix_qs_s
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(neighbor_list_set_p_type), DIMENSION(:), &
+         POINTER                                         :: sab_orb
+      TYPE(qs_ks_env_type), POINTER                      :: ks_env
+
+      CALL timeset(routineN, handle)
+
+      NULLIFY (sab_orb)
+
+      ! get basic quantities from the qs_env
+      CALL get_qs_env(qs_env, &
+                      dft_control=dft_control, &
+                      matrix_s=matrix_qs_s, &
+                      matrix_ks=matrix_qs_ks, &
+                      ks_env=ks_env, &
+                      sab_orb=sab_orb)
+
+      nspins = tidft_env%nspins
+      CPASSERT(nspins.EQ.dft_control%nspins)
+
+      ! create matrix_ks in the QS env if necessary
+      IF (.NOT. ASSOCIATED(matrix_qs_ks)) THEN
+         CALL dbcsr_allocate_matrix_set(matrix_qs_ks, nspins)
+         DO ispin = 1, nspins
+            ALLOCATE (matrix_qs_ks(ispin)%matrix)
+            CALL dbcsr_create(matrix_qs_ks(ispin)%matrix, &
+                              template=matrix_qs_s(1)%matrix)
+            CALL cp_dbcsr_alloc_block_from_nbl(matrix_qs_ks(ispin)%matrix, sab_orb)
+            CALL dbcsr_set(matrix_qs_ks(ispin)%matrix, 0.0_dp)
+         ENDDO
+         CALL set_ks_env(ks_env, matrix_ks=matrix_qs_ks)
+      ENDIF
+
+      ! copy to tidft_env
+      DO ispin = 1, tidft_env%nspins
+
+         DO stateI = 1, tidft_env%nstates
+
+            CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin), matrix_qs_ks(ispin)%matrix)
+            CALL dbcsr_filter(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin), tidft_env%eps_filter)
+
+            IF (tidft_env%spin_pure) THEN
+
+               CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin), matrix_qs_ks(ispin)%matrix)
+               CALL dbcsr_filter(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin), tidft_env%eps_filter)
+
+            ENDIF
+
+         ENDDO ! stateI
+
+      ENDDO ! ispin
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_init_ks_matrices
+
 !tidft! **************************************************************************************************
 !tidft!> \brief Create MOs in the QS env to be able to return ALMOs to QS
 !tidft!> \param qs_env ...

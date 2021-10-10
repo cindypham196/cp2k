@@ -88,8 +88,8 @@ MODULE tidft_types
       ! Occupied MO coefficients NxOCC(spin)
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_t
 
-      ! Kohn-Sham Hamiltonian NxN, most often DIM=2
-      !TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
+      ! Kohn-Sham Hamiltonian NxN
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
 
    END TYPE slater_det_type
 
