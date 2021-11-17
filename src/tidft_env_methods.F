@@ -285,6 +285,7 @@ CONTAINS
             tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2) = &
                ( tidft_env%nelectrons - tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip + 1 ) / 2
             tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(:)=0
+            ! set the number of independent variable matrices
             IF (tidft_env%restricted) THEN
                ! 1st entry: doubly occupied orbitals: (ne-(mult-1))/2-unpair
                ivar = (tidft_env%nelectrons - tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip + 1) / 2 - &

@@ -35,6 +35,7 @@ MODULE tidft
                                               optimizer_options_type,&
                                               print_optimizer_options
    USE tidft_types,                     ONLY: tidft_env_type
+   USE tidft_methods,                   ONLY: stitch_columns
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init
    USE atomic_kind_types,               ONLY: atomic_kind_type
@@ -62,7 +63,8 @@ MODULE tidft
         dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
         dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_nblkcols_total, &
         dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, dbcsr_reserve_block2d, dbcsr_scale, &
-        dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create
+        dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create, &
+        dbcsr_print
    USE domain_submatrix_methods,        ONLY: init_submatrices,&
                                               release_submatrices
    USE input_constants,                 ONLY: &
@@ -140,7 +142,7 @@ CONTAINS
       CALL tidft_init(qs_env, tidft_env)
 
       !!! create the initial guess for the MOs of all states
-      !CALL tidft_initial_guess(qs_env, tidft_env)
+      CALL tidft_initial_guess(qs_env, tidft_env)
 
       !!! perform SCF for block diagonal ALMOs
       !!CALL almo_scf_main(qs_env, almo_scf_env)
@@ -160,192 +162,302 @@ CONTAINS
 
    END SUBROUTINE tidft_entry
 
-!! **************************************************************************************************
-!!> \brief create the initial guess for MOs of all states
-!!> \param qs_env ...
-!!> \param tidft_env ...
-!!> \par History
-!!>       2021.10 created [Rustam Z Khaliullin]
-!!> \author Rustam Z Khaliullin
-!! **************************************************************************************************
-!   SUBROUTINE tidft_initial_guess(qs_env, tidft_env)
-!      TYPE(qs_environment_type), POINTER                 :: qs_env
-!      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
-!
-!      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_initial_guess', &
-!         routineP = moduleN//':'//routineN
-!
-!      CHARACTER(LEN=default_path_length)                 :: file_name, project_name
-!      INTEGER                                            :: handle, iaspc, ispin, istore, naspc, &
-!                                                            nspins, unit_nr
-!      INTEGER, DIMENSION(2)                              :: nelectron_spin
-!      LOGICAL                                            :: aspc_guess, has_unit_metric
-!      REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum
-!      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
-!      TYPE(cp_logger_type), POINTER                      :: logger
-!      TYPE(cp_para_env_type), POINTER                    :: para_env
-!      TYPE(dbcsr_distribution_type)                      :: dist
-!      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao
-!      TYPE(dft_control_type), POINTER                    :: dft_control
-!      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
-!      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
-!      TYPE(qs_rho_type), POINTER                         :: rho
-!
-!      CALL timeset(routineN, handle)
-!
-!      NULLIFY (rho, rho_ao)
-!
-!      ! get a useful output_unit
-!      logger => cp_get_default_logger()
-!      IF (logger%para_env%ionode) THEN
-!         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
-!      ELSE
-!         unit_nr = -1
-!      ENDIF
-!
-!      ! get basic quantities from the qs_env
-!      CALL get_qs_env(qs_env, &
-!                      dft_control=dft_control, &
-!                      matrix_s=matrix_s, &
-!                      atomic_kind_set=atomic_kind_set, &
-!                      qs_kind_set=qs_kind_set, &
-!                      particle_set=particle_set, &
-!                      has_unit_metric=has_unit_metric, &
-!                      para_env=para_env, &
-!                      nelectron_spin=nelectron_spin, &
-!                      mscfg_env=mscfg_env, &
-!                      rho=rho)
-!
-!      CALL qs_rho_get(rho, rho_ao=rho_ao)
-!
-!      nspins = tidft_env%nspins
-!
-!      ! create an initial guess
-!      SELECT CASE (tidft_env%tidft_guess)
-!      CASE (atomic_guess, ionic_guess)
-!
-!         IF (dft_control%qs_control%dftb .OR. dft_control%qs_control%semi_empirical .OR. &
-!             dft_control%qs_control%xtb) THEN
-!            CALL calculate_mopac_dm(rho_ao, &
-!                                    matrix_s(1)%matrix, has_unit_metric, &
-!                                    dft_control, particle_set, atomic_kind_set, qs_kind_set, &
-!                                    nspins, nelectron_spin, &
-!                                    para_env)
-!         ELSE
-!            CALL calculate_atomic_block_dm(rho_ao, &
-!                                           matrix_s(1)%matrix, particle_set, atomic_kind_set, qs_kind_set, &
-!                                           nspins, nelectron_spin, unit_nr, para_env)
-!         ENDIF
-!
-!         DO ispin = 1, nspins
-!            ! copy the atomic-block dm into matrix_p_blk
-!            CALL dbcsr_copy(matrix_p_blk(ispin), rho_ao(ispin)%matrix)
-!            CALL dbcsr_filter(matrix_p_blk(ispin), tidft_env%eps_filter)
-!         ENDDO ! ispin
-!
-!         ! it is important to obtain all orbitals from the density matrix
-!
-!      CASE (restart_guess)
-!
-!         project_name = logger%iter_info%project_name
-!
-!         DO ispin = 1, nspins
-!            WRITE (file_name, '(A,I0,A)') TRIM(project_name)//"_ALMO_SPIN_", ispin, "_RESTART.mo"
-!            CALL dbcsr_get_info(almo_scf_env%matrix_t_blk(ispin), distribution=dist)
-!            CALL dbcsr_binary_read(file_name, distribution=dist, matrix_new=almo_scf_env%matrix_t_blk(ispin))
-!            cs_pos = dbcsr_checksum(almo_scf_env%matrix_t_blk(ispin), pos=.TRUE.)
-!            IF (unit_nr > 0) THEN
-!               WRITE (unit_nr, '(T2,A,E20.8)') "Read restart ALMO "//TRIM(file_name)//" with checksum: ", cs_pos
-!            ENDIF
-!         ENDDO
-!
-!      DEFAULT
-!
-!         CPABORT("Illegal initial guess")
-!
-!      END SELECT
-!
-!      CALL stitch_columns(matrix_left, matrix_right, matrix_stitched, eps_filter)
-!      DO ispin = 1, nspins
-!
-!         CALL orthogonalize_mos(ket=almo_scf_env%matrix_t_blk(ispin), &
-!                                overlap=almo_scf_env%matrix_sigma_blk(ispin), &
-!                                metric=almo_scf_env%matrix_s_blk(1), &
-!                                retain_locality=.TRUE., &
-!                                only_normalize=.FALSE., &
-!                                nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
-!                                eps_filter=almo_scf_env%eps_filter, &
-!                                order_lanczos=almo_scf_env%order_lanczos, &
-!                                eps_lanczos=almo_scf_env%eps_lanczos, &
-!                                max_iter_lanczos=almo_scf_env%max_iter_lanczos)
-!
-!         !! Application of an occupation-rescaling trick for smearing, if requested
-!         IF (almo_scf_env%smear) THEN
-!            CALL almo_scf_t_rescaling(matrix_t=almo_scf_env%matrix_t_blk(ispin), &
-!                                      mo_energies=almo_scf_env%mo_energies(:, ispin), &
-!                                      mu_of_domain=almo_scf_env%mu_of_domain(:, ispin), &
-!                                      real_ne_of_domain=almo_scf_env%real_ne_of_domain(:, ispin), &
-!                                      spin_kTS=almo_scf_env%kTS(ispin), &
-!                                      smear_e_temp=almo_scf_env%smear_e_temp, &
-!                                      ndomains=almo_scf_env%ndomains, &
-!                                      nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin))
-!         END IF
-!
-!         CALL almo_scf_t_to_proj(t=almo_scf_env%matrix_t_blk(ispin), &
-!                                 p=almo_scf_env%matrix_p(ispin), &
-!                                 eps_filter=almo_scf_env%eps_filter, &
-!                                 orthog_orbs=.FALSE., &
-!                                 nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
-!                                 s=almo_scf_env%matrix_s(1), &
-!                                 sigma=almo_scf_env%matrix_sigma(ispin), &
-!                                 sigma_inv=almo_scf_env%matrix_sigma_inv(ispin), &
-!                                 use_guess=.FALSE., &
-!                                 smear=almo_scf_env%smear, &
-!                                 algorithm=almo_scf_env%sigma_inv_algorithm, &
-!                                 eps_lanczos=almo_scf_env%eps_lanczos, &
-!                                 max_iter_lanczos=almo_scf_env%max_iter_lanczos, &
-!                                 inv_eps_factor=almo_scf_env%matrix_iter_eps_error_factor, &
-!                                 para_env=almo_scf_env%para_env, &
-!                                 blacs_env=almo_scf_env%blacs_env)
-!
-!      ENDDO
-!
-!      ! compute dm from the projector(s)
-!      IF (nspins == 1) THEN
-!         CALL dbcsr_scale(almo_scf_env%matrix_p(1), 2.0_dp)
-!         !! Rescaling electronic entropy contribution by spin_factor
-!         IF (almo_scf_env%smear) THEN
-!            almo_scf_env%kTS(1) = almo_scf_env%kTS(1)*2.0_dp
-!         END IF
-!      ENDIF
-!
-!      IF (almo_scf_env%smear) THEN
-!         kTS_sum = SUM(almo_scf_env%kTS)
-!      ELSE
-!         kTS_sum = 0.0_dp
-!      ENDIF
-!
-!      CALL almo_dm_to_almo_ks(qs_env, &
-!                              almo_scf_env%matrix_p, &
-!                              almo_scf_env%matrix_ks, &
-!                              energy, &
-!                              almo_scf_env%eps_filter, &
-!                              almo_scf_env%mat_distr_aos, &
-!                              smear=almo_scf_env%smear, &
-!                              kTS_sum=kTS_sum)
-!
-!      IF (unit_nr > 0) THEN
-!         IF (almo_scf_env%almo_scf_guess .EQ. molecular_guess) THEN
-!            WRITE (unit_nr, '(T2,A38,F40.10)') "Single-molecule energy:", &
-!               SUM(mscfg_env%energy_of_frag)
-!         ENDIF
-!         WRITE (unit_nr, '(T2,A38,F40.10)') "Energy of the initial guess:", energy
-!         WRITE (unit_nr, '()')
-!      ENDIF
-!
-!      CALL timestop(handle)
-!
-!   END SUBROUTINE tidft_initial_guess
+! **************************************************************************************************
+!> \brief create the initial guess for MOs of all states
+!> \param qs_env ...
+!> \param tidft_env ...
+!> \par History
+!>       2021.10 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_initial_guess(qs_env, tidft_env)
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_initial_guess', &
+         routineP = moduleN//':'//routineN
+
+      CHARACTER(LEN=default_path_length)                 :: file_name, project_name
+      INTEGER                                            :: handle, iaspc, ispin, istore, naspc, &
+                                                            nspins, unit_nr, nmos_stateI, &
+                                                            stateI, ivar, nstates
+      INTEGER, DIMENSION(2)                              :: nelectron_spin
+      LOGICAL                                            :: aspc_guess, has_unit_metric
+      REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
+                                                            random_percentile
+      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
+      TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(dbcsr_distribution_type)                      :: dist
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
+      TYPE(qs_rho_type), POINTER                         :: rho
+      TYPE(dbcsr_type)                                   :: tempNO1
+
+      CALL timeset(routineN, handle)
+
+      NULLIFY (rho, rho_ao)
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      ! get basic quantities from the qs_env
+      CALL get_qs_env(qs_env, &
+                      dft_control=dft_control, &
+                      matrix_s=matrix_s, &
+                      atomic_kind_set=atomic_kind_set, &
+                      qs_kind_set=qs_kind_set, &
+                      particle_set=particle_set, &
+                      has_unit_metric=has_unit_metric, &
+                      para_env=para_env, &
+                      nelectron_spin=nelectron_spin, &
+                      !mscfg_env=mscfg_env, &
+                      rho=rho)
+
+      CALL qs_rho_get(rho, rho_ao=rho_ao)
+
+      nspins = tidft_env%nspins
+      nstates = tidft_env%nstates
+
+      ! create an initial guess
+      !SELECT CASE (tidft_env%tidft_guess)
+      !CASE (atomic_guess, ionic_guess)
+
+         ! use isolated atoms to generate approximate DM for the GS
+         IF (dft_control%qs_control%dftb .OR. dft_control%qs_control%semi_empirical .OR. &
+             dft_control%qs_control%xtb) THEN
+            CALL calculate_mopac_dm(rho_ao, &
+                                    matrix_s(1)%matrix, has_unit_metric, &
+                                    dft_control, particle_set, atomic_kind_set, qs_kind_set, &
+                                    nspins, nelectron_spin, &
+                                    para_env)
+         ELSE
+            CALL calculate_atomic_block_dm(rho_ao, &
+                                           matrix_s(1)%matrix, particle_set, atomic_kind_set, qs_kind_set, &
+                                           nspins, nelectron_spin, unit_nr, para_env)
+         ENDIF
+
+         ! TODO list:
+         ! D_GS -> T_GS, (done)
+         ! T_GS -> T_ES, (done)
+         ! T_GS/ES -> D_GS/ES, D_GS/ES -> H_GS/ES (+energy), T_GS/EX -> V_GS/EX
+
+         ! matrices of independent variables
+         DO stateI = 1, nstates
+
+            DO ivar = 1, 3
+
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+
+               IF ( nmos_stateI .GT. 0 ) THEN
+
+                  ! Generate random matrix
+                  ! RZK-warning: matrices do not appear to be random. Why? There are no additional
+                  ! options for dbcsr_init_random...
+                  CALL dbcsr_init_random(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+
+                  IF (stateI .EQ. 1) THEN ! ground state is treated differently
+
+                     !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+
+                     CALL dbcsr_create(tempNO1, &
+                             template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+
+                     ! Obtain GS orbitals by projecting random MOs onto the generated GS DM
+                     CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                         tidft_env%mat_s, &
+                                         tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+                                         0.0_dp, tempNO1, &
+                                         filter_eps=tidft_env%eps_filter)
+
+                     IF (ivar .EQ. 3) THEN
+                        ispin = 2 !RZK-WARNING: do we alsways have the second DM when we need it?
+                     ELSE
+                        ispin = 1
+                     ENDIF
+                     CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                         rho_ao(ispin)%matrix, &
+                                         tempNO1, &
+                                         0.0_dp, tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+                                         filter_eps=tidft_env%eps_filter)
+
+                     CALL dbcsr_release(tempNO1)
+
+                  ELSE ! excited states
+
+                     ! CINDY: introduce a new user-defined INPUT-FILE variable that specifies 
+                     ! the percient of the random component in the guess
+                     random_percentile = 0.05_dp
+                     CALL dbcsr_add(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+                             tidft_env%e_states(1)%slater_det(1)%mat_var(ivar), &
+                             random_percentile, 1.0_dp - random_percentile)
+
+                  ENDIF
+
+               ENDIF ! non-zero columns
+
+            ENDDO ! ivar
+
+         ENDDO ! stateI
+
+         ! convert independent varibles into MO matrices
+         ! CINDY: generate orbitals from mat_var for GS and excited states
+         ! deal with cases when some mat_var do not exist
+         ! CINDY: unrestricted -- will work correctly as is if restricted is implemented properly
+         ! after all, UKS is a special case of ROKS with number of paired electrons = 0
+         ! CINDY use a small system (e.g. H2O in SZ basis set, tests/QS/regtest-tidft/water.inp)
+         ! to print matrices and make sure that they are concatenated correctly
+         CALL dbcsr_print(tidft_env%e_states(1)%slater_det(1)%mat_var(1))
+         CALL dbcsr_print(tidft_env%e_states(1)%slater_det(1)%mat_var(2))
+         CALL stitch_columns( &
+                 tidft_env%e_states(1)%slater_det(1)%mat_var(1), &
+                 tidft_env%e_states(1)%slater_det(1)%mat_var(2), &
+                 tidft_env%e_states(1)%slater_det(1)%mat_t(1) &
+              )
+         CALL dbcsr_print(tidft_env%e_states(1)%slater_det(1)%mat_t(1))
+         !tidft_env%e_states(1)%slater_det(1)%mat_t(2)=&
+         !        tidft_env%e_states(1)%slater_det(1)%mat_var(1) +++ tidft_env%e_states(1)%slater_det(1)%mat_var(3)
+         !IF (tidft_env%spin_pure) THEN
+         !   tidft_env%e_states(1)%slater_det(1)%mat_t(1)=&
+         !        tidft_env%e_states(1)%slater_det(1)%mat_var(1) +++ tidft_env%e_states(1)%slater_det(1)%mat_var(ispin+1) +++
+         !        tidft_env%e_states(1)%slater_det(1)%mat_var(ispin+1)
+         !   tidft_env%e_states(1)%slater_det(1)%mat_t(2)=&
+         !        tidft_env%e_states(1)%slater_det(1)%mat_var(1)
+         !ENDIF
+
+         !! RZK: templates for looping over the key matrices
+         !! orbital matrices
+         !DO ispin = 1, nspins
+         !   DO stateI = 1, nstates
+         !      tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin)
+         !      IF (tidft_env%spin_pure) THEN
+         !         tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin)
+         !      ENDIF
+         !      DO stateJ = stateI, nstates
+         !         tidft_env%mat_sigma(stateI, stateJ, ispin)
+         !      ENDDO ! stateJ
+         !   ENDDO ! stateI
+         !ENDDO ! ispin
+
+         !! matrices of independent variables
+         !DO stateI = 1, nstates
+         !   DO ivar = 1, 3
+         !      nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+         !      IF ( nmos_stateI .GT. 0) THEN
+         !         tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar)
+         !      ENDIF
+         !   ENDDO ! ivar
+         !ENDDO ! stateI
+
+      !CASE (restart_guess)
+
+      !   project_name = logger%iter_info%project_name
+
+      !   DO ispin = 1, nspins
+      !      WRITE (file_name, '(A,I0,A)') TRIM(project_name)//"_ALMO_SPIN_", ispin, "_RESTART.mo"
+      !      CALL dbcsr_get_info(almo_scf_env%matrix_t_blk(ispin), distribution=dist)
+      !      CALL dbcsr_binary_read(file_name, distribution=dist, matrix_new=almo_scf_env%matrix_t_blk(ispin))
+      !      cs_pos = dbcsr_checksum(almo_scf_env%matrix_t_blk(ispin), pos=.TRUE.)
+      !      IF (unit_nr > 0) THEN
+      !         WRITE (unit_nr, '(T2,A,E20.8)') "Read restart ALMO "//TRIM(file_name)//" with checksum: ", cs_pos
+      !      ENDIF
+      !   ENDDO
+
+      !DEFAULT
+
+      !   CPABORT("Illegal initial guess")
+
+      !END SELECT
+
+!tiidft
+!tiidft      ! process MOs to generate DMs for all states
+!tiidft      DO ispin = 1, nspins
+!tiidft
+!tiidft         CALL orthogonalize_mos(ket=almo_scf_env%matrix_t_blk(ispin), &
+!tiidft                                overlap=almo_scf_env%matrix_sigma_blk(ispin), &
+!tiidft                                metric=almo_scf_env%matrix_s_blk(1), &
+!tiidft                                retain_locality=.TRUE., &
+!tiidft                                only_normalize=.FALSE., &
+!tiidft                                nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
+!tiidft                                eps_filter=almo_scf_env%eps_filter, &
+!tiidft                                order_lanczos=almo_scf_env%order_lanczos, &
+!tiidft                                eps_lanczos=almo_scf_env%eps_lanczos, &
+!tiidft                                max_iter_lanczos=almo_scf_env%max_iter_lanczos)
+!tiidft
+!tiidft         !! Application of an occupation-rescaling trick for smearing, if requested
+!tiidft         IF (almo_scf_env%smear) THEN
+!tiidft            CALL almo_scf_t_rescaling(matrix_t=almo_scf_env%matrix_t_blk(ispin), &
+!tiidft                                      mo_energies=almo_scf_env%mo_energies(:, ispin), &
+!tiidft                                      mu_of_domain=almo_scf_env%mu_of_domain(:, ispin), &
+!tiidft                                      real_ne_of_domain=almo_scf_env%real_ne_of_domain(:, ispin), &
+!tiidft                                      spin_kTS=almo_scf_env%kTS(ispin), &
+!tiidft                                      smear_e_temp=almo_scf_env%smear_e_temp, &
+!tiidft                                      ndomains=almo_scf_env%ndomains, &
+!tiidft                                      nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin))
+!tiidft         END IF
+!tiidft
+!tiidft         CALL almo_scf_t_to_proj(t=almo_scf_env%matrix_t_blk(ispin), &
+!tiidft                                 p=almo_scf_env%matrix_p(ispin), &
+!tiidft                                 eps_filter=almo_scf_env%eps_filter, &
+!tiidft                                 orthog_orbs=.FALSE., &
+!tiidft                                 nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
+!tiidft                                 s=almo_scf_env%matrix_s(1), &
+!tiidft                                 sigma=almo_scf_env%matrix_sigma(ispin), &
+!tiidft                                 sigma_inv=almo_scf_env%matrix_sigma_inv(ispin), &
+!tiidft                                 use_guess=.FALSE., &
+!tiidft                                 smear=almo_scf_env%smear, &
+!tiidft                                 algorithm=almo_scf_env%sigma_inv_algorithm, &
+!tiidft                                 eps_lanczos=almo_scf_env%eps_lanczos, &
+!tiidft                                 max_iter_lanczos=almo_scf_env%max_iter_lanczos, &
+!tiidft                                 inv_eps_factor=almo_scf_env%matrix_iter_eps_error_factor, &
+!tiidft                                 para_env=almo_scf_env%para_env, &
+!tiidft                                 blacs_env=almo_scf_env%blacs_env)
+!tiidft
+!tiidft      ENDDO
+!tiidft
+!tiidft      ! compute dm from the projector(s)
+!tiidft      IF (nspins == 1) THEN
+!tiidft         CALL dbcsr_scale(almo_scf_env%matrix_p(1), 2.0_dp)
+!tiidft         !! Rescaling electronic entropy contribution by spin_factor
+!tiidft         IF (almo_scf_env%smear) THEN
+!tiidft            almo_scf_env%kTS(1) = almo_scf_env%kTS(1)*2.0_dp
+!tiidft         END IF
+!tiidft      ENDIF
+!tiidft
+!tiidft      IF (almo_scf_env%smear) THEN
+!tiidft         kTS_sum = SUM(almo_scf_env%kTS)
+!tiidft      ELSE
+!tiidft         kTS_sum = 0.0_dp
+!tiidft      ENDIF
+!tiidft
+!tiidft      CALL almo_dm_to_almo_ks(qs_env, &
+!tiidft                              almo_scf_env%matrix_p, &
+!tiidft                              almo_scf_env%matrix_ks, &
+!tiidft                              energy, &
+!tiidft                              almo_scf_env%eps_filter, &
+!tiidft                              almo_scf_env%mat_distr_aos, &
+!tiidft                              smear=almo_scf_env%smear, &
+!tiidft                              kTS_sum=kTS_sum)
+!tiidft
+!tiidft      IF (unit_nr > 0) THEN
+!tiidft         IF (almo_scf_env%almo_scf_guess .EQ. molecular_guess) THEN
+!tiidft            WRITE (unit_nr, '(T2,A38,F40.10)') "Single-molecule energy:", &
+!tiidft               SUM(mscfg_env%energy_of_frag)
+!tiidft         ENDIF
+!tiidft         WRITE (unit_nr, '(T2,A38,F40.10)') "Energy of the initial guess:", energy
+!tiidft         WRITE (unit_nr, '()')
+!tiidft      ENDIF
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_initial_guess
 
 !tiidft! **************************************************************************************************
 !tiidft!> \brief store a history of matrices for later use in almo_scf_initial_guess

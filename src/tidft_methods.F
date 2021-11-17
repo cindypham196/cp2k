@@ -33,7 +33,7 @@ MODULE tidft_methods
         dbcsr_nblkcols_total, dbcsr_nblkrows_total, dbcsr_print, dbcsr_release, &
         dbcsr_reserve_block2d, dbcsr_scale_by_vector, dbcsr_set, dbcsr_set_diag, dbcsr_transposed, &
         dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create, &
-        dbcsr_complete_redistribute, dbcsr_distribution_new
+        dbcsr_complete_redistribute, dbcsr_distribution_new, dbcsr_distribution_release
    USE domain_submatrix_methods,        ONLY: &
         add_submatrices, construct_dbcsr_from_submatrices, construct_submatrices, &
         copy_submatrices, copy_submatrix_data, init_submatrices, multiply_submatrices, &
@@ -109,7 +109,7 @@ CONTAINS
       CALL dbcsr_get_info(matrix_stitched, nfullcols_total=n_combined)
       CPASSERT((n_left + n_right) .EQ. n_combined)
 
-      CALL dbcsr_get_info(matrix_left, nblkrows_total=nblocks_offset)
+      CALL dbcsr_get_info(matrix_left, nblkcols_total=nblocks_offset)
 
       CALL create_matrix_column_stitched(matrix_left, matrix_right, matrix_intermediate)
       CALL dbcsr_work_create(matrix_intermediate, work_mutable=.TRUE.)
@@ -146,6 +146,7 @@ CONTAINS
       CALL dbcsr_finalize(matrix_intermediate)
       !CALL dbcsr_filter(matrix_intermediate, eps_filter)
 
+      !CALL dbcsr_print(matrix_intermediate)
       CALL dbcsr_set(matrix_stitched, 0.0_dp)
       CALL dbcsr_complete_redistribute(matrix_intermediate, matrix_stitched, &
               keep_sparsity=.FALSE.)
@@ -250,7 +251,6 @@ CONTAINS
                                                             block_sizes_col_new, &
                                                             block_distr_col_new
       TYPE(dbcsr_distribution_type)                      :: dist_right, dist_left, dist_new
-      
 
       ! obtain distribution from the left and right matrices
       CALL dbcsr_get_info(matrix_left, distribution=dist_left)
@@ -262,7 +262,7 @@ CONTAINS
 
       CALL dbcsr_get_info(matrix_left, row_blk_size=blk_sizes_row)
       CALL dbcsr_get_info(matrix_left, col_blk_size=blk_sizes_left)
-      CALL dbcsr_get_info(matrix_left, row_blk_size=blk_sizes_right)
+      CALL dbcsr_get_info(matrix_right, col_blk_size=blk_sizes_right)
 
       ALLOCATE (block_sizes_row_new(SIZE(blk_sizes_row)))
       ALLOCATE (block_distr_row_new(SIZE(blk_distr_row)))
