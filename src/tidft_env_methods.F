@@ -43,8 +43,7 @@ MODULE tidft_env_methods
                                               section_vals_val_get
    USE kinds,                           ONLY: dp
    USE qs_environment_types,            ONLY: get_qs_env,&
-                                              qs_environment_type,&
-                                              set_qs_env
+                                              qs_environment_type,set_qs_env
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -54,7 +53,6 @@ MODULE tidft_env_methods
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_env_methods'
 
    PUBLIC :: tidft_env_create, tidft_init, tidft_env_deallocate
-
 CONTAINS
 
 ! **************************************************************************************************
@@ -321,10 +319,8 @@ CONTAINS
 !tiidft                                      tidft_env%eps_filter)
 !tiidft      CALL construct_qs_mos(qs_env, tidft_env)
 
-!tiidft
-!tiidft      ! FINISH setting job parameters here, print out job info
-!tiidft      CALL tidft_print_job_info(tidft_env, unit_nr)
-!tiidft
+      ! FINISH setting job parameters here, print out job info
+      CALL tidft_print_job_info(tidft_env, unit_nr)
 
       CALL timestop(handle)
 
@@ -539,5 +535,113 @@ CONTAINS
 
    END SUBROUTINE tidft_env_deallocate
 
-END MODULE tidft_env_methods
+!tiidft! **************************************************************************************************
+!tiidft!> \brief Prints out a short summary about the TIDFT job
+!tiidft!> \param almo_scf_env ...
+!tiidft!> \param unit_nr ...
+!tiidft!> \par History
+!tiidft!>       2021.10 created [Cindy Pham]
+!tiidft!> \author Cindy Pham
+!tiidft! **************************************************************************************************
+   SUBROUTINE tidft_print_job_info(tidft_env, unit_nr)
 
+      TYPE(tidft_env_type), INTENT(INOUT)             :: tidft_env
+      INTEGER, INTENT(IN)                             :: unit_nr
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_print_job_info', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                          :: handle, ispin, stateI, stateJ, ivar, slaterI, nslater
+
+      CALL timeset(routineN, handle)
+
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, '()')
+         WRITE (unit_nr, '(T2,A,A,A)') REPEAT("-", 32), " INFO PRINTOUT ", REPEAT("-", 32)
+
+         ! ROKS or UKS
+         IF (tidft_env%restricted) THEN
+            WRITE (unit_nr, '(T2,A)') "ROKS method is implemented"
+         ELSE
+            WRITE (unit_nr, '(T2,A)') "UKS method is implemented"
+         ENDIF
+
+         ! Spin pure
+         IF (tidft_env%spin_pure) THEN
+            WRITE (unit_nr, '(T2,A)') "Spin pure determinant is obtained"
+         ELSE
+            WRITE (unit_nr, '(T2,A)') "Mixed-states determinant is obtained"
+         ENDIF
+         
+         ! e_states: descriptor for electronic states
+         !DO stateI = 1, tidft_env%nstates
+            !DO slaterI = 1, nslater
+               !WRITE (unit_nr, '(T2,A,T48,I4)') "In state:", stateI, "Electronic states with slater det of:", tidft_env%e_states(stateI)%slater_det(slaterI)
+            !ENDDO
+         !ENDDO         
+ 
+         ! nstates = GS + ES
+         WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electronic states:", tidft_env%nstates
+                 
+         ! nspins
+         SELECT CASE (tidft_env%nspins)
+         CASE (1)
+            WRITE (unit_nr, '(T2,A,T48,A)') "Describe alpha and beta electrons using 1 T-matrix"
+         CASE (2)
+            WRITE (unit_nr, '(T2,A,T48,A)') "Describe alpha and beta electrons using 2 T-matrices"
+         END SELECT
+          
+         ! nelectrons_ab: Na and Nb in each slater determinant
+	 DO ispin = 1, tidft_env%nspins
+            DO stateI = 1, tidft_env%nstates
+               ! Na and Nb are described by the same coeffs
+	       WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "nelectrons_ab:", tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(ispin)
+
+               IF (tidft_env%spin_pure) THEN ! ROKS, flipped spin for mixed states
+	          WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "nelectrons_ab:", tidft_env%e_states(stateI)%slater_det(2)%nelectrons_ab(ispin)
+               ENDIF
+                            
+               DO stateJ = stateI, tidft_env%nstates
+                  WRITE (unit_nr, '(T2,A,T48,A)') "nelectrons_ab: ", tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(ispin)
+               ENDDO ! stateJ
+
+            ENDDO ! stateI
+
+        ENDDO ! ispin        
+
+        ! nelectrons= Na + Nb
+        WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electrons", tidft_env%nelectrons
+
+        ! deisred_multip: Na - Nb + 1
+        WRITE (unit_nr, '(T2,A,T48,I4)') "The multiplicity of states", tidft_env%desired_multip
+
+        ! unpairings
+        WRITE (unit_nr, '(T2,A,T48,I4)') "Maximum number of allowed unpairings upon excitation:", tidft_env%unpairings
+
+	! dimensionality of independent variables non-zero matrices
+        DO stateI = 1, tidft_env%nstates
+           SELECT CASE (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar))
+             CASE (1) ! doubly occ orbital
+               WRITE (unit_nr, '(T2,A,T48,A)') "Dimensionality of doubly occ orbital matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
+             CASE (2) ! singly occ alpha
+               WRITE (unit_nr, '(T2,A,T48,A)') "Dimensionality of singly occ alpha matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2)
+             CASE (3) ! singly occ beta
+               WRITE (unit_nr, '(T2,A,T48,A)') "Dimensionality of singly occ beta matrix:",tidft_env%e_states(stateI)%slater_det(1)%ncols_var(3)
+ 
+            END SELECT
+
+           !DO ivar = 1, 3 ! doubly occ orbital, singly occ alpha, and singly occ beta
+              
+              !WRITE (unit_nr, '(T2,A,T48,I4)') "Dimensionality of independent var. matrices:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+
+              !IF ( nmos_stateI .GT. 0) WRITE (unit_nr, '(T2,A,T48,I4)') " ", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)                 
+           !ENDDO ! ivar
+
+	 ENDDO ! stateI
+      ENDIF ! unit_nr > 0
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_print_job_info
+
+END MODULE tidft_env_methods

@@ -59,7 +59,7 @@ MODULE tidft_types
    !                 ELSE
    !                   nspins = 2, nvars = 3, mat_var != mat_t
    !                 ENDIF
-   !  2B. ROKS-pure  - enforce spin pure states by traking additional determinants.
+   !  2B. ROKS-pure  - enforce spin pure states by tracking additional determinants.
    !                   This approach works only for closed-shell singlet ground
    !                   states and single-excitations (i.e. max_unpairings=1).
    !                   NOTE: It automatically produces spin pure states for max_unpairings=0

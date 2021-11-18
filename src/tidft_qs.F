@@ -236,45 +236,79 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE create_distribute_mo_blocks(norbs, ncores, suggested_blk_size, blk_sizes, blk_distr)
 
-      INTEGER, INTENT(IN)                                :: norbs, ncores, &
-                                                            suggested_blk_size
-      INTEGER, DIMENSION(:), POINTER, INTENT(INOUT)      :: blk_sizes, &
-                                                            blk_distr
+      INTEGER, INTENT(IN)                                :: norbs, ncores, suggested_blk_size
 
-      INTEGER                                            :: norbs_per_core, &
-                                                            remainder, I
+      INTEGER, DIMENSION(:), POINTER, INTENT(INOUT)      :: blk_sizes, blk_distr
 
-      IF (suggested_blk_size .LE. 0) THEN
+      INTEGER, DIMENSION(:), POINTER                     :: trial_blk_sizes
 
-         ! Strategy 1: the number of blocks is equal to the number of ncores
-         IF (norbs .GE. ncores ) THEN
+      INTEGER                                            :: norbs_per_block, ndelta, igroup, best_diff, &
+                                                            remainder, I, J, nblocks, ngroups, diff, best_nblock   
+ 
+      REAL                                               :: istd2, best_std2
 
-            ALLOCATE(blk_sizes(ncores), blk_distr(ncores))
+      ! Case 1: the number of orbitals is less than the number of cores
+      IF (norbs .LT. ncores) THEN
 
-            norbs_per_core = FLOOR((1.0_dp*norbs)/ncores)
-            blk_sizes(:) = norbs_per_core
+         ALLOCATE(blk_sizes(norbs), blk_distr(norbs))
 
-            remainder = MOD(norbs, ncores)
-            IF (remainder.GT.0) blk_sizes(1:remainder)=blk_sizes(1:remainder)+1
+         blk_sizes(:) = 1
+         blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
+      
+      ! Case 2: given a suggested_blk_size, the number of distributed blks = ncores*ngroups
+      ELSE 
+         ngroups = NINT(1.0_dp*norbs/suggested_blk_size/ncores)
+         IF (ngroups .EQ. 0) ngroups = 1
+ 
+         ! Vary ngroups within 10%
+         ndelta = CEILING(1.0_dp*ngroups/10)
+	 
+	 ! assign a random large value
+         best_std2 = 1.0_dp*norbs 
+         best_diff = norbs 
 
-            ! Simple 0,1,2,...,ncores-1 sequence
-            blk_distr(:) = (/ ( I, I = 0, ncores-1, 1) /)
+         ! Choose the best ngroups 
+         DO igroup = ngroups-ndelta, ngroups+ndelta ! group_size
+            IF (igroup .EQ. 0) CYCLE
+            nblocks = ncores*igroup
+            norbs_per_block = FLOOR((1.0_dp*norbs)/nblocks)
+      
+            ALLOCATE(trial_blk_sizes(nblocks))
+            trial_blk_sizes(:) = norbs_per_block
+            remainder = MOD(norbs, nblocks)
+            IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1 
+            diff = ABS(norbs_per_block - suggested_blk_size)  
+   
+            ! Compute standard deviation square across all trial_blk_sizes 
+            istd2 = SUM(trial_blk_sizes(:)**2)/nblocks - (1.0_dp*norbs/nblocks)**2
+   
+  	    ! Choose ngroups with better distribution 
+            IF (istd2 .LT. best_std2 .OR. ABS(istd2 - best_std2) .LT. 1E-9) THEN
+               best_std2 = istd2
+               IF (istd2 .LE. best_std2 .OR. diff .LE. best_diff) THEN
+                  best_diff = diff 
+                  best_nblock = nblocks
+                  ALLOCATE(blk_sizes(best_nblock))
+                  blk_sizes = trial_blk_sizes ! best option whose value is the closest to suggested_blk_size
+               ENDIF
+            ENDIF
+         END DO 
 
-         ELSE
-
-            ALLOCATE(blk_sizes(norbs), blk_distr(norbs))
-
-            blk_sizes(:) = 1
-            blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
-
-         ENDIF
-
-      ELSE
-         ! Strategy 2: use suggested block size to distribute blocks
-         ! CINDY: your code starts here. I have already implemented strategy 1
-
+         DEALLOCATE(trial_blk_sizes)
+  
+   	 ! Find blk_distr()
+         ALLOCATE(blk_distr(best_nblock))
+         I = 0
+         DO J=1, best_nblock
+            IF (I < ncores) THEN 
+               blk_distr(J) = I
+               I = I + 1
+            ELSE 
+               blk_distr(J) = 0
+               I = 1
+            ENDIF
+         END DO
       ENDIF
-
    END SUBROUTINE create_distribute_mo_blocks
 
 !tidft! **************************************************************************************************

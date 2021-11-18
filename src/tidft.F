@@ -560,68 +560,15 @@ CONTAINS
 !tiidft      CALL timestop(handle)
 !tiidft
 !tiidft   END SUBROUTINE almo_scf_store_extrapolation_data
-!tiidft
+!tiidft       
 !tiidft! **************************************************************************************************
-!tiidft!> \brief Prints out a short summary about the ALMO SCF job
+!tiidft!> \brief Template for printing TIDFT job, moved to tidf_env_methods.F
 !tiidft!> \param almo_scf_env ...
 !tiidft!> \param unit_nr ...
 !tiidft!> \par History
-!tiidft!>       2011.10 created [Rustam Z Khaliullin]
-!tiidft!> \author Rustam Z Khaliullin
+!tiidft!>       2021.10 created [Cindy Pham]
+!tiidft!> \author Cindy Pham
 !tiidft! **************************************************************************************************
-!tiidft   SUBROUTINE almo_scf_print_job_info(almo_scf_env, unit_nr)
-!tiidft
-!tiidft      TYPE(almo_scf_env_type), INTENT(INOUT)             :: almo_scf_env
-!tiidft      INTEGER, INTENT(IN)                                :: unit_nr
-!tiidft
-!tiidft      CHARACTER(len=*), PARAMETER :: routineN = 'almo_scf_print_job_info', &
-!tiidft         routineP = moduleN//':'//routineN
-!tiidft
-!tiidft      CHARACTER(len=13)                                  :: neig_string
-!tiidft      CHARACTER(len=33)                                  :: deloc_method_string
-!tiidft      INTEGER                                            :: handle, idomain, index1_prev, sum_temp
-!tiidft      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: nneighbors
-!tiidft
-!tiidft      CALL timeset(routineN, handle)
-!tiidft
-!tiidft      IF (unit_nr > 0) THEN
-!tiidft         WRITE (unit_nr, '()')
-!tiidft         WRITE (unit_nr, '(T2,A,A,A)') REPEAT("-", 32), " ALMO SETTINGS ", REPEAT("-", 32)
-!tiidft
-!tiidft         WRITE (unit_nr, '(T2,A,T48,E33.3)') "eps_filter:", almo_scf_env%eps_filter
-!tiidft
-!tiidft         IF (almo_scf_env%almo_update_algorithm .EQ. almo_scf_skip) THEN
-!tiidft            WRITE (unit_nr, '(T2,A)') "skip optimization of block-diagonal ALMOs"
-!tiidft         ELSE
-!tiidft            WRITE (unit_nr, '(T2,A)') "optimization of block-diagonal ALMOs:"
-!tiidft            SELECT CASE (almo_scf_env%almo_update_algorithm)
-!tiidft            CASE (almo_scf_diag)
-!tiidft               ! the DIIS algorith is the only choice for the diagonlaization-based algorithm
-!tiidft               CALL print_optimizer_options(almo_scf_env%opt_block_diag_diis, unit_nr)
-!tiidft            CASE (almo_scf_pcg)
-!tiidft               ! print out PCG options
-!tiidft               CALL print_optimizer_options(almo_scf_env%opt_block_diag_pcg, unit_nr)
-!tiidft            END SELECT
-!tiidft         ENDIF
-!tiidft
-!tiidft         SELECT CASE (almo_scf_env%deloc_method)
-!tiidft         CASE (almo_deloc_none)
-!tiidft            deloc_method_string = "NONE"
-!tiidft         CASE (almo_deloc_x)
-!tiidft            deloc_method_string = "FULL_X"
-!tiidft         CASE (almo_deloc_scf)
-!tiidft            deloc_method_string = "FULL_SCF"
-!tiidft         CASE (almo_deloc_x_then_scf)
-!tiidft            deloc_method_string = "FULL_X_THEN_SCF"
-!tiidft         CASE (almo_deloc_xalmo_1diag)
-!tiidft            deloc_method_string = "XALMO_1DIAG"
-!tiidft         CASE (almo_deloc_xalmo_x)
-!tiidft            deloc_method_string = "XALMO_X"
-!tiidft         CASE (almo_deloc_xalmo_scf)
-!tiidft            deloc_method_string = "XALMO_SCF"
-!tiidft         END SELECT
-!tiidft         WRITE (unit_nr, '(T2,A,T48,A33)') "delocalization:", TRIM(deloc_method_string)
-!tiidft
 !tiidft         IF (almo_scf_env%deloc_method .NE. almo_deloc_none) THEN
 !tiidft
 !tiidft            SELECT CASE (almo_scf_env%deloc_method)
@@ -829,21 +776,15 @@ CONTAINS
 !tiidft
 !tiidft         ELSE ! too big to print details for each fragment
 !tiidft
-!tiidft            WRITE (unit_nr, '(T2,A)') "The system is too big to print details for each fragment."
+!tiidft          WRITE (unit_nr, '(T2,A)') "The system is too big to print details for each fragment."
 !tiidft
-!tiidft         ENDIF ! how many fragments?
+!tiidft        ENDIF ! how many fragments?
 !tiidft
 !tiidft         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
 !tiidft
 !tiidft         WRITE (unit_nr, '()')
 !tiidft
 !tiidft         DEALLOCATE (nneighbors)
-!tiidft
-!tiidft      ENDIF ! unit_nr > 0
-!tiidft
-!tiidft      CALL timestop(handle)
-!tiidft
-!tiidft   END SUBROUTINE almo_scf_print_job_info
 !tiidft
 !tiidft! **************************************************************************************************
 !tiidft!> \brief Initializes the ALMO SCF copy of the AO overlap matrix
