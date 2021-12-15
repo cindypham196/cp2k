@@ -17,6 +17,7 @@
 
     &TIDFT
       N_EXCITED_STATES           2
+      SUGGESTED_BLK_SIZE	 34
       EPS_FILTER                 1.0E-8
       SPIN_PURE                  TRUE
       MAX_UNPAIR                 1

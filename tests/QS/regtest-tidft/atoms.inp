@@ -1,0 +1,60 @@
+&GLOBAL
+  PROJECT H2O
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD QS
+  &DFT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    BASIS_SET_FILE_NAME GTH_BASIS_SETS
+    MULTIPLICITY        1
+    ROKS                TRUE
+    &QS
+      TIDFT T
+      EPS_DEFAULT 1.0E-12
+    &END QS
+
+    &TIDFT
+      N_EXCITED_STATES           2
+      SUGGESTED_BLK_SIZE	 34
+      EPS_FILTER                 1.0E-8
+      SPIN_PURE                  TRUE
+      MAX_UNPAIR                 1
+    &END TIDFT
+
+    &MGRID
+      CUTOFF 200 ! 320
+      NGRIDS 5
+    &END MGRID
+    &XC
+      &XC_FUNCTIONAL BLYP
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 4.5198722000    7.8286483000    7.3588725000
+      MULTIPLE_UNIT_CELL 1 1 1
+    &END CELL
+    &TOPOLOGY
+      MULTIPLE_UNIT_CELL 1 1 1
+    &END
+    &COORD
+      He      0.173600    0.116400   -0.189400  ! He
+    !  H      -0.435600    0.057800    0.000000 ! H_ATOM
+    !  H       0.243700    0.552400   -0.509000 ! H2
+    !  H      -0.356300    0.552400   -0.509000 ! H2
+    &END COORD
+    &KIND H
+      BASIS_SET SZV-GTH
+      POTENTIAL GTH-BLYP-q1
+    &END KIND
+    &KIND He
+      BASIS_SET SZV-GTH
+      POTENTIAL GTH-BLYP-q2
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+
+

@@ -105,12 +105,12 @@ CONTAINS
    SUBROUTINE tidft_read_write_input(input, tidft_env)
       TYPE(section_vals_type), POINTER                   :: input
       TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
-
+  
       CHARACTER(len=*), PARAMETER :: routineN = 'tidft_read_write_input', &
          routineP = moduleN//':'//routineN
-
-      INTEGER                                            :: handle, n_rep, &
-                                                            jj, nmultips, GS_multips
+      
+      INTEGER                                            :: handle, n_rep, suggested_blk_size, &
+                                                            jj, GS_multips, nmultips 
       INTEGER, DIMENSION(:), POINTER                     :: tmplist
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
       TYPE(section_vals_type), POINTER :: almo_analysis_section, almo_opt_diis_section, &
@@ -139,6 +139,10 @@ CONTAINS
       CALL section_vals_val_get(tidft_section, "MAX_UNPAIR", &
               i_val=tidft_env%unpairings)
 
+      ! CINDY: record suggested_blk_size inside tidft_env
+      CALL section_vals_val_get(tidft_section, "SUGGESTED_BLK_SIZE", &
+              i_val=suggested_blk_size) !tidft_env%suggested_blk_size
+      
 !tiidft      ! optimizers
 !tiidft      CALL section_vals_val_get(almo_opt_diis_section, "EPS_ERROR", &
 !tiidft                                r_val=almo_scf_env%opt_block_diag_diis%eps_error)
@@ -162,6 +166,7 @@ CONTAINS
 !tiidft         CPABORT("1-step delocalization correction requires a different algorithm")
 !tiidft      ENDIF
 
+    
       CALL timestop(handle)
 
    END SUBROUTINE tidft_read_write_input
@@ -192,7 +197,7 @@ CONTAINS
       TYPE(section_vals_type), POINTER                   :: input
 
       CALL timeset(routineN, handle)
-
+      
       ! define the output_unit
       logger => cp_get_default_logger()
       IF (logger%para_env%ionode) THEN
@@ -263,7 +268,7 @@ CONTAINS
          ENDIF
          CPABORT("Number of spins in DFT and TIDFT are different")
       ENDIF
-
+ 
       nstates=tidft_env%nstates
       ALLOCATE(tidft_env%e_states(nstates))
       nslater = 1
@@ -342,7 +347,7 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       INTEGER                                            :: handle, ispin, &
-                                                            nstates, &
+                                                            nstates, suggested_blk_size, &
                                                             nspins, ivar, &
                                                             stateI, &
                                                             nmos_stateI, &
@@ -351,15 +356,16 @@ CONTAINS
                                                             nmos_stateJ
 
       CALL timeset(routineN, handle)
-
+      
+      ! CINDY
+      !suggested_blk_size = tidft_env%suggested_blk_size
       CALL matrix_layout( &
               matrix_ao_template = matrix_s0, &
               matrix_new = tidft_env%mat_s , &
               name_new = 'm_s', &
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
               symmetry_new = dbcsr_type_symmetric)
-
-
+      
       nstates = tidft_env%nstates
       nspins = tidft_env%nspins
 
@@ -600,7 +606,7 @@ CONTAINS
       CHARACTER(len=*), PARAMETER :: routineN = 'tidft_print_job_info', &
          routineP = moduleN//':'//routineN
 
-      INTEGER                                          :: handle, ispin, stateI, stateJ, ivar, slaterI, nslater
+      INTEGER                                         :: handle, ispin, stateI, stateJ, ivar, slaterI, nslater, nstates
 
       CALL timeset(routineN, handle)
 
@@ -621,14 +627,10 @@ CONTAINS
          ELSE
             WRITE (unit_nr, '(T2,A)') "Mixed-states determinant is obtained"
          ENDIF
-         
-         ! e_states: descriptor for electronic states
-         !DO stateI = 1, tidft_env%nstates
-            !DO slaterI = 1, nslater
-               !WRITE (unit_nr, '(T2,A,T48,I4)') "In state:", stateI, "Electronic states with slater det of:", tidft_env%e_states(stateI)%slater_det(slaterI)
-            !ENDDO
-         !ENDDO         
- 
+
+         ! suggested_blk_size
+         !WRITE (unit_nr, '(T2,A,T48,I4)') "Suggested blk size:", tidft_env%suggested_blk_size
+
          ! nstates = GS + ES
          WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electronic states:", tidft_env%nstates
                  
@@ -639,33 +641,25 @@ CONTAINS
          CASE (2)
             WRITE (unit_nr, '(T2,A,T48,A)') "Describe alpha and beta electrons using 2 T-matrices"
          END SELECT
-          
-         ! nelectrons_ab: Na and Nb in each slater determinant
-	 DO ispin = 1, tidft_env%nspins
-            DO stateI = 1, tidft_env%nstates
-               ! Na and Nb are described by the same coeffs
-	       WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "nelectrons_ab:", tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(ispin)
 
-               IF (tidft_env%spin_pure) THEN ! ROKS, flipped spin for mixed states
-	          WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "nelectrons_ab:", tidft_env%e_states(stateI)%slater_det(2)%nelectrons_ab(ispin)
+         ! Na, Nb, and total electrons
+         DO stateI = 1, tidft_env%nstates
+            DO slaterI = 1, tidft_env%e_states(stateI)%nslater
+               IF (tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1) .NE. 0) THEN
+                  WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "N_alpha:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1)
+               ELSE IF (tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2) .NE. 0) THEN
+                  WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "N_beta:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
                ENDIF
-                            
-               DO stateJ = stateI, tidft_env%nstates
-                  WRITE (unit_nr, '(T2,A,T48,A)') "nelectrons_ab: ", tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(ispin)
-               ENDDO ! stateJ
-
-            ENDDO ! stateI
-
-        ENDDO ! ispin        
-
-        ! nelectrons= Na + Nb
-        WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electrons", tidft_env%nelectrons
+            ENDDO
+         ENDDO
+         WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electrons", tidft_env%nelectrons
 
         ! deisred_multip: Na - Nb + 1
         WRITE (unit_nr, '(T2,A,T48,I4)') "The multiplicity of states", tidft_env%desired_multip
 
         ! unpairings
-        WRITE (unit_nr, '(T2,A,T48,I4)') "Maximum number of allowed unpairings upon excitation:", tidft_env%unpairings
+        WRITE (unit_nr, '(T2,A,T48,I4)') "Max. # allowed unpairings upon excitation:", tidft_env%unpairings
+	
 
 	! dimensionality of independent variables non-zero matrices
         DO stateI = 1, tidft_env%nstates
@@ -679,14 +673,8 @@ CONTAINS
  
             END SELECT
 
-           !DO ivar = 1, 3 ! doubly occ orbital, singly occ alpha, and singly occ beta
+         ENDDO ! stateI
 
-              !WRITE (unit_nr, '(T2,A,T48,I4)') "Dimensionality of independent var. matrices:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
-
-              !IF ( nmos_stateI .GT. 0) WRITE (unit_nr, '(T2,A,T48,I4)') " ", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
-           !ENDDO ! ivar
-
-	 ENDDO ! stateI
       ENDIF ! unit_nr > 0
 
       CALL timestop(handle)

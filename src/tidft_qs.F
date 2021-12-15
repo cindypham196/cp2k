@@ -106,6 +106,8 @@ CONTAINS
    SUBROUTINE matrix_layout(matrix_ao_template, matrix_new, name_new, &
       orbital_type_new, symmetry_new, nmos)
 
+      !CINDY
+      TYPE(tidft_env_type)                               :: tidft_env
       TYPE(dbcsr_type), INTENT(IN)                       :: matrix_ao_template
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix_new
       CHARACTER(len=*), INTENT(IN)                       :: name_new
@@ -116,7 +118,7 @@ CONTAINS
       INTEGER                                            :: dimen, handle, hold, iatom, iblock_col, &
                                                             iblock_row, imol, mynode, natoms, &
                                                             nblkrows_tot, nlength, nmols, row, &
-                                                            ncores
+                                                            ncores, suggested_blk_size
       INTEGER, DIMENSION(2)                              :: local_nmos
       INTEGER, DIMENSION(:), POINTER :: blk_distr, blk_sizes, block_sizes_new, col_distr_new, &
          col_sizes_new, distr_new_array, row_distr_new, row_sizes_new
@@ -162,10 +164,11 @@ CONTAINS
                ELSE !columns
                   CALL dbcsr_distribution_get(dist_qs, npcols=ncores)
                ENDIF
+               
                CALL create_distribute_mo_blocks( &
                        norbs = local_nmos(dimen), &
                        ncores = ncores, &
-                       suggested_blk_size = -1, &
+                       suggested_blk_size = suggested_blk_size, &
                        blk_sizes = block_sizes_new, &
                        blk_distr = distr_new_array)
 
@@ -237,6 +240,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE create_distribute_mo_blocks(norbs, ncores, suggested_blk_size, blk_sizes, blk_distr)
 
+      
       INTEGER, INTENT(IN)                                :: norbs, ncores, suggested_blk_size
 
       INTEGER, DIMENSION(:), POINTER, INTENT(INOUT)      :: blk_sizes, blk_distr
@@ -248,6 +252,7 @@ CONTAINS
  
       REAL                                               :: istd2, best_std2
 
+   
       ! Case 1: the number of orbitals is less than the number of cores
       IF (norbs .LT. ncores) THEN
 
@@ -264,7 +269,7 @@ CONTAINS
          ! Vary ngroups within 10%
          ndelta = CEILING(1.0_dp*ngroups/10)
 	 
-	 ! assign a random large value
+	      ! assign a random large value
          best_std2 = 1.0_dp*norbs 
          best_diff = norbs 
 
