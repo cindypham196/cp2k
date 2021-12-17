@@ -356,6 +356,7 @@ WRITE(*,*) "Before dbcsr_copy pairs-nonzero, singly-occ-zero"
 WRITE(*,*) "Before dbcsr_copy pairs-zero, singly-occ-nonzero"
                         CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin+1), &
                                         tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(ispin))
+                        !RZK-WARNING: Should deal with the triplet state here!
                      ENDIF
                   ENDIF
                ENDDO ! end ispin
