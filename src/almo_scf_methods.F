@@ -1782,7 +1782,7 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief self-explanatory
 !> \param matrix ...
-!> \param nocc_of_domain ...
+!> \param nocc_of_domain - if not allocated, the code does nothing
 !> \param value ...
 !> \param
 !> \par History
@@ -1801,34 +1801,39 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: p_new_block
       TYPE(dbcsr_distribution_type)                      :: dist
 
-      CALL dbcsr_get_info(matrix, distribution=dist)
-      CALL dbcsr_distribution_get(dist, mynode=mynode)
-      !mynode = dbcsr_mp_mynode(dbcsr_distribution_mp(dbcsr_distribution(matrix)))
-      CALL dbcsr_work_create(matrix, work_mutable=.TRUE.)
+      ! do not do anything
+      IF (nocc_of_domain(1).GE.0) THEN
 
-      nblkrows_tot = dbcsr_nblkrows_total(matrix)
+         CALL dbcsr_get_info(matrix, distribution=dist)
+         CALL dbcsr_distribution_get(dist, mynode=mynode)
+         !mynode = dbcsr_mp_mynode(dbcsr_distribution_mp(dbcsr_distribution(matrix)))
+         CALL dbcsr_work_create(matrix, work_mutable=.TRUE.)
 
-      DO row = 1, nblkrows_tot
-         IF (nocc_of_domain(row) == 0) THEN
-            tr = .FALSE.
-            iblock_row = row
-            iblock_col = row
-            CALL dbcsr_get_stored_coordinates(matrix, iblock_row, iblock_col, hold)
-            IF (hold .EQ. mynode) THEN
-               NULLIFY (p_new_block)
-               CALL dbcsr_get_block_p(matrix, iblock_row, iblock_col, p_new_block, found)
-               IF (found) THEN
-                  p_new_block(1, 1) = value
-               ELSE
-                  CALL dbcsr_reserve_block2d(matrix, iblock_row, iblock_col, p_new_block)
-                  CPASSERT(ASSOCIATED(p_new_block))
-                  p_new_block(1, 1) = value
-               END IF
-            END IF ! mynode
-         END IF !zero-electron block
-      END DO
+         nblkrows_tot = dbcsr_nblkrows_total(matrix)
 
-      CALL dbcsr_finalize(matrix)
+         DO row = 1, nblkrows_tot
+            IF (nocc_of_domain(row) == 0) THEN
+               tr = .FALSE.
+               iblock_row = row
+               iblock_col = row
+               CALL dbcsr_get_stored_coordinates(matrix, iblock_row, iblock_col, hold)
+               IF (hold .EQ. mynode) THEN
+                  NULLIFY (p_new_block)
+                  CALL dbcsr_get_block_p(matrix, iblock_row, iblock_col, p_new_block, found)
+                  IF (found) THEN
+                     p_new_block(1, 1) = value
+                  ELSE
+                     CALL dbcsr_reserve_block2d(matrix, iblock_row, iblock_col, p_new_block)
+                     CPASSERT(ASSOCIATED(p_new_block))
+                     p_new_block(1, 1) = value
+                  ENDIF
+               ENDIF ! mynode
+            ENDIF !zero-electron block
+         ENDDO
+
+         CALL dbcsr_finalize(matrix)
+
+      ENDIF ! allocated
 
    END SUBROUTINE set_zero_electron_blocks_in_mo_mo_matrix
 

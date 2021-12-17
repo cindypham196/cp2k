@@ -108,11 +108,10 @@ CONTAINS
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
-    
-      ! CINDY: create new keyword for suggested_blk_size
-      CALL keyword_create(keyword, __LOCATION__, name="SUGGESTED_BLK_SIZE", &
-            description="Specified the number of suggested_blk_size from users", &
-            usage="SUGGESTED_BLK_SIZE 50", default_i_val=50)
+
+      CALL keyword_create(keyword, __LOCATION__, name="SUGGESTED_MO_BLOCK_SIZE", &
+                          description="User suggested block size for molecular orbitals", &
+                          usage="SUGGESTED_MO_BLOCK_SIZE 50", default_i_val=20)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -197,8 +196,7 @@ CONTAINS
       !tiidftCALL create_matrix_iterate_section(subsection)
       !tiidftCALL section_add_subsection(section, subsection)
       !tiidftCALL section_release(subsection)
-      
-      
+
    END SUBROUTINE create_tidft_section
 
 !tiidft! **************************************************************************************************

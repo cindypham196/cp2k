@@ -38,6 +38,7 @@ MODULE tidft
    USE tidft_methods,                   ONLY: stitch_columns
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init
+   USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE bibliography,                    ONLY: Khaliullin2013,&
                                               Kolafa2004,&
@@ -56,10 +57,11 @@ MODULE tidft
    USE cp_para_env,                     ONLY: cp_para_env_release,&
                                               cp_para_env_retain
    USE cp_para_types,                   ONLY: cp_para_env_type
+   USE dbcsr_local,                     ONLY: dbcsr_init_random
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
         dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
-        dbcsr_get_info, dbcsr_get_stored_coordinates, dbcsr_init_random, &
+        dbcsr_get_info, dbcsr_get_stored_coordinates, &
         dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
         dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_nblkcols_total, &
         dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, dbcsr_reserve_block2d, dbcsr_scale, &
@@ -180,11 +182,14 @@ CONTAINS
       CHARACTER(LEN=default_path_length)                 :: file_name, project_name
       INTEGER                                            :: handle, iaspc, ispin, istore, naspc, &
                                                             nspins, unit_nr, nmos_stateI, &
-                                                         stateI, ivar, nstates, count, nslater,slaterI, nt
+                                                            stateI, ivar, nstates, idet, &
+                                                            ndets, slaterI
       INTEGER, DIMENSION(2)                              :: nelectron_spin
       LOGICAL                                            :: aspc_guess, has_unit_metric
       REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
-                                                            random_percentile
+                                                            random_percentile, &
+                                                            energy_singlet, energy_triplet, &
+                                                            state_energy, obj_energy
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(cp_para_env_type), POINTER                    :: para_env
@@ -195,6 +200,7 @@ CONTAINS
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(dbcsr_type)                                   :: tempNO1
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: fake_e_per_block
 
       CALL timeset(routineN, handle)
 
@@ -225,6 +231,8 @@ CONTAINS
 
       nspins = tidft_env%nspins
       nstates = tidft_env%nstates
+      ndets=1
+      IF (tidft_env%triplet_correction) ndets = 2
 
       ! create an initial guess
       !SELECT CASE (tidft_env%tidft_guess)
@@ -244,35 +252,19 @@ CONTAINS
                                            nspins, nelectron_spin, unit_nr, para_env)
          ENDIF
 
-         ! TODO list:
-         ! D_GS -> T_GS, (done)
-         ! T_GS -> T_ES, (done)
-         ! T_GS/ES -> D_GS/ES, D_GS/ES -> H_GS/ES (+energy), T_GS/EX -> V_GS/EX
-         
-         nslater = 1
-         IF (tidft_env%spin_pure) nslater = 2
-         DO stateI = 1, nstates 
-            ! Check valid system
-            !IF (tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(1) .EQ. 0 .AND. &
-            !   tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(2) .EQ. 0) THEN
-            !      CPABORT("Number of electrons cannot be zero!")
-            !ELSE IF (tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(1) .EQ. 0 .OR. &
-            !   tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(2) .EQ. 0) THEN
-            !      CPABORT("Number of alpha electrons cannot be zero!")
-            !ELSE
-            !ENDIF 
+         ! matrices of independent variables
+         ! unrestricted case: no. of electron pairs is zero
+         DO stateI = 1, nstates
 
-            ! Generate matrices of independent variables: mat_var X1, X2, X3
             DO ivar = 1, 3
 
-               nmos_stateI = tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ivar)
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
 
                IF ( nmos_stateI .GT. 0 ) THEN
 
                   ! Generate random matrix
-                  ! RZK-warning: matrices do not appear to be random. Why? There are no additional
-                  ! options for dbcsr_init_random...
-                  CALL dbcsr_init_random(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+                  CALL dbcsr_init_random(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+                          mini_seed=stateI+ivar*2)
 
                   IF (stateI .EQ. 1) THEN ! ground state is treated differently
 
@@ -301,106 +293,100 @@ CONTAINS
                      CALL dbcsr_release(tempNO1)
 
                   ELSE ! excited states
-                     ! CINDY: introduce a new user-defined INPUT-FILE variable that specifies 
+                     ! RZK-WARNING: introduce a new user-defined INPUT-FILE variable that specifies 
                      ! the percient of the random component in the guess
                      random_percentile = 0.05_dp
                      ! Obtain ES by slightly perturbing generated GS orbitals
-                     CALL dbcsr_add(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(ivar), &
-                        tidft_env%e_states(1)%slater_det(slaterI)%mat_var(ivar), &
+                     CALL dbcsr_add(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+                        tidft_env%e_states(1)%slater_det(1)%mat_var(ivar), &
                         random_percentile, 1.0_dp - random_percentile)
                   ENDIF
 
                ENDIF ! non-zero columns
+
             ENDDO ! end ivar
 
-            ! Combine X1-X3 to generate DM mat_t(alpha) and mat_t(beta) for ROKS and UKS
-            ! Do we have paired e-? X1
-            DO slaterI = nslater, 1, -1 ! do T before S to avoid overwrite in the X1 U X2 step
-               ! matrices of independent variables   
-               IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) .NE. 0) THEN 
-                  DO ispin = 1, nspin
+         ENDDO  ! end stateI
+
+
+         ! CINDY's code starts here
+         ! Combine X1-X3 to generate MOs mat_t(alpha) and mat_t(beta) for ROKS and UKS
+         DO stateI = 1, nstates
+            DO slaterI = ndets, 1, -1 ! do T before S to avoid overwrite in the X1 U X2 step
+               DO ispin = 1, nspin
+                  ! Do we have paired e-? X1
+                  IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) .NE. 0) THEN
 WRITE(*,*) "State, determinant, sipn: ", stateI, slaterI, ispin
                      IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .NE. 0) THEN
+                        ! combine paired and unpaired electrons
                         IF (slaterI .EQ. 2)  THEN ! Triplet
                            IF (ispin .EQ. 1) THEN ! T_alpha
                                  CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), & ! X1 U X2
-                                                      tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), & 
-                                                      tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin)) 
+                                                      tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                                                      tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin))
                                  CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), & ! X1 U X2 U X3
-                                                      tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), & 
+                                                      tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
                                                       tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
-                              ELSE ! T_beta = X1, copy mat_var(1) into mat_t
+                           ELSE ! T_beta = X1, copy mat_var(1) into mat_t
 WRITE(*,*) "Before dbcsr_copy pairs-nonzero, singly-occ-nonzero"
                                  CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin), &
                                                  tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
-                              ENDIF
-                           ELSE ! Singlet state, here can do for both beta and alpha
-                              CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), & ! X1 U X2 and X1 U X3
-                                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), & 
-                                                   tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin)) 
                            ENDIF
-                        ELSE !copy mat_var(1) into mat_t
+                        ELSE ! Singlet state, here can do for both beta and alpha
+                              CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), & ! X1 U X2 and X1 U X3
+                                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
+                                                   tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
+                        ENDIF
+                     ELSE !copy mat_var(1) into mat_t
 WRITE(*,*) "Before dbcsr_copy pairs-nonzero, singly-occ-zero"
                            CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin), &
                                            tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
-                        ENDIF
-                  
-                     ! Print out result
+                     ENDIF
+
+                     ! Print out result. Cindy: This will fail because the second determinant does not contain mat_var
                      CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(1))
                      CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(2))
                      CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
 
-            ELSE ! No paired e-. Do we have unpaired e-? n_alpha and n_beta are different
-               IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .EQ. 0) THEN
-                  IF (ispin .EQ. 1) CPABORT("Number of alpha electrons cannot be zero!") 
-               ELSE ! UKS
+                  ELSE ! No paired e-. Do we have unpaired e-? n_alpha and n_beta are different
+                     IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .EQ. 0) THEN
+                        IF (ispin .EQ. 1) CPABORT("Number of alpha electrons cannot be zero!")
+                     ELSE ! No paired electrons, only unpaired. This also takes care of UKS
 WRITE(*,*) "Before dbcsr_copy pairs-zero, singly-occ-nonzero"
-                  CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(ispin), & 
-                                  tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin))  
-               ENDIF
-            ENDIF
-         ENDDO ! end ispin
-         ENDDO ! end slaterI
+                        CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin+1), &
+                                        tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(ispin))
+                     ENDIF
+                  ENDIF
+               ENDDO ! end ispin
+            ENDDO ! end slaterI
          ENDDO  ! end stateI
 
          ! convert independent varibles into MO matrices
          ! CINDY: generate orbitals from mat_var for GS and excited states
          ! deal with cases when some mat_var do not exist
-   
+
          ! CINDY: unrestricted -- will work correctly as is if restricted is implemented properly
          ! after all, UKS is a special case of ROKS with number of paired electrons = 0
-         
+
          ! CINDY use a small system (e.g. H2O in SZ basis set, tests/QS/regtest-tidft/water.inp)
          ! to print matrices and make sure that they are concatenated correctly
-         !CALL dbcsr_print(tidft_env%e_states(1)%slater_det(1)%mat_var(1))
-         !CALL dbcsr_print(tidft_env%e_states(1)%slater_det(1)%mat_var(2))
-         !CALL stitch_columns(tidft_env%e_states(1)%slater_det(1)%mat_var(1), &
-         !      tidft_env%e_states(1)%slater_det(1)%mat_var(2), &
-         !      tidft_env%e_states(1)%slater_det(1)%mat_t(1) )
-         !CALL dbcsr_print(tidft_env%e_states(1)%slater_det(1)%mat_t(1))
-         !tidft_env%e_states(1)%slater_det(1)%mat_t(2)=&
-         !        tidft_env%e_states(1)%slater_det(1)%mat_var(1) +++ tidft_env%e_states(1)%slater_det(1)%mat_var(3)
-         !IF (tidft_env%spin_pure) THEN
-         !   tidft_env%e_states(1)%slater_det(1)%mat_t(1)=&
-         !        tidft_env%e_states(1)%slater_det(1)%mat_var(1) +++ tidft_env%e_states(1)%slater_det(1)%mat_var(ispin+1) +++
-         !        tidft_env%e_states(1)%slater_det(1)%mat_var(ispin+1)
-         !   tidft_env%e_states(1)%slater_det(1)%mat_t(2)=&
-         !        tidft_env%e_states(1)%slater_det(1)%mat_var(1)
-         !ENDIF
 
          !! RZK: templates for looping over the key matrices
          !! orbital matrices
-         !DO ispin = 1, nspins
-         !   DO stateI = 1, nstates
-         !      tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin)
-         !      IF (tidft_env%spin_pure) THEN
-         !         tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin)
-         !      ENDIF
-         !      DO stateJ = stateI, nstates
-         !         tidft_env%mat_sigma(stateI, stateJ, ispin)
-         !      ENDDO ! stateJ
-         !   ENDDO ! stateI
-         !ENDDO ! ispin
+         !DO idet = 1, ndets
+         !   DO ispin = 1, nspins
+         !      DO stateI = 1, nstates
+         !         nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+         !         IF ( nmos_stateI .GT. 0) THEN
+         !            DO stateJ = stateI, nstates
+         !               nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(idet)%nelectrons_ab(ispin)
+         !               IF ( nmos_stateJ .GT. 0) THEN
+         !               ENDIF ! zero MOs for state J
+         !            ENDDO ! stateJ
+         !         ENDIF ! zero MOs
+         !      ENDDO ! stateI
+         !   ENDDO ! ispin
+         !ENDDO ! idet
 
          !! matrices of independent variables
          !DO stateI = 1, nstates
@@ -411,6 +397,93 @@ WRITE(*,*) "Before dbcsr_copy pairs-zero, singly-occ-nonzero"
          !      ENDIF
          !   ENDDO ! ivar
          !ENDDO ! stateI
+
+         ! This is RZK code to convert independent variables into MOs
+         ! Should work for unrestricted case
+         ! Reverse order of determinants allows to use empty singlet determinants
+         ! to temporarily store the triplet determinant
+IF (unit_nr > 0) THEN
+   WRITE (unit_nr, *) "NStates", nstates
+   WRITE (unit_nr, *) "NSpins", nspins
+   WRITE (unit_nr, *) "NDets", ndets
+ENDIF
+
+         DO idet = ndets, 1, -1
+            DO stateI = 1, nstates
+               DO ispin = 1, nspins
+
+IF (unit_nr > 0) THEN
+WRITE (unit_nr, *) "idet,istate,ispin", idet, stateI, ispin
+WRITE (unit_nr, *) "pairs", tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1)
+WRITE (unit_nr, *) "single es", tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1)
+WRITE (unit_nr, *) "total", tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+ENDIF
+
+                  IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1) .EQ. 0) THEN
+                     IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
+                        ! there are no electrons
+                        IF (ispin .EQ. 1) THEN
+                           CPABORT("No alpha electrons.")
+                        !ELSE
+                        !   CPWARN("No beta electrons. MO matrix is not created.")
+                        ENDIF
+                     ELSE
+                        ! there are only unpaired electrons
+                        IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
+                           ! combine alpha and beta into alpha
+                           CPASSERT(ispin.EQ.1) ! for triplets, cannot have 0 pairs and non-zero unpaired beta electrons
+                           CALL stitch_columns( &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+                                   tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+                                )
+                        ELSE
+                           CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
+                        ENDIF
+                     ENDIF
+                  ELSE
+                     IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
+                        ! there are only paired electrons
+                        IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
+                           CPASSERT(ispin.EQ.2) ! for triplets, cannot have zero unpaired alpha electrons
+                           ! for beta spin simply copy pairs
+                        ENDIF
+                        CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
+                     ELSE
+!CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_var(1))
+!CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_var(ispin+1))
+!CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+                        IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
+                           ! for beta spin do nothing - it is already taken care of
+                           CPASSERT(ispin.EQ.1) ! for triplets, cannot have non-zero unpaired beta electrons
+                           ! for alpha spin combine: pairs + alpha + beta
+                           ! use mat_t of singlet as a temporary storage
+                           CALL stitch_columns( &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin) &
+                                )
+                           CALL stitch_columns( &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+2), &
+                                   tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+                                )
+                        ELSE
+                           ! combine paired and unpared
+                           CALL stitch_columns( &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
+                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
+                                   tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+                                )
+                        ENDIF ! triplet correction
+                     ENDIF ! zero unpaired?
+                  ENDIF ! zero paired?
+               ENDDO ! ispin
+            ENDDO ! stateI
+         ENDDO ! idet
+
 
       !CASE (restart_guess)
 
@@ -432,84 +505,144 @@ WRITE(*,*) "Before dbcsr_copy pairs-zero, singly-occ-nonzero"
 
       !END SELECT
 
-!tiidft
-!tiidft      ! process MOs to generate DMs for all states
-!tiidft      DO ispin = 1, nspins
-!tiidft
-!tiidft         CALL orthogonalize_mos(ket=almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                overlap=almo_scf_env%matrix_sigma_blk(ispin), &
-!tiidft                                metric=almo_scf_env%matrix_s_blk(1), &
-!tiidft                                retain_locality=.TRUE., &
-!tiidft                                only_normalize=.FALSE., &
-!tiidft                                nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
-!tiidft                                eps_filter=almo_scf_env%eps_filter, &
-!tiidft                                order_lanczos=almo_scf_env%order_lanczos, &
-!tiidft                                eps_lanczos=almo_scf_env%eps_lanczos, &
-!tiidft                                max_iter_lanczos=almo_scf_env%max_iter_lanczos)
-!tiidft
-!tiidft         !! Application of an occupation-rescaling trick for smearing, if requested
-!tiidft         IF (almo_scf_env%smear) THEN
-!tiidft            CALL almo_scf_t_rescaling(matrix_t=almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                      mo_energies=almo_scf_env%mo_energies(:, ispin), &
-!tiidft                                      mu_of_domain=almo_scf_env%mu_of_domain(:, ispin), &
-!tiidft                                      real_ne_of_domain=almo_scf_env%real_ne_of_domain(:, ispin), &
-!tiidft                                      spin_kTS=almo_scf_env%kTS(ispin), &
-!tiidft                                      smear_e_temp=almo_scf_env%smear_e_temp, &
-!tiidft                                      ndomains=almo_scf_env%ndomains, &
-!tiidft                                      nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin))
-!tiidft         END IF
-!tiidft
-!tiidft         CALL almo_scf_t_to_proj(t=almo_scf_env%matrix_t_blk(ispin), &
-!tiidft                                 p=almo_scf_env%matrix_p(ispin), &
-!tiidft                                 eps_filter=almo_scf_env%eps_filter, &
-!tiidft                                 orthog_orbs=.FALSE., &
-!tiidft                                 nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
-!tiidft                                 s=almo_scf_env%matrix_s(1), &
-!tiidft                                 sigma=almo_scf_env%matrix_sigma(ispin), &
-!tiidft                                 sigma_inv=almo_scf_env%matrix_sigma_inv(ispin), &
-!tiidft                                 use_guess=.FALSE., &
-!tiidft                                 smear=almo_scf_env%smear, &
-!tiidft                                 algorithm=almo_scf_env%sigma_inv_algorithm, &
-!tiidft                                 eps_lanczos=almo_scf_env%eps_lanczos, &
-!tiidft                                 max_iter_lanczos=almo_scf_env%max_iter_lanczos, &
-!tiidft                                 inv_eps_factor=almo_scf_env%matrix_iter_eps_error_factor, &
-!tiidft                                 para_env=almo_scf_env%para_env, &
-!tiidft                                 blacs_env=almo_scf_env%blacs_env)
-!tiidft
-!tiidft      ENDDO
-!tiidft
-!tiidft      ! compute dm from the projector(s)
-!tiidft      IF (nspins == 1) THEN
-!tiidft         CALL dbcsr_scale(almo_scf_env%matrix_p(1), 2.0_dp)
-!tiidft         !! Rescaling electronic entropy contribution by spin_factor
-!tiidft         IF (almo_scf_env%smear) THEN
-!tiidft            almo_scf_env%kTS(1) = almo_scf_env%kTS(1)*2.0_dp
-!tiidft         END IF
-!tiidft      ENDIF
-!tiidft
-!tiidft      IF (almo_scf_env%smear) THEN
-!tiidft         kTS_sum = SUM(almo_scf_env%kTS)
-!tiidft      ELSE
-!tiidft         kTS_sum = 0.0_dp
-!tiidft      ENDIF
-!tiidft
-!tiidft      CALL almo_dm_to_almo_ks(qs_env, &
-!tiidft                              almo_scf_env%matrix_p, &
-!tiidft                              almo_scf_env%matrix_ks, &
-!tiidft                              energy, &
-!tiidft                              almo_scf_env%eps_filter, &
-!tiidft                              almo_scf_env%mat_distr_aos, &
-!tiidft                              smear=almo_scf_env%smear, &
-!tiidft                              kTS_sum=kTS_sum)
-!tiidft
-!tiidft      IF (unit_nr > 0) THEN
-!tiidft         IF (almo_scf_env%almo_scf_guess .EQ. molecular_guess) THEN
-!tiidft            WRITE (unit_nr, '(T2,A38,F40.10)') "Single-molecule energy:", &
-!tiidft               SUM(mscfg_env%energy_of_frag)
-!tiidft         ENDIF
-!tiidft         WRITE (unit_nr, '(T2,A38,F40.10)') "Energy of the initial guess:", energy
-!tiidft         WRITE (unit_nr, '()')
-!tiidft      ENDIF
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, '(T2,A38)') "Initial guess energy"
+      ENDIF
+
+      ALLOCATE(fake_e_per_block(1))
+      fake_e_per_block(:)=-1
+
+      obj_energy = 0.0_dp
+      DO stateI = 1, nstates
+
+         DO idet = 1, ndets
+
+            DO ispin = 1, nspins
+
+               ! RZK-warning: DO only if there are non-zero electrons
+
+               !RZK-warning : orthogonalizing orbitals will destroy their connection to mat_var
+               !CALL orthogonalize_mos(ket=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+               !                       overlap=tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
+               !                       metric=tidft_env%mat_s, &
+               !                       retain_locality=.FALSE., &
+               !                       only_normalize=.FALSE., &
+               !                       nocc_of_domain=almo_scf_env%nocc_of_domain(:, ispin), &
+               !                       eps_filter=tidft_env%eps_filter, &
+               !                       order_lanczos=tidft_env%order_lanczos, &
+               !                       eps_lanczos=tidft_env%eps_lanczos, &
+               !                       max_iter_lanczos=tidft_env%max_iter_lanczos, &
+               !                       smear=tidft_env%smear)
+
+               ! compute projectors from electronic states
+               CALL almo_scf_t_to_proj(t=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                       p=tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin), &
+                                       eps_filter=tidft_env%eps_filter, &
+                                       orthog_orbs=.FALSE., &
+                                       ! use unallocated array, it will be properly ignored inside
+                                       nocc_of_domain=fake_e_per_block, &
+                                       s=tidft_env%mat_s, &
+                                       ! sigma and sigma_inv will be overwritten
+                                       sigma=tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
+                                       sigma_inv=tidft_env%mat_sigma_inv(stateI,idet,ispin), &
+                                       use_guess=.FALSE., &
+                                       smear=tidft_env%smear, &
+                                       algorithm=tidft_env%sigma_inv_algorithm, &
+                                       !eps_lanczos=tidft_env%eps_lanczos, &
+                                       !max_iter_lanczos=tidft_env%max_iter_lanczos, &
+                                       !inv_eps_factor=tidft_env%matrix_iter_eps_error_factor, &
+                                       para_env=tidft_env%para_env, &
+                                       blacs_env=tidft_env%blacs_env)
+
+            ENDDO ! ispin
+
+            ! compute dm from the projector(s)
+            IF (nspins == 1) THEN
+               CALL dbcsr_scale(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(1), 2.0_dp)
+            ENDIF
+
+            CALL tidft_dm_to_tidft_ks(qs_env, &
+                                      tidft_env%e_states(stateI)%slater_det(idet)%mat_proj, &
+                                      tidft_env%e_states(stateI)%slater_det(idet)%mat_ks, &
+                                      energy, &
+                                      tidft_env%eps_filter, &
+                                      smear=tidft_env%smear, &
+                                      kTS_sum=kTS_sum)
+
+            ! re-compute projector from the dm
+            IF (nspins == 1) THEN
+               CALL dbcsr_scale(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(1), 0.5_dp)
+            ENDIF
+
+            IF (unit_nr > 0 .AND. ndets.EQ.2) THEN
+               WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Determinant", idet, energy
+            ENDIF
+
+            IF (idet.EQ.1) THEN
+               energy_singlet = energy
+               energy_triplet = energy
+            ENDIF
+            IF (idet.EQ.2) energy_triplet = energy
+
+         ENDDO ! idet
+
+         state_energy = 2*energy_singlet-energy_triplet
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State ", stateI, state_energy
+         ENDIF
+
+         obj_energy = obj_energy + state_energy
+
+      ENDDO ! stateI
+
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, '(T2,A38,F40.10)') "Sum of all states", obj_energy
+         WRITE (unit_nr, '()')
+      ENDIF
+
+      !! compute nonorthogonality penalty
+      !!tidft_env%mat_phi(:,:,:) = 0.0_dp
+      !intrastate_nono_penalty = 0.0_dp
+      !DO stateI = 1, nstates
+      !   DO idet = 1, ndets
+      !      IF (tidft_env%triplet_correction .AND. idet.EQ.1) cycle ! only triplet determinant is used
+      !      DO ispin = 1, nspins
+      !         nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+      !         IF ( nmos_stateI .GT. 0) THEN
+      !            DO stateJ = stateI, nstates
+      !               nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(idet)%nelectrons_ab(ispin)
+      !               IF ( nmos_stateJ .GT. 0) THEN
+      !                  ! compute sigma if necessary: (stateI,stateI) is already computed when energy
+      !                  IF (stateI.NE.stateJ) THEN
+      !                     CALL get_overlap(bra=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+      !                                      ket=tidft_env%e_states(stateJ)%slater_det(idet)%mat_t(ispin), &
+      !                                      overlap=tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
+      !                                      metric=tidft_env%mat_s, &
+      !                                      retain_overlap_sparsity=.FALSE., &
+      !                                      eps_filter=tidft_env%eps_filter)
+      !                  ENDIF
+      !                  ! compute the determinant and save it to the Phi matrix
+      !                  ! RZK-WARNING: most matrices are not positive definite here
+      !                  CALL determinant(tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
+      !                                   tidft_env%mat_phi(stateI,stateJ,ispin), &
+      !                                   tidft_env%eps_filter)
+      !                  tidft_env%mat_phi(stateJ,stateI,ispin)=tidft_env%mat_phi(stateI,stateJ,ispin)
+      !                  IF (unit_nr > 0) THEN
+      !                     WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
+      !                                        "Determinant: ", tidft_env%mat_phi(stateI,stateJ,ispin)
+      !                  ENDIF
+      !               ENDIF ! zero MOs for state J
+      !            ENDDO ! stateJ
+      !            stateIDiagonalDet = 
+      !            intrastate_nono_penalty = intrastate_nono_penalty - tidft_env%intrastate_nono_penalty_coeff * &
+      !               ( LOG(tidft_env%mat_phi(stateI,stateI,ispin) - LOG(stateIDiagonalDet) )
+      !         ENDIF ! zero MOs for state I
+      !      ENDDO ! ispin
+      !   ENDDO ! idet
+      !ENDDO ! stateI
+      !interstate_nono_penalty = 0.0_dp
+
+      DEALLOCATE(fake_e_per_block)
 
       CALL timestop(handle)
 

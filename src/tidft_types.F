@@ -88,7 +88,10 @@ MODULE tidft_types
       ! Occupied MO coefficients NxOCC(spin)
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_t
 
-      ! Kohn-Sham Hamiltonian NxN
+      ! Projector onto occupied subspace NxN - for each spin
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_proj
+
+      ! Kohn-Sham Hamiltonian NxN - for each spin
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
 
    END TYPE slater_det_type
@@ -110,11 +113,16 @@ MODULE tidft_types
 
       LOGICAL                                            :: calc_forces, &
                                                             orthogonal_basis
+      LOGICAL                                            :: smear = .FALSE.
 
       ! Electronic states
       LOGICAL                                            :: restricted ! ROKS or UKS
-      ! Use corrections to obtain spin-pure states?
+      ! Spin pure states requested?
       LOGICAL                                            :: spin_pure
+      ! Compute triplet correction to obtain spin-pure states?
+      LOGICAL                                            :: triplet_correction
+      ! Number of slater determinants per state
+      INTEGER                                            :: ndets
       ! Number of spins treated indepedently (1 or 2)
       INTEGER                                            :: nspins
       ! Spin factors are 2 for doubly occupied and 1 for signly occupied orbtals
@@ -132,9 +140,10 @@ MODULE tidft_types
 
       ! Keep some numerical thresholds
       REAL(KIND=dp)                                      :: eps_filter
-      !INTEGER                                            :: order_lanczos
-      !REAL(KIND=dp)                                      :: eps_lanczos
-      !INTEGER                                            :: max_iter_lanczos
+      INTEGER                                            :: order_lanczos = 3
+      REAL(KIND=dp)                                      :: eps_lanczos = 1.E-3_dp
+      INTEGER                                            :: max_iter_lanczos = 128
+      INTEGER                                            :: sigma_inv_algorithm = 1 ! Cholesky
 
       ! Options for various optimizers
       TYPE(optimizer_options_type)                       :: opt_bfgs
@@ -147,7 +156,9 @@ MODULE tidft_types
       TYPE(dbcsr_type)                                   :: mat_s
 
       ! MO overlap OxO (stateI, stateJ, spinS)
-      TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma
+      TYPE(dbcsr_type), DIMENSION(:,:,:,:), ALLOCATABLE  :: mat_sigma
+      ! inverse MO overlap OxO - for each state (stateI, spinS)
+      TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_inv
 
       ! Overlap of electronic states (stateI, stateJ)
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi

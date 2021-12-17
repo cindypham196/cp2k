@@ -85,7 +85,7 @@ MODULE tidft_qs
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_qs'
 
-   PUBLIC :: matrix_layout, tidft_init_ks_matrices
+   PUBLIC :: matrix_layout, tidft_init_ks_matrices, tidft_dm_to_tidft_ks
 
 CONTAINS
 
@@ -106,7 +106,6 @@ CONTAINS
    SUBROUTINE matrix_layout(matrix_ao_template, matrix_new, name_new, &
       orbital_type_new, symmetry_new, nmos)
 
-      !CINDY
       TYPE(tidft_env_type)                               :: tidft_env
       TYPE(dbcsr_type), INTENT(IN)                       :: matrix_ao_template
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix_new
@@ -164,11 +163,15 @@ CONTAINS
                ELSE !columns
                   CALL dbcsr_distribution_get(dist_qs, npcols=ncores)
                ENDIF
-               
+
                CALL create_distribute_mo_blocks( &
                        norbs = local_nmos(dimen), &
                        ncores = ncores, &
-                       suggested_blk_size = suggested_blk_size, &
+                       ! CINDY: you cannot use uninitialized variable: suggested_blk_size!!!
+                       ! I commented out your line below and simply set the var to 10
+                       ! Please fix this issue
+                       !suggested_blk_size = suggested_blk_size, &
+                       suggested_blk_size = 10, &
                        blk_sizes = block_sizes_new, &
                        blk_distr = distr_new_array)
 
@@ -240,19 +243,20 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE create_distribute_mo_blocks(norbs, ncores, suggested_blk_size, blk_sizes, blk_distr)
 
-      
+
       INTEGER, INTENT(IN)                                :: norbs, ncores, suggested_blk_size
 
       INTEGER, DIMENSION(:), POINTER, INTENT(INOUT)      :: blk_sizes, blk_distr
 
       INTEGER, DIMENSION(:), POINTER                     :: trial_blk_sizes
 
-      INTEGER                                            :: norbs_per_block, ndelta, igroup, best_diff, &
-                                                            remainder, I, J, nblocks, ngroups, diff, best_nblock   
- 
+      INTEGER                                            :: norbs_per_block, ndelta, &
+                                                            igroup, best_diff, &
+                                                            remainder, I, J, nblocks, &
+                                                            ngroups, diff, best_nblock
       REAL                                               :: istd2, best_std2
 
-   
+
       ! Case 1: the number of orbitals is less than the number of cores
       IF (norbs .LT. ncores) THEN
 
@@ -260,61 +264,61 @@ CONTAINS
 
          blk_sizes(:) = 1
          blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
-      
+
       ! Case 2: given a suggested_blk_size, the number of distributed blks = ncores*ngroups
-      ELSE 
+      ELSE
          ngroups = NINT(1.0_dp*norbs/suggested_blk_size/ncores)
          IF (ngroups .EQ. 0) ngroups = 1
- 
+
          ! Vary ngroups within 10%
          ndelta = CEILING(1.0_dp*ngroups/10)
-	 
-	      ! assign a random large value
-         best_std2 = 1.0_dp*norbs 
-         best_diff = norbs 
+         ! assign a random large value
+         best_std2 = 1.0_dp*norbs
+         best_diff = norbs
 
-         ! Choose the best ngroups 
+         ! Choose the best ngroups
          DO igroup = ngroups-ndelta, ngroups+ndelta ! group_size
             IF (igroup .EQ. 0) CYCLE
             nblocks = ncores*igroup
             norbs_per_block = FLOOR((1.0_dp*norbs)/nblocks)
-      
+
             ALLOCATE(trial_blk_sizes(nblocks))
             trial_blk_sizes(:) = norbs_per_block
             remainder = MOD(norbs, nblocks)
-            IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1 
-            diff = ABS(norbs_per_block - suggested_blk_size)  
-   
-            ! Compute standard deviation square across all trial_blk_sizes 
+            IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1
+            diff = ABS(norbs_per_block - suggested_blk_size)
+
+            ! Compute standard deviation square across all trial_blk_sizes
             istd2 = SUM(trial_blk_sizes(:)**2)/nblocks - (1.0_dp*norbs/nblocks)**2
-   
-  	    ! Choose ngroups with better distribution 
+
+            ! Choose ngroups with better distribution
             IF (istd2 .LT. best_std2 .OR. ABS(istd2 - best_std2) .LT. 1E-9) THEN
                best_std2 = istd2
                IF (istd2 .LE. best_std2 .OR. diff .LE. best_diff) THEN
-                  best_diff = diff 
+                  best_diff = diff
                   best_nblock = nblocks
                   ALLOCATE(blk_sizes(best_nblock))
                   blk_sizes = trial_blk_sizes ! best option whose value is the closest to suggested_blk_size
                ENDIF
             ENDIF
-         END DO 
+         END DO
 
          DEALLOCATE(trial_blk_sizes)
-  
-   	 ! Find blk_distr()
+
+         ! Find blk_distr()
          ALLOCATE(blk_distr(best_nblock))
          I = 0
          DO J=1, best_nblock
-            IF (I < ncores) THEN 
+            IF (I < ncores) THEN
                blk_distr(J) = I
                I = I + 1
-            ELSE 
+            ELSE
                blk_distr(J) = 0
                I = 1
             ENDIF
          END DO
       ENDIF
+
    END SUBROUTINE create_distribute_mo_blocks
 
 ! **************************************************************************************************
@@ -378,7 +382,7 @@ CONTAINS
             CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin), matrix_qs_ks(ispin)%matrix)
             CALL dbcsr_filter(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin), tidft_env%eps_filter)
 
-            IF (tidft_env%spin_pure) THEN
+            IF (tidft_env%triplet_correction) THEN
 
                CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin), matrix_qs_ks(ispin)%matrix)
                CALL dbcsr_filter(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin), tidft_env%eps_filter)
@@ -457,182 +461,174 @@ CONTAINS
 !tidft      CALL timestop(handle)
 !tidft
 !tidft   END SUBROUTINE construct_qs_mos
-!tidft
-!tidft! **************************************************************************************************
-!tidft!> \brief return density matrix to the qs_env
-!tidft!> \param qs_env ...
-!tidft!> \param matrix_p ...
-!tidft!> \param mat_distr_aos ...
-!tidft!> \par History
-!tidft!>       2011.05 created [Rustam Z Khaliullin]
-!tidft!> \author Rustam Z Khaliullin
-!tidft! **************************************************************************************************
-!tidft   SUBROUTINE almo_dm_to_qs_env(qs_env, matrix_p, mat_distr_aos)
-!tidft      TYPE(qs_environment_type), POINTER                 :: qs_env
-!tidft      TYPE(dbcsr_type), DIMENSION(:)                     :: matrix_p
-!tidft      INTEGER, INTENT(IN)                                :: mat_distr_aos
-!tidft
-!tidft      CHARACTER(len=*), PARAMETER                        :: routineN = 'almo_dm_to_qs_env'
-!tidft
-!tidft      INTEGER                                            :: handle, ispin, nspins
-!tidft      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: rho_ao
-!tidft      TYPE(qs_rho_type), POINTER                         :: rho
-!tidft
-!tidft      CALL timeset(routineN, handle)
-!tidft
-!tidft      NULLIFY (rho, rho_ao)
-!tidft      nspins = SIZE(matrix_p)
-!tidft      CALL get_qs_env(qs_env, rho=rho)
-!tidft      CALL qs_rho_get(rho, rho_ao=rho_ao)
-!tidft
-!tidft      ! set the new density matrix
-!tidft      DO ispin = 1, nspins
-!tidft         CALL matrix_almo_to_qs(matrix_p(ispin), &
-!tidft                                rho_ao(ispin)%matrix, &
-!tidft                                mat_distr_aos)
-!tidft      END DO
-!tidft      CALL qs_rho_update_rho(rho, qs_env=qs_env)
-!tidft      CALL qs_ks_did_change(qs_env%ks_env, rho_changed=.TRUE.)
-!tidft
-!tidft      CALL timestop(handle)
-!tidft
-!tidft   END SUBROUTINE almo_dm_to_qs_env
-!tidft
-!tidft! **************************************************************************************************
-!tidft!> \brief uses the ALMO density matrix
-!tidft!>        to compute KS matrix (inside QS environment) and the new energy
-!tidft!> \param qs_env ...
-!tidft!> \param matrix_p ...
-!tidft!> \param energy_total ...
-!tidft!> \param mat_distr_aos ...
-!tidft!> \param smear ...
-!tidft!> \param kTS_sum ...
-!tidft!> \par History
-!tidft!>       2011.05 created [Rustam Z Khaliullin]
-!tidft!>       2018.09 smearing support [Ruben Staub]
-!tidft!> \author Rustam Z Khaliullin
-!tidft! **************************************************************************************************
-!tidft   SUBROUTINE almo_dm_to_qs_ks(qs_env, matrix_p, energy_total, mat_distr_aos, smear, kTS_sum)
-!tidft      TYPE(qs_environment_type), POINTER                 :: qs_env
-!tidft      TYPE(dbcsr_type), DIMENSION(:)                     :: matrix_p
-!tidft      REAL(KIND=dp)                                      :: energy_total
-!tidft      INTEGER, INTENT(IN)                                :: mat_distr_aos
-!tidft      LOGICAL, INTENT(IN), OPTIONAL                      :: smear
-!tidft      REAL(KIND=dp), INTENT(IN), OPTIONAL                :: kTS_sum
-!tidft
-!tidft      CHARACTER(len=*), PARAMETER                        :: routineN = 'almo_dm_to_qs_ks'
-!tidft
-!tidft      INTEGER                                            :: handle
-!tidft      LOGICAL                                            :: smearing
-!tidft      REAL(KIND=dp)                                      :: entropic_term
-!tidft      TYPE(qs_energy_type), POINTER                      :: energy
-!tidft
-!tidft      CALL timeset(routineN, handle)
-!tidft
-!tidft      IF (PRESENT(smear)) THEN
-!tidft         smearing = smear
-!tidft      ELSE
-!tidft         smearing = .FALSE.
-!tidft      ENDIF
-!tidft
-!tidft      IF (PRESENT(kTS_sum)) THEN
-!tidft         entropic_term = kTS_sum
-!tidft      ELSE
-!tidft         entropic_term = 0.0_dp
-!tidft      ENDIF
-!tidft
-!tidft      NULLIFY (energy)
-!tidft      CALL get_qs_env(qs_env, energy=energy)
-!tidft      CALL almo_dm_to_qs_env(qs_env, matrix_p, mat_distr_aos)
-!tidft      CALL qs_ks_update_qs_env(qs_env, calculate_forces=.FALSE., just_energy=.FALSE., &
-!tidft                               print_active=.TRUE.)
-!tidft
-!tidft      !! Add electronic entropy contribution if smearing is requested
-!tidft      !! Previous QS entropy is replaced by the sum of the entropy for each spin
-!tidft      IF (smearing) THEN
-!tidft         energy%total = energy%total - energy%kTS + entropic_term
-!tidft      END IF
-!tidft
-!tidft      energy_total = energy%total
-!tidft
-!tidft      CALL timestop(handle)
-!tidft
-!tidft   END SUBROUTINE almo_dm_to_qs_ks
-!tidft
-!tidft! **************************************************************************************************
-!tidft!> \brief uses the ALMO density matrix
-!tidft!>        to compute ALMO KS matrix and the new energy
-!tidft!> \param qs_env ...
-!tidft!> \param matrix_p ...
-!tidft!> \param matrix_ks ...
-!tidft!> \param energy_total ...
-!tidft!> \param eps_filter ...
-!tidft!> \param mat_distr_aos ...
-!tidft!> \param smear ...
-!tidft!> \param kTS_sum ...
-!tidft!> \par History
-!tidft!>       2011.05 created [Rustam Z Khaliullin]
-!tidft!>       2018.09 smearing support [Ruben Staub]
-!tidft!> \author Rustam Z Khaliullin
-!tidft! **************************************************************************************************
-!tidft   SUBROUTINE almo_dm_to_almo_ks(qs_env, matrix_p, matrix_ks, energy_total, eps_filter, &
-!tidft                                 mat_distr_aos, smear, kTS_sum)
-!tidft
-!tidft      TYPE(qs_environment_type), POINTER                 :: qs_env
-!tidft      TYPE(dbcsr_type), DIMENSION(:)                     :: matrix_p, matrix_ks
-!tidft      REAL(KIND=dp)                                      :: energy_total, eps_filter
-!tidft      INTEGER, INTENT(IN)                                :: mat_distr_aos
-!tidft      LOGICAL, INTENT(IN), OPTIONAL                      :: smear
-!tidft      REAL(KIND=dp), INTENT(IN), OPTIONAL                :: kTS_sum
-!tidft
-!tidft      CHARACTER(len=*), PARAMETER :: routineN = 'almo_dm_to_almo_ks'
-!tidft
-!tidft      INTEGER                                            :: handle, ispin, nspins
-!tidft      LOGICAL                                            :: smearing
-!tidft      REAL(KIND=dp)                                      :: entropic_term
-!tidft      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_qs_ks
-!tidft
-!tidft      CALL timeset(routineN, handle)
-!tidft
-!tidft      IF (PRESENT(smear)) THEN
-!tidft         smearing = smear
-!tidft      ELSE
-!tidft         smearing = .FALSE.
-!tidft      ENDIF
-!tidft
-!tidft      IF (PRESENT(kTS_sum)) THEN
-!tidft         entropic_term = kTS_sum
-!tidft      ELSE
-!tidft         entropic_term = 0.0_dp
-!tidft      ENDIF
-!tidft
-!tidft      ! update KS matrix in the QS env
-!tidft      CALL almo_dm_to_qs_ks(qs_env, matrix_p, energy_total, mat_distr_aos, &
-!tidft                            smear=smearing, &
-!tidft                            kTS_sum=entropic_term)
-!tidft
-!tidft      nspins = SIZE(matrix_ks)
-!tidft
-!tidft      ! get KS matrix from the QS env and convert to the ALMO format
-!tidft      CALL get_qs_env(qs_env, matrix_ks=matrix_qs_ks)
-!tidft      DO ispin = 1, nspins
-!tidft         CALL matrix_qs_to_almo(matrix_qs_ks(ispin)%matrix, &
-!tidft                                matrix_ks(ispin), &
-!tidft                                mat_distr_aos, .FALSE.)
-!tidft         CALL dbcsr_filter(matrix_ks(ispin), eps_filter)
-!tidft      ENDDO
-!tidft
-!tidft      CALL timestop(handle)
-!tidft
-!tidft   END SUBROUTINE almo_dm_to_almo_ks
-!tidft
+
+! **************************************************************************************************
+!> \brief supplies density matrix to the qs env
+!> \param qs_env ...
+!> \param matrix_p ...
+!> \par History
+!>       2021.12 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_dm_to_qs_env(qs_env, matrix_p)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(dbcsr_type), DIMENSION(:)                     :: matrix_p
+
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'tidft_dm_to_qs_env'
+
+      INTEGER                                            :: handle, ispin, nspins
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: rho_ao
+      TYPE(qs_rho_type), POINTER                         :: rho
+
+      CALL timeset(routineN, handle)
+
+      NULLIFY (rho, rho_ao)
+      nspins = SIZE(matrix_p)
+      CALL get_qs_env(qs_env, rho=rho)
+      CALL qs_rho_get(rho, rho_ao=rho_ao)
+
+      ! set the new density matrix
+      DO ispin = 1, nspins
+         CALL dbcsr_copy(rho_ao(ispin)%matrix, matrix_p(ispin))
+      END DO
+      CALL qs_rho_update_rho(rho, qs_env=qs_env)
+      CALL qs_ks_did_change(qs_env%ks_env, rho_changed=.TRUE.)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_dm_to_qs_env
+
+! **************************************************************************************************
+!> \brief uses the density matrix to compute QS KS matrix and the new energy
+!> \param qs_env ...
+!> \param matrix_p ...
+!> \param energy_total ...
+!> \param smear ...
+!> \param kTS_sum ...
+!> \par History
+!>       2021.12 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_dm_to_qs_ks(qs_env, matrix_p, energy_total, smear, kTS_sum)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(dbcsr_type), DIMENSION(:)                     :: matrix_p
+      REAL(KIND=dp)                                      :: energy_total
+      LOGICAL, INTENT(IN), OPTIONAL                      :: smear
+      REAL(KIND=dp), INTENT(IN), OPTIONAL                :: kTS_sum
+
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'tidft_dm_to_qs_ks'
+
+      INTEGER                                            :: handle
+      LOGICAL                                            :: smearing
+      REAL(KIND=dp)                                      :: entropic_term
+      TYPE(qs_energy_type), POINTER                      :: energy
+
+      CALL timeset(routineN, handle)
+
+      IF (PRESENT(smear)) THEN
+         smearing = smear
+      ELSE
+         smearing = .FALSE.
+      ENDIF
+
+      IF (PRESENT(kTS_sum)) THEN
+         entropic_term = kTS_sum
+      ELSE
+         entropic_term = 0.0_dp
+      ENDIF
+
+      NULLIFY (energy)
+      CALL get_qs_env(qs_env, energy=energy)
+      CALL tidft_dm_to_qs_env(qs_env, matrix_p)
+      CALL qs_ks_update_qs_env(qs_env, calculate_forces=.FALSE., just_energy=.FALSE., &
+                               print_active=.TRUE.)
+
+      !! Add electronic entropy contribution if smearing is requested
+      !! Previous QS entropy is replaced by the sum of the entropy for each spin
+      IF (smearing) THEN
+         energy%total = energy%total - energy%kTS + entropic_term
+      END IF
+
+      energy_total = energy%total
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_dm_to_qs_ks
+
+! **************************************************************************************************
+!> \brief uses the density matrix to compute TIDFT KS matrix and the new energy
+!> \param qs_env ...
+!> \param matrix_p ...
+!> \param matrix_ks ...
+!> \param energy_total ...
+!> \param eps_filter ...
+!> \param smear ...
+!> \param kTS_sum ...
+!> \par History
+!>       2021.12 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_dm_to_tidft_ks(qs_env, matrix_p, matrix_ks, energy_total, eps_filter, &
+                                 smear, kTS_sum)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(dbcsr_type), DIMENSION(:)                     :: matrix_p, matrix_ks
+      REAL(KIND=dp)                                      :: energy_total, eps_filter
+      !INTEGER, INTENT(IN)                                :: mat_distr_aos
+      LOGICAL, INTENT(IN), OPTIONAL                      :: smear
+      REAL(KIND=dp), INTENT(IN), OPTIONAL                :: kTS_sum
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_dm_to_tidft_ks'
+
+      INTEGER                                            :: handle, ispin, nspins
+      LOGICAL                                            :: smearing
+      REAL(KIND=dp)                                      :: entropic_term
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_qs_ks
+
+      CALL timeset(routineN, handle)
+
+      IF (PRESENT(smear)) THEN
+         smearing = smear
+      ELSE
+         smearing = .FALSE.
+      ENDIF
+
+      IF (PRESENT(kTS_sum)) THEN
+         entropic_term = kTS_sum
+      ELSE
+         entropic_term = 0.0_dp
+      ENDIF
+
+      ! update KS matrix in the QS env
+      CALL tidft_dm_to_qs_ks(qs_env, matrix_p, energy_total, & !mat_distr_aos, &
+                            smear=smearing, &
+                            kTS_sum=entropic_term)
+
+      nspins = SIZE(matrix_ks)
+
+      ! get KS matrix from the QS env and convert to the ALMO format
+      CALL get_qs_env(qs_env, matrix_ks=matrix_qs_ks)
+      DO ispin = 1, nspins
+         CALL dbcsr_copy(matrix_ks(ispin), matrix_qs_ks(ispin)%matrix)
+         !CALL matrix_qs_to_almo(matrix_qs_ks(ispin)%matrix, &
+         !                       matrix_ks(ispin), &
+         !                       mat_distr_aos, .FALSE.)
+         CALL dbcsr_filter(matrix_ks(ispin), eps_filter)
+      ENDDO
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_dm_to_tidft_ks
+
 !tidft! **************************************************************************************************
 !tidft!> \brief update qs_env total energy
 !tidft!> \param qs_env ...
 !tidft!> \param energy ...
 !tidft!> \param energy_singles_corr ...
 !tidft!> \par History
-!tidft!>       2013.03 created [Rustam Z Khaliullin]
+!tidft!>       2021.12 created [Rustam Z Khaliullin]
 !tidft!> \author Rustam Z Khaliullin
 !tidft! **************************************************************************************************
 !tidft   SUBROUTINE almo_scf_update_ks_energy(qs_env, energy, energy_singles_corr)
@@ -657,7 +653,7 @@ CONTAINS
 !tidft      qs_energy%total = qs_energy%total + qs_energy%singles_corr
 !tidft
 !tidft   END SUBROUTINE almo_scf_update_ks_energy
-!tidft
+
 !tidft! **************************************************************************************************
 !tidft!> \brief Creates the matrix that imposes absolute locality on MOs
 !tidft!> \param qs_env ...

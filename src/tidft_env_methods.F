@@ -190,7 +190,7 @@ CONTAINS
                                                             multip, naos, natoms, ndomains, nelec, &
                                                             nelec_a, nelec_b, nmols, nspins, &
                                                             unit_nr, nstates, ivar, nmultips, &
-                                                            nslater, slaterI, stateI
+                                                            nslater, slaterI, stateI, unpair
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s
       TYPE(dft_control_type), POINTER                    :: dft_control
@@ -252,8 +252,10 @@ CONTAINS
       WRITE(*,*) "TIDFT nspins:", tidft_env%nspins
 
       IF (tidft_env%spin_pure) THEN
-         IF ( ( tidft_env%desired_multip.EQ.1 .AND. tidft_env%unpairings.EQ.1 ) .OR. &
-              ( tidft_env%unpairings.EQ.0 ) ) THEN
+         IF ( tidft_env%desired_multip.EQ.1 .AND. tidft_env%unpairings.EQ.1 ) THEN
+            tidft_env%triplet_correction = .TRUE.
+         ELSE IF ( tidft_env%unpairings.EQ.0 ) THEN
+            tidft_env%triplet_correction = .FALSE.
          ELSE
             CPABORT("Spin pure states cannot be enforced")
          ENDIF
@@ -268,16 +270,20 @@ CONTAINS
          ENDIF
          CPABORT("Number of spins in DFT and TIDFT are different")
       ENDIF
- 
-      nstates=tidft_env%nstates
+
+      tidft_env%ndets = 1
+      IF (tidft_env%triplet_correction) tidft_env%ndets = 2
+
+      nstates = tidft_env%nstates
+      nslater = tidft_env%ndets
+
       ALLOCATE(tidft_env%e_states(nstates))
-      nslater = 1
-      IF (tidft_env%spin_pure) nslater = 2
       DO stateI = 1, nstates
          tidft_env%e_states(stateI)%nslater = nslater
          ALLOCATE(tidft_env%e_states(stateI)%slater_det(nslater))
          tidft_env%e_states(stateI)%slater_det(1)%desired_multip = tidft_env%desired_multip
-         IF (tidft_env%spin_pure) tidft_env%e_states(stateI)%slater_det(2)%desired_multip = tidft_env%desired_multip + 2
+         IF (tidft_env%triplet_correction) tidft_env%e_states(stateI)%slater_det(2)%desired_multip = &
+            tidft_env%desired_multip + 2
          ! calculate the number of alpha and beta occupied orbitals from
          ! the number of electrons and multiplicity
          ! Na + Nb = Ne
@@ -293,18 +299,24 @@ CONTAINS
             ! set the number of independent variable matrices
             IF (tidft_env%restricted) THEN
                ! 1st entry: doubly occupied orbitals: (ne-(mult-1))/2-unpair
+               IF (tidft_env%triplet_correction .AND. slaterI.EQ.2) THEN
+                  unpair = 0
+               ELSE
+                  unpair = tidft_env%unpairings
+               ENDIF
                ivar = (tidft_env%nelectrons - tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip + 1) / 2 - &
-                  tidft_env%unpairings
+                  unpair
                IF (ivar .LT. 0) ivar = 0
                tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) = ivar
                ! 2nd entry: singly occupied alpha orbitals: mult-1+unpair
-               ivar = tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip - 1 + tidft_env%unpairings
+               ivar = tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip - 1 + unpair
                IF (ivar .LT. 0) ivar = 0
                tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(2) = ivar
                ! 3rd entry: singly occupied beta orbitals: unpair
-               ivar = tidft_env%unpairings
+               ivar = unpair
                IF (ivar .LT. 0) ivar = 0
                tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(3) = ivar
+               !IF (tidft_env%triplet_correction) tidft_env%e_states(stateI)%slater_det(2)%desired_multip = &
             ELSE
                ! There are no electron pairs in UKS
                tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) = 0
@@ -313,8 +325,12 @@ CONTAINS
                tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(3) = &
                   tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
             ENDIF
-         ENDDO
-      ENDDO
+            IF ( (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) + &
+                  tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(2)) .EQ. 0) THEN
+               CPABORT("There are no alpha electrons")
+            ENDIF
+         ENDDO ! slaterI
+      ENDDO ! stateI
 
       CALL tidft_env_create_matrices(tidft_env, matrix_s(1)%matrix)
 
@@ -348,15 +364,16 @@ CONTAINS
 
       INTEGER                                            :: handle, ispin, &
                                                             nstates, suggested_blk_size, &
+                                                            idet, &
                                                             nspins, ivar, &
-                                                            stateI, &
+                                                            stateI, ndets, &
                                                             nmos_stateI, &
                                                             nmos_stateI_flip, &
                                                             stateJ, &
                                                             nmos_stateJ
 
       CALL timeset(routineN, handle)
-      
+
       ! CINDY
       !suggested_blk_size = tidft_env%suggested_blk_size
       CALL matrix_layout( &
@@ -365,73 +382,75 @@ CONTAINS
               name_new = 'm_s', &
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
               symmetry_new = dbcsr_type_symmetric)
-      
+
       nstates = tidft_env%nstates
       nspins = tidft_env%nspins
+      ndets = tidft_env%ndets
 
-      ALLOCATE(tidft_env%mat_sigma(nstates,nstates,nspins))
-      DO stateI = 1, nstates
-         ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_t(nspins))
-         ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(nspins))
-         IF (tidft_env%spin_pure) THEN
-            ALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_t(nspins))
-            ALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(nspins))
-         ENDIF
-         ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
-         ! It is not necessary to allocate mat_var for the other determinant(s)
+      ALLOCATE(tidft_env%mat_sigma(nstates,nstates,ndets,nspins))
+      ALLOCATE(tidft_env%mat_sigma_inv(nstates,ndets,nspins))
+      DO idet = 1, ndets
+         DO stateI = 1, nstates
+            ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(nspins))
+            ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(nspins))
+            ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(nspins))
+            ! It is not necessary to allocate mat_var for the other determinant(s)
+            IF (idet.EQ.1) ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
+         ENDDO
       ENDDO
 
-      DO ispin = 1, nspins
+      DO idet = 1, ndets
 
-         DO stateI = 1, nstates
+         DO ispin = 1, nspins
 
-            nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%nelectrons_ab(ispin)
+            DO stateI = 1, nstates
 
-            CALL matrix_layout( &
-                    matrix_ao_template = matrix_s0, &
-                    matrix_new = tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin) , &
-                    name_new = 'm_T_Ia', &
-                    orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
-                    symmetry_new = dbcsr_type_no_symmetry, &
-                    nmos = (/-1, nmos_stateI/) )
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
 
-            CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin), template=matrix_s0)
+               IF ( nmos_stateI .GT. 0) THEN
 
-            IF (tidft_env%spin_pure) THEN
+                  CALL matrix_layout( &
+                          matrix_ao_template = matrix_s0, &
+                          matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) , &
+                          name_new = 'm_T_Ia', &
+                          orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+                          symmetry_new = dbcsr_type_no_symmetry, &
+                          nmos = (/-1, nmos_stateI/) )
 
-               nmos_stateI_flip = tidft_env%e_states(stateI)%slater_det(2)%nelectrons_ab(ispin)
+                  CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), template=matrix_s0)
+                  CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin), template=matrix_s0)
 
-               CALL matrix_layout( &
-                       matrix_ao_template = matrix_s0, &
-                       matrix_new = tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin) , &
-                       name_new = 'm_Tflip_Ia', &
-                       orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
-                       symmetry_new = dbcsr_type_no_symmetry, &
-                       nmos = (/-1, nmos_stateI_flip/) )
+                  DO stateJ = stateI, nstates
 
-               CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin), template=matrix_s0)
+                     nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(idet)%nelectrons_ab(ispin)
 
-            ENDIF
+                     IF ( nmos_stateJ .GT. 0) THEN
 
-            DO stateJ = stateI, nstates
+                        CALL matrix_layout( &
+                                matrix_ao_template = matrix_s0, &
+                                matrix_new = tidft_env%mat_sigma(stateI, stateJ, idet, ispin) , &
+                                name_new = 'm_sig_IJab', &
+                                orbital_type_new = (/almo_mat_dim_occ, almo_mat_dim_occ/), &
+                                symmetry_new = dbcsr_type_no_symmetry, &
+                                nmos = (/nmos_stateI, nmos_stateJ/) )
 
-               nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(1)%nelectrons_ab(ispin)
+                     ENDIF ! zero MOs for state J
 
-               CALL matrix_layout( &
-                       matrix_ao_template = matrix_s0, &
-                       matrix_new = tidft_env%mat_sigma(stateI, stateJ, ispin) , &
-                       name_new = 'm_sig_IJab', &
-                       orbital_type_new = (/almo_mat_dim_occ, almo_mat_dim_occ/), &
-                       symmetry_new = dbcsr_type_no_symmetry, &
-                       nmos = (/nmos_stateI, nmos_stateJ/) )
+                  ENDDO ! stateJ
 
-            ENDDO ! stateJ
+                  CALL dbcsr_create(tidft_env%mat_sigma_inv(stateI, idet, ispin), &
+                          template=tidft_env%mat_sigma(stateI, stateI, idet, ispin))
 
-         ENDDO ! stateI
+               ENDIF ! zero MOs
 
-      ENDDO ! ispin
+            ENDDO ! stateI
+
+         ENDDO ! ispin
+
+      ENDDO ! idet
 
       ! create non-zero matrices of independent variables
+      ! NOTE: only the first determinant contains the variables
       DO stateI = 1, nstates
 
          DO ivar = 1, 3
@@ -475,9 +494,9 @@ CONTAINS
       INTEGER                                            :: unit_nr
       TYPE(cp_logger_type), POINTER                      :: logger
       INTEGER                                            :: handle, ispin, &
-                                                            nstates, &
+                                                            nstates, idet, &
                                                             nspins, ivar, &
-                                                            stateI, &
+                                                            stateI, ndets, &
                                                             nmos_stateI, &
                                                             nmos_stateI_flip, &
                                                             stateJ, &
@@ -493,34 +512,47 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
+      ndets = tidft_env%ndets
       nstates = tidft_env%nstates
       nspins = tidft_env%nspins
 
       CALL dbcsr_release(tidft_env%mat_s)
 
-      DO ispin = 1, nspins
+      DO idet = 1, ndets
 
-         DO stateI = 1, nstates
+         DO ispin = 1, nspins
 
-            CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin))
-            CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(1)%mat_ks(ispin))
+            DO stateI = 1, nstates
 
-            IF (tidft_env%spin_pure) THEN
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
 
-               CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin))
-               CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(2)%mat_ks(ispin))
+               IF ( nmos_stateI .GT. 0) THEN
 
-            ENDIF
+                  CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+                  CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin))
+                  CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin))
 
-            DO stateJ = stateI, nstates
+                  DO stateJ = stateI, nstates
 
-               CALL dbcsr_release(tidft_env%mat_sigma(stateI, stateJ, ispin))
+                     nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(idet)%nelectrons_ab(ispin)
 
-            ENDDO ! stateJ
+                     IF ( nmos_stateJ .GT. 0) THEN
 
-         ENDDO ! stateI
+                         CALL dbcsr_release(tidft_env%mat_sigma(stateI, stateJ, idet, ispin))
 
-      ENDDO ! ispin
+                     ENDIF ! zero MOs for J
+
+                  ENDDO ! stateJ
+
+                  CALL dbcsr_release(tidft_env%mat_sigma_inv(stateI, idet, ispin))
+
+               ENDIF ! zero MOs
+
+            ENDDO ! stateI
+
+         ENDDO ! ispin
+
+      ENDDO ! idet
 
       DO stateI = 1, nstates
 
@@ -539,14 +571,14 @@ CONTAINS
       ENDDO ! stateI
 
       DEALLOCATE(tidft_env%mat_sigma)
-      DO stateI = 1, nstates
-         DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_t)
-         DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_ks)
-         IF (tidft_env%spin_pure) THEN
-            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_t)
-            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(2)%mat_ks)
-         ENDIF
-         DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
+      DEALLOCATE(tidft_env%mat_sigma_inv)
+      DO idet = 1, ndets
+         DO stateI = 1, nstates
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj)
+            IF (idet.EQ.1) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
+         ENDDO
       ENDDO
 
       CALL cp_para_env_release(tidft_env%para_env)
@@ -616,16 +648,19 @@ CONTAINS
 
          ! ROKS or UKS
          IF (tidft_env%restricted) THEN
-            WRITE (unit_nr, '(T2,A)') "ROKS method is implemented"
+            WRITE (unit_nr, '(T2,A)') "ROKS method is used"
          ELSE
-            WRITE (unit_nr, '(T2,A)') "UKS method is implemented"
+            WRITE (unit_nr, '(T2,A)') "UKS method is used"
          ENDIF
 
          ! Spin pure
          IF (tidft_env%spin_pure) THEN
-            WRITE (unit_nr, '(T2,A)') "Spin pure determinant is obtained"
+            WRITE (unit_nr, '(T2,A)') "Spin pure state is enforced"
+            IF (tidft_env%triplet_correction) THEN
+               WRITE (unit_nr, '(T2,A)') "Triplet state is optimized together with singlet state"
+            ENDIF
          ELSE
-            WRITE (unit_nr, '(T2,A)') "Mixed-states determinant is obtained"
+            WRITE (unit_nr, '(T2,A)') "Spin purity is not enforced"
          ENDIF
 
          ! suggested_blk_size
@@ -659,7 +694,6 @@ CONTAINS
 
         ! unpairings
         WRITE (unit_nr, '(T2,A,T48,I4)') "Max. # allowed unpairings upon excitation:", tidft_env%unpairings
-	
 
 	! dimensionality of independent variables non-zero matrices
         DO stateI = 1, tidft_env%nstates
