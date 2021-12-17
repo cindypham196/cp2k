@@ -313,7 +313,7 @@ CONTAINS
          ! Combine X1-X3 to generate MOs mat_t(alpha) and mat_t(beta) for ROKS and UKS
          DO stateI = 1, nstates
             DO slaterI = ndets, 1, -1 ! do T before S to avoid overwrite in the X1 U X2 step
-               DO ispin = 1, nspin
+               DO ispin = 1, nspins
                   ! Do we have paired e-? X1
                   IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) .NE. 0) THEN
 WRITE(*,*) "State, determinant, sipn: ", stateI, slaterI, ispin
@@ -321,6 +321,7 @@ WRITE(*,*) "State, determinant, sipn: ", stateI, slaterI, ispin
                         ! combine paired and unpaired electrons
                         IF (slaterI .EQ. 2)  THEN ! Triplet
                            IF (ispin .EQ. 1) THEN ! T_alpha
+                                 ! Use the singlet matrix to store intermediate X1 U X2 matrix
                                  CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), & ! X1 U X2
                                                       tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
                                                       tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin))
@@ -343,10 +344,10 @@ WRITE(*,*) "Before dbcsr_copy pairs-nonzero, singly-occ-zero"
                                            tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
                      ENDIF
 
-                     ! Print out result. Cindy: This will fail because the second determinant does not contain mat_var
-                     CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(1))
-                     CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(2))
-                     CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
+                     ! Print out result.
+                     !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
+                     !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(2))
+                     !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
 
                   ELSE ! No paired e-. Do we have unpaired e-? n_alpha and n_beta are different
                      IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .EQ. 0) THEN

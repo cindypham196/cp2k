@@ -140,9 +140,9 @@ CONTAINS
               i_val=tidft_env%unpairings)
 
       ! CINDY: record suggested_blk_size inside tidft_env
-      CALL section_vals_val_get(tidft_section, "SUGGESTED_BLK_SIZE", &
-              i_val=suggested_blk_size) !tidft_env%suggested_blk_size
-      
+      CALL section_vals_val_get(tidft_section, "SUGGESTED_MO_BLOCK_SIZE", &
+              i_val=tidft_env%suggested_mo_block_size)
+
 !tiidft      ! optimizers
 !tiidft      CALL section_vals_val_get(almo_opt_diis_section, "EPS_ERROR", &
 !tiidft                                r_val=almo_scf_env%opt_block_diag_diis%eps_error)
@@ -374,8 +374,7 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      ! CINDY
-      !suggested_blk_size = tidft_env%suggested_blk_size
+      suggested_blk_size = tidft_env%suggested_mo_block_size
       CALL matrix_layout( &
               matrix_ao_template = matrix_s0, &
               matrix_new = tidft_env%mat_s , &
@@ -664,7 +663,7 @@ CONTAINS
          ENDIF
 
          ! suggested_blk_size
-         !WRITE (unit_nr, '(T2,A,T48,I4)') "Suggested blk size:", tidft_env%suggested_blk_size
+         WRITE (unit_nr, '(T2,A,T48,I4)') "Suggested block size for MOs:", tidft_env%suggested_mo_block_size
 
          ! nstates = GS + ES
          WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electronic states:", tidft_env%nstates

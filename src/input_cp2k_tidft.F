@@ -110,7 +110,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="SUGGESTED_MO_BLOCK_SIZE", &
-                          description="User suggested block size for molecular orbitals", &
+                          description="User suggested block size for molecular orbital DBCSR matrices", &
                           usage="SUGGESTED_MO_BLOCK_SIZE 50", default_i_val=20)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)

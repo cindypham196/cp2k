@@ -144,7 +144,7 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: eps_lanczos = 1.E-3_dp
       INTEGER                                            :: max_iter_lanczos = 128
       INTEGER                                            :: sigma_inv_algorithm = 1 ! Cholesky
-
+      INTEGER                                            :: suggested_mo_block_size
       ! Options for various optimizers
       TYPE(optimizer_options_type)                       :: opt_bfgs
 
