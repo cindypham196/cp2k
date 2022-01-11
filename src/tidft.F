@@ -194,7 +194,7 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(dbcsr_distribution_type)                      :: dist
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao, mat_t, mat_s
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao, 
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
@@ -316,7 +316,7 @@ CONTAINS
                DO ispin = 1, nspins
                   ! Do we have paired e-? X1
                   IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) .NE. 0) THEN
-WRITE(*,*) "State, determinant, sipn: ", stateI, slaterI, ispin
+                     WRITE(*,*) "State, determinant, sipn: ", stateI, slaterI, ispin
                      IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .NE. 0) THEN
                         ! combine paired and unpaired electrons
                         IF (slaterI .EQ. 2)  THEN ! Triplet
@@ -329,7 +329,6 @@ WRITE(*,*) "State, determinant, sipn: ", stateI, slaterI, ispin
                                                       tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
                                                       tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
                            ELSE ! T_beta = X1, copy mat_var(1) into mat_t
-WRITE(*,*) "Before dbcsr_copy pairs-nonzero, singly-occ-nonzero"
                                  CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin), &
                                                  tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
                            ENDIF
@@ -339,29 +338,42 @@ WRITE(*,*) "Before dbcsr_copy pairs-nonzero, singly-occ-nonzero"
                                                    tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
                         ENDIF
                      ELSE !copy mat_var(1) into mat_t
-WRITE(*,*) "Before dbcsr_copy pairs-nonzero, singly-occ-zero"
                            CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin), &
                                            tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
                      ENDIF
-
-                     ! Print out result.
-                     !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
-                     !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(2))
-                     !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
 
                   ELSE ! No paired e-. Do we have unpaired e-? n_alpha and n_beta are different
                      IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .EQ. 0) THEN
                         IF (ispin .EQ. 1) CPABORT("Number of alpha electrons cannot be zero!")
                      ELSE ! No paired electrons, only unpaired. This also takes care of UKS
-WRITE(*,*) "Before dbcsr_copy pairs-zero, singly-occ-nonzero"
-                        CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin+1), &
-                                        tidft_env%e_states(stateI)%slater_det(slaterI)%mat_var(ispin))
+
+
                         !RZK-WARNING: Should deal with the triplet state here!
+                        IF (slaterI .EQ. 2)  THEN ! Triplet
+                           IF (ispin .EQ. 1) THEN ! T_alpha
+                           ! Use the singlet matrix to store intermediate X1 U X2 matrix
+                              CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), & ! X1 U X2
+                                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+                                                tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
+                           ELSE ! no T_beta for the triplet state, do nothing
+                           ENDIF
+                        ELSE ! Singlet state, here can do for both beta and alpha
+                           CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), &
+                               tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
+                        ENDIF
+
+                        
                      ENDIF
                   ENDIF
                ENDDO ! end ispin
             ENDDO ! end slaterI
          ENDDO  ! end stateI
+         
+         ! Print out result.
+         !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
+         !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(2))
+         !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
+
 
          ! convert independent varibles into MO matrices
          ! CINDY: generate orbitals from mat_var for GS and excited states
@@ -404,87 +416,87 @@ WRITE(*,*) "Before dbcsr_copy pairs-zero, singly-occ-nonzero"
          ! Should work for unrestricted case
          ! Reverse order of determinants allows to use empty singlet determinants
          ! to temporarily store the triplet determinant
-IF (unit_nr > 0) THEN
-   WRITE (unit_nr, *) "NStates", nstates
-   WRITE (unit_nr, *) "NSpins", nspins
-   WRITE (unit_nr, *) "NDets", ndets
-ENDIF
+! IF (unit_nr > 0) THEN
+!    WRITE (unit_nr, *) "NStates", nstates
+!    WRITE (unit_nr, *) "NSpins", nspins
+!    WRITE (unit_nr, *) "NDets", ndets
+! ENDIF
 
-         DO idet = ndets, 1, -1
-            DO stateI = 1, nstates
-               DO ispin = 1, nspins
+!          DO idet = ndets, 1, -1
+!             DO stateI = 1, nstates
+!                DO ispin = 1, nspins
 
-IF (unit_nr > 0) THEN
-WRITE (unit_nr, *) "idet,istate,ispin", idet, stateI, ispin
-WRITE (unit_nr, *) "pairs", tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1)
-WRITE (unit_nr, *) "single es", tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1)
-WRITE (unit_nr, *) "total", tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
-ENDIF
+! IF (unit_nr > 0) THEN
+! WRITE (unit_nr, *) "idet,istate,ispin", idet, stateI, ispin
+! WRITE (unit_nr, *) "pairs", tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1)
+! WRITE (unit_nr, *) "single es", tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1)
+! WRITE (unit_nr, *) "total", tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+! ENDIF
 
-                  IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1) .EQ. 0) THEN
-                     IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
-                        ! there are no electrons
-                        IF (ispin .EQ. 1) THEN
-                           CPABORT("No alpha electrons.")
-                        !ELSE
-                        !   CPWARN("No beta electrons. MO matrix is not created.")
-                        ENDIF
-                     ELSE
-                        ! there are only unpaired electrons
-                        IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
-                           ! combine alpha and beta into alpha
-                           CPASSERT(ispin.EQ.1) ! for triplets, cannot have 0 pairs and non-zero unpaired beta electrons
-                           CALL stitch_columns( &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
-                                   tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
-                                )
-                        ELSE
-                           CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
-                        ENDIF
-                     ENDIF
-                  ELSE
-                     IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
-                        ! there are only paired electrons
-                        IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
-                           CPASSERT(ispin.EQ.2) ! for triplets, cannot have zero unpaired alpha electrons
-                           ! for beta spin simply copy pairs
-                        ENDIF
-                        CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
-                     ELSE
+                  ! IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1) .EQ. 0) THEN
+                  !    IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
+                  !       ! there are no electrons
+                  !       IF (ispin .EQ. 1) THEN
+                  !          CPABORT("No alpha electrons.")
+                  !       !ELSE
+                  !       !   CPWARN("No beta electrons. MO matrix is not created.")
+                  !       ENDIF
+                  !    ELSE
+                  !       ! there are only unpaired electrons
+                  !       IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
+                  !          ! combine alpha and beta into alpha
+                  !          CPASSERT(ispin.EQ.1) ! for triplets, cannot have 0 pairs and non-zero unpaired beta electrons
+                  !          CALL stitch_columns( &
+                  !                  tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                  !                  tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+                  !                  tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+                  !               )
+                  !       ELSE
+                  !          CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                  !                  tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
+                  !       ENDIF
+                  !    ENDIF
+                  ! ELSE
+                  !    IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
+                  !       ! there are only paired electrons
+                  !       IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
+                  !          CPASSERT(ispin.EQ.2) ! for triplets, cannot have zero unpaired alpha electrons
+                  !          ! for beta spin simply copy pairs
+                  !       ENDIF
+                  !       CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                  !               tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
+                  !    ELSE
 !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_var(1))
 !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_var(ispin+1))
 !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
-                        IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
-                           ! for beta spin do nothing - it is already taken care of
-                           CPASSERT(ispin.EQ.1) ! for triplets, cannot have non-zero unpaired beta electrons
-                           ! for alpha spin combine: pairs + alpha + beta
-                           ! use mat_t of singlet as a temporary storage
-                           CALL stitch_columns( &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin) &
-                                )
-                           CALL stitch_columns( &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+2), &
-                                   tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
-                                )
-                        ELSE
-                           ! combine paired and unpared
-                           CALL stitch_columns( &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
-                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
-                                   tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
-                                )
-                        ENDIF ! triplet correction
-                     ENDIF ! zero unpaired?
-                  ENDIF ! zero paired?
-               ENDDO ! ispin
-            ENDDO ! stateI
-         ENDDO ! idet
+         !                IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
+         !                   ! for beta spin do nothing - it is already taken care of
+         !                   CPASSERT(ispin.EQ.1) ! for triplets, cannot have non-zero unpaired beta electrons
+         !                   ! for alpha spin combine: pairs + alpha + beta
+         !                   ! use mat_t of singlet as a temporary storage
+         !                   CALL stitch_columns( &
+         !                           tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
+         !                           tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
+         !                           tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin) &
+         !                        )
+         !                   CALL stitch_columns( &
+         !                           tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), &
+         !                           tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+2), &
+         !                           tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+         !                        )
+         !                ELSE
+         !                   ! combine paired and unpared
+         !                   CALL stitch_columns( &
+         !                           tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
+         !                           tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
+         !                           tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+         !                        )
+         !                ENDIF ! triplet correction
+         !             ENDIF ! zero unpaired?
+         !          ENDIF ! zero paired?
+         !       ENDDO ! ispin
+         !    ENDDO ! stateI
+         ! ENDDO ! idet
 
 
       !CASE (restart_guess)

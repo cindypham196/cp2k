@@ -647,9 +647,9 @@ CONTAINS
 
          ! ROKS or UKS
          IF (tidft_env%restricted) THEN
-            WRITE (unit_nr, '(T2,A)') "ROKS method is used"
+            WRITE (unit_nr, *) "ROKS method is used"
          ELSE
-            WRITE (unit_nr, '(T2,A)') "UKS method is used"
+            WRITE (unit_nr, *) "UKS method is used"
          ENDIF
 
          ! Spin pure
@@ -663,7 +663,7 @@ CONTAINS
          ENDIF
 
          ! suggested_blk_size
-         WRITE (unit_nr, '(T2,A,T48,I4)') "Suggested block size for MOs:", tidft_env%suggested_mo_block_size
+         WRITE (unit_nr, *) "Suggested block size for MOs:", tidft_env%suggested_mo_block_size
 
          ! nstates = GS + ES
          WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electronic states:", tidft_env%nstates
@@ -671,41 +671,40 @@ CONTAINS
          ! nspins
          SELECT CASE (tidft_env%nspins)
          CASE (1)
-            WRITE (unit_nr, '(T2,A,T48,A)') "Describe alpha and beta electrons using 1 T-matrix"
+            WRITE (unit_nr, *) "Describe alpha and beta electrons using 1 T-matrix"
          CASE (2)
-            WRITE (unit_nr, '(T2,A,T48,A)') "Describe alpha and beta electrons using 2 T-matrices"
+            WRITE (unit_nr, *) "Describe alpha and beta electrons using 2 T-matrices"
          END SELECT
 
          ! Na, Nb, and total electrons
          DO stateI = 1, tidft_env%nstates
             DO slaterI = 1, tidft_env%e_states(stateI)%nslater
                IF (tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1) .NE. 0) THEN
-                  WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "N_alpha:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1)
+                  WRITE (unit_nr, *) "In state",stateI, "N_alpha:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1)
                ELSE IF (tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2) .NE. 0) THEN
-                  WRITE (unit_nr, '(T2,A,T48,A)') "In state",stateI, "N_beta:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
+                  WRITE (unit_nr, *) "In state",stateI, "N_beta:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
                ENDIF
             ENDDO
          ENDDO
-         WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electrons", tidft_env%nelectrons
+         WRITE (unit_nr, *) "Total number of electrons", tidft_env%nelectrons
 
         ! deisred_multip: Na - Nb + 1
-        WRITE (unit_nr, '(T2,A,T48,I4)') "The multiplicity of states", tidft_env%desired_multip
+        WRITE (unit_nr, *) "The multiplicity of states", tidft_env%desired_multip
 
         ! unpairings
-        WRITE (unit_nr, '(T2,A,T48,I4)') "Max. # allowed unpairings upon excitation:", tidft_env%unpairings
+        WRITE (unit_nr, *) "Max. # allowed unpairings upon excitation:", tidft_env%unpairings
 
-	! dimensionality of independent variables non-zero matrices
-        DO stateI = 1, tidft_env%nstates
-           SELECT CASE (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar))
-             CASE (1) ! doubly occ orbital
-               WRITE (unit_nr, '(T2,A,T48,A)') "Dimensionality of doubly occ orbital matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
-             CASE (2) ! singly occ alpha
-               WRITE (unit_nr, '(T2,A,T48,A)') "Dimensionality of singly occ alpha matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2)
-             CASE (3) ! singly occ beta
-               WRITE (unit_nr, '(T2,A,T48,A)') "Dimensionality of singly occ beta matrix:",tidft_env%e_states(stateI)%slater_det(1)%ncols_var(3)
- 
-            END SELECT
-
+        ! dimensionality of independent variables non-zero matrices
+         DO stateI = 1, tidft_env%nstates
+            DO ivar = 1, 3
+               IF (ivar E.Q. 1 .AND. tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1) .NE. 0) THEN ! doubly occ orbital
+                  WRITE (unit_nr,  *) "Dimensionality of doubly occ orbital matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
+               ELSE IF (ivar E.Q. 2 .AND. tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2) .NE. 0) THEN ! singly occ alpha
+                  WRITE (unit_nr,  *) "Dimensionality of singly occ alpha matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2)
+               ELSE ! singly occ beta
+                  WRITE (unit_nr,  *) "Dimensionality of singly occ beta matrix:",tidft_env%e_states(stateI)%slater_det(1)%ncols_var(3)
+               ENDIF
+            ENDDO
          ENDDO ! stateI
 
       ENDIF ! unit_nr > 0
