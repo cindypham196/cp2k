@@ -138,6 +138,10 @@ MODULE tidft_types
       ! Descriptors of electronic states
       TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
 
+      ! penalty coefficients
+      REAL(KIND=dp)                                      :: intrastate_nonorthogonality_penalty_coeff
+      REAL(KIND=dp)                                      :: interstate_nonorthogonality_penalty_coeff
+
       ! Keep some numerical thresholds
       REAL(KIND=dp)                                      :: eps_filter
       INTEGER                                            :: order_lanczos = 3
@@ -161,7 +165,7 @@ MODULE tidft_types
       TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_inv
 
       ! Overlap of electronic states (stateI, stateJ)
-      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi
+      REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: mat_phi
 
    END TYPE tidft_env_type
 

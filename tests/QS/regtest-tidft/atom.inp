@@ -34,17 +34,15 @@
   &END DFT
   &SUBSYS
     &CELL
-      ABC 4.5198722000    7.8286483000    7.3588725000
+      ABC 4. 4. 4.
       MULTIPLE_UNIT_CELL 1 1 1
     &END CELL
     &TOPOLOGY
       MULTIPLE_UNIT_CELL 1 1 1
     &END
     &COORD
-      He       0.5	 0.5	 0.0  ! He
-    !  H      -0.435600    0.057800    0.000000 ! H_ATOM
-    !  H       0.243700    0.552400   -0.509000 ! H2
-    !  H      -0.356300    0.552400   -0.509000 ! H2
+      He      0.0 0.0 0.0
+    !  H       0.0 0.0 0.0
     &END COORD
     &KIND H
       BASIS_SET SZV-GTH
@@ -56,5 +54,4 @@
     &END KIND
   &END SUBSYS
 &END FORCE_EVAL
-
 

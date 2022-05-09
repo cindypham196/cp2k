@@ -115,6 +115,12 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="PENALTY_COEFF_ALPHA", &
+                          description="Dimensionless positive nonorthogonality penalty coefficient.", &
+                          usage="PENALTY_COEFF_ALPHA 0.01", default_r_val=1.E-1_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       !tiidftCALL keyword_create(keyword, __LOCATION__, name="ALMO_SCF_GUESS", &
       !tiidft                    description="The method to generate initial ALMOs.", &
       !tiidft                    usage="ALMO_SCF_GUESS MOLECULAR", &

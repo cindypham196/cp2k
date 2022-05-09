@@ -17,6 +17,15 @@ MODULE tidft_methods
    USE bibliography,                    ONLY: Kolafa2004,&
                                               Kuhne2007,&
                                               cite_reference
+   USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
+                                              copy_fm_to_dbcsr
+   USE cp_fm_basic_linalg,              ONLY: cp_fm_lu_decompose
+   USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
+                                              cp_fm_struct_release,&
+                                              cp_fm_struct_type
+   USE cp_fm_types,                     ONLY: cp_fm_create,&
+                                              cp_fm_release,&
+                                              cp_fm_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_dbcsr_cholesky,               ONLY: cp_dbcsr_cholesky_decompose,&
                                               cp_dbcsr_cholesky_invert
@@ -56,6 +65,7 @@ MODULE tidft_methods
    USE kinds,                           ONLY: dp
    USE mathlib,                         ONLY: binomial
    USE util,                            ONLY: sort
+   USE machine,                         ONLY: m_flush
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -64,9 +74,53 @@ MODULE tidft_methods
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'almo_scf_methods'
 
-   PUBLIC stitch_columns
+   PUBLIC stitch_columns, determinant_generalized
 
 CONTAINS
+
+! *****************************************************************************
+!> \brief Computes the determinant of a square matrix
+!> \param matrix ...
+!> \param det - determinant
+!> \par History
+!>       2022.01 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE determinant_generalized(matrix, det, para_env, blacs_env)
+
+      TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
+      REAL(KIND=dp), INTENT(INOUT)                       :: det
+      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'determinant_generalized'
+
+      INTEGER                                            :: handle, &
+                                                            nfullcols_total, &
+                                                            nfullrows_total
+      TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
+      TYPE(cp_fm_type), POINTER                          :: fm_matrix
+
+      CALL timeset(routineN, handle)
+
+      !CALL dbcsr_get_info(matrix, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
+
+      !NULLIFY (fm_matrix, fm_struct)
+      !CALL cp_fm_struct_create(fm_struct, context=blacs_env, nrow_global=nfullrows_total, &
+      !                         ncol_global=nfullcols_total, para_env=para_env)
+      !CALL cp_fm_create(fm_matrix, fm_struct, name="fm_matrix")
+      !CALL cp_fm_struct_release(fm_struct)
+
+      !CALL copy_dbcsr_to_fm(matrix, fm_matrix)
+
+      !CALL cp_fm_lu_decompose(fm_matrix, det, correct_sign = .TRUE.)
+!det = 1.0_dp
+
+      !CALL cp_fm_release(fm_matrix)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE determinant_generalized
 
 ! **************************************************************************************************
 !> \brief Join columns of two matrices to produce a new matrix.

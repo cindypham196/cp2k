@@ -59,6 +59,7 @@ MODULE cp_fm_basic_linalg
              cp_fm_qr_factorization, & ! compute the QR factorization of a rectangular matrix
              cp_fm_solve, & ! solves the equation  A*B=C A and C are input
              cp_fm_pdgeqpf, & ! compute a QR factorization with column pivoting of a M-by-N distributed matrix
+             cp_fm_lu_decompose, & ! computes LU decomposition and determinant of a square matrix
              cp_fm_pdorgqr, & ! generates an M-by-N as first N columns of a product of K elementary reflectors
              cp_fm_potrf, & ! Cholesky decomposition
              cp_fm_potri, & ! Invert triangular matrix
@@ -334,19 +335,16 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief Computes the LU-decomposition of the matrix, and the determinant of the matrix
-!>      IMPORTANT : the sign of the determinant is not defined correctly yet ....
 !> \param matrix_a ...
 !> \param almost_determinant ...
 !> \param correct_sign ...
 !> \par History
 !>      added correct_sign 02.07 (fschiff)
+!>      correct sign is implemented for SCALAPACK (Rustam Z. Khaliullin)
 !> \author Joost VandeVondele
 !> \note
 !>      - matrix_a is overwritten
-!>      - the sign of the determinant might be wrong
-!>      - SERIOUS WARNING (KNOWN BUG) : the sign of the determinant depends on ipivot
-!>      - one should be able to find out if ipivot is an even or an odd permutation...
-!>        if you need the correct sign, just add correct_sign==.TRUE. (fschiff)
+!>      - if you need the correct sign of the determinant, just add correct_sign==.TRUE. (fschiff)
 !>      - Use cp_fm_get_diag instead of n times cp_fm_get_element (A. Bussy)
 ! **************************************************************************************************
    SUBROUTINE cp_fm_lu_decompose(matrix_a, almost_determinant, correct_sign)
@@ -363,6 +361,7 @@ CONTAINS
 #if defined(__parallel)
       INTEGER, DIMENSION(9)                    :: desca
       REAL(KIND=dp), DIMENSION(:), POINTER     :: diag
+      INTEGER                                  :: group, exponent_of_minus_one
 #else
       INTEGER                                  :: lda
 #endif
@@ -372,6 +371,7 @@ CONTAINS
       a => matrix_a%local_data
       n = matrix_a%matrix_struct%nrow_global
       ALLOCATE (ipivot(n + matrix_a%matrix_struct%nrow_block))
+      ipivot(:) = 0
 
 #if defined(__parallel)
       MARK_USED(correct_sign)
@@ -381,11 +381,21 @@ CONTAINS
       ALLOCATE (diag(n))
       diag(:) = 0.0_dp
       CALL cp_fm_get_diag(matrix_a, diag)
+      exponent_of_minus_one = 0
       determinant = 1.0_dp
       DO i = 1, n
          determinant = determinant*diag(i)
-      END DO
+         IF (ipivot(i) .NE. i) THEN
+            exponent_of_minus_one = exponent_of_minus_one + 1
+         END IF
+      ENDDO
       DEALLOCATE (diag)
+
+      group = matrix_a%matrix_struct%para_env%group
+      CALL mp_sum(exponent_of_minus_one, group)
+
+      IF (correct_sign) determinant = determinant*(-1.0_dp)**exponent_of_minus_one
+
 #else
       lda = SIZE(a, 1)
       CALL dgetrf(n, n, a, lda, ipivot, info)
@@ -407,7 +417,7 @@ CONTAINS
       ! info is allowed to be zero
       ! this does just signal a zero diagonal element
       DEALLOCATE (ipivot)
-      almost_determinant = determinant ! notice that the sign is random
+      almost_determinant = determinant 
       CALL timestop(handle)
    END SUBROUTINE
 

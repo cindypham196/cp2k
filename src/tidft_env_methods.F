@@ -138,6 +138,12 @@ CONTAINS
               l_val=tidft_env%spin_pure)
       CALL section_vals_val_get(tidft_section, "MAX_UNPAIR", &
               i_val=tidft_env%unpairings)
+      CALL section_vals_val_get(tidft_section, "PENALTY_COEFF_ALPHA", &
+              r_val=tidft_env%intrastate_nonorthogonality_penalty_coeff)
+      tidft_env%intrastate_nonorthogonality_penalty_coeff = &
+         ABS(tidft_env%intrastate_nonorthogonality_penalty_coeff)
+      tidft_env%interstate_nonorthogonality_penalty_coeff = &
+         tidft_env%intrastate_nonorthogonality_penalty_coeff
 
       ! CINDY: record suggested_blk_size inside tidft_env
       CALL section_vals_val_get(tidft_section, "SUGGESTED_MO_BLOCK_SIZE", &
@@ -270,6 +276,7 @@ CONTAINS
          ENDIF
          CPABORT("Number of spins in DFT and TIDFT are different")
       ENDIF
+      nspins=tidft_env%nspins
 
       tidft_env%ndets = 1
       IF (tidft_env%triplet_correction) tidft_env%ndets = 2
@@ -278,6 +285,7 @@ CONTAINS
       nslater = tidft_env%ndets
 
       ALLOCATE(tidft_env%e_states(nstates))
+      ALLOCATE(tidft_env%mat_phi(nstates,nstates,nspins))
       DO stateI = 1, nstates
          tidft_env%e_states(stateI)%nslater = nslater
          ALLOCATE(tidft_env%e_states(stateI)%slater_det(nslater))
@@ -579,6 +587,9 @@ CONTAINS
             IF (idet.EQ.1) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
          ENDDO
       ENDDO
+
+      DEALLOCATE(tidft_env%mat_phi)
+      DEALLOCATE(tidft_env%e_states)
 
       CALL cp_para_env_release(tidft_env%para_env)
       CALL cp_blacs_env_release(tidft_env%blacs_env)
