@@ -254,9 +254,6 @@ CONTAINS
          tidft_env%nspins = 2
       ENDIF
 
-      WRITE(*,*) "   QS nspins:", dft_control%nspins
-      WRITE(*,*) "TIDFT nspins:", tidft_env%nspins
-
       IF (tidft_env%spin_pure) THEN
          IF ( tidft_env%desired_multip.EQ.1 .AND. tidft_env%unpairings.EQ.1 ) THEN
             tidft_env%triplet_correction = .TRUE.
@@ -345,7 +342,7 @@ CONTAINS
       CALL tidft_init_ao_overlap(tidft_env, matrix_s(1)%matrix)
       CALL tidft_init_ks_matrices(qs_env, tidft_env)
 
-!tiidft      CALL construct_qs_mos(qs_env, tidft_env)
+      !tiidft      CALL construct_qs_mos(qs_env, tidft_env)
 
       ! FINISH setting job parameters here, print out job info
       CALL tidft_print_job_info(tidft_env, unit_nr)
@@ -637,7 +634,7 @@ CONTAINS
 !> \param tidft_env ...
 !> \param unit_nr ...
 !> \par History
-!>       2021.10 created [Cindy Pham]
+!>       2021.10 created [Cindy Pham, Rustam Z. Khaliullin]
 !> \author Cindy Pham
 ! **************************************************************************************************
    SUBROUTINE tidft_print_job_info(tidft_env, unit_nr)
@@ -653,70 +650,76 @@ CONTAINS
       CALL timeset(routineN, handle)
 
       IF (unit_nr > 0) THEN
+
          WRITE (unit_nr, '()')
-         WRITE (unit_nr, '(T2,A,A,A)') REPEAT("-", 32), " INFO PRINTOUT ", REPEAT("-", 32)
+         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
+         WRITE (unit_nr, '(T2,A,T19,A,T78,A)') REPEAT("-", 3), &
+            "Welcome to time-independent DFT (TI-DFT) -", REPEAT("-", 3)
+         WRITE (unit_nr, '(T2,A,T16,A,T78,A)') REPEAT("-", 3), &
+            "an awesome variational method for excited states", REPEAT("-", 3)
+         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
+
+         !WRITE (unit_nr, '()')
+         !WRITE (unit_nr, '(T2,A,A,A)') REPEAT("-", 31), " TI-DFT settings ", REPEAT("-", 31)
 
          ! ROKS or UKS
          IF (tidft_env%restricted) THEN
-            WRITE (unit_nr, *) "ROKS method is used"
+            WRITE (unit_nr, '(T2,A)') "Restricted open-shell KS method is used"
          ELSE
-            WRITE (unit_nr, *) "UKS method is used"
+            WRITE (unit_nr, '(T2,A)') "Unrestricted KS method is used"
          ENDIF
 
          ! Spin pure
          IF (tidft_env%spin_pure) THEN
-            WRITE (unit_nr, '(T2,A)') "Spin pure state is enforced"
+            WRITE (unit_nr, '(T2,A)') "States are enforced to be spin pure"
             IF (tidft_env%triplet_correction) THEN
-               WRITE (unit_nr, '(T2,A)') "Triplet state is optimized together with singlet state"
+               WRITE (unit_nr, '(T4,A)') "Triplet states are optimized together with spin-flipped singlet states"
             ENDIF
          ELSE
             WRITE (unit_nr, '(T2,A)') "Spin purity is not enforced"
          ENDIF
 
-         ! suggested_blk_size
-         WRITE (unit_nr, *) "Suggested block size for MOs:", tidft_env%suggested_mo_block_size
-
-         ! nstates = GS + ES
-         WRITE (unit_nr, '(T2,A,T48,I4)') "Total number of electronic states:", tidft_env%nstates
-                 
          ! nspins
          SELECT CASE (tidft_env%nspins)
          CASE (1)
-            WRITE (unit_nr, *) "Describe alpha and beta electrons using 1 T-matrix"
+            WRITE (unit_nr, '(T2,A)') "Alpha and beta electrons are described using one set of MOs"
          CASE (2)
-            WRITE (unit_nr, *) "Describe alpha and beta electrons using 2 T-matrices"
+            WRITE (unit_nr, '(T2,A)') "Alpha and beta electrons are described using two sets of MOs"
          END SELECT
 
-         ! Na, Nb, and total electrons
-         DO stateI = 1, tidft_env%nstates
+         ! nstates = GS + ES
+         WRITE (unit_nr, '(T2,A,T70,I11)') "No. of electronic states", tidft_env%nstates
+
+         ! deisred_multip: Na - Nb + 1
+         WRITE (unit_nr, '(T2,A,T70,I11)') "Desired multiplicity", tidft_env%desired_multip
+
+         ! unpairings
+         WRITE (unit_nr, '(T2,A,T70,I11)') "Max no. of allowed unpairings", tidft_env%unpairings
+
+         WRITE (unit_nr, '()')
+         WRITE (unit_nr, '(T2,A,T70,I11)') "No. of electrons", tidft_env%nelectrons
+         DO stateI = 1, 1 ! tidft_env%nstates ! no need to run over all states - these vars are the same
             DO slaterI = 1, tidft_env%e_states(stateI)%nslater
-               IF (tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1) .NE. 0) THEN
-                  WRITE (unit_nr, *) "In state",stateI, "N_alpha:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1)
-               ELSE IF (tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2) .NE. 0) THEN
-                  WRITE (unit_nr, *) "In state",stateI, "N_beta:", tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
-               ENDIF
+               IF (slaterI .EQ. 2) WRITE (unit_nr, '(T2,A,T70,I11)') "Triplet state"
+               WRITE (unit_nr, '(T4,A,T70,I11)') "No. of alpha electrons", &
+                  tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1)
+               WRITE (unit_nr, '(T4,A,T70,I11)') "No. of beta electrons", &
+                  tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
+               WRITE (unit_nr, '(T4,A,T70,I11)') "No. of doubly occupied MOs", &
+                  tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
+               WRITE (unit_nr, '(T4,A,T70,I11)') "No. of singly occupied alpha MOs", &
+                  tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2)+(slaterI-1)
+               WRITE (unit_nr, '(T4,A,T70,I11)') "No. of singly occupied beta MOs", &
+                  tidft_env%e_states(stateI)%slater_det(1)%ncols_var(3)-(slaterI-1)
             ENDDO
          ENDDO
-         WRITE (unit_nr, *) "Total number of electrons", tidft_env%nelectrons
 
-        ! deisred_multip: Na - Nb + 1
-        WRITE (unit_nr, *) "The multiplicity of states", tidft_env%desired_multip
+         ! suggested_blk_size
+         WRITE (unit_nr, '()')
+         WRITE (unit_nr, '(T2,A,T70,I11)') "Suggested block size for MOs", tidft_env%suggested_mo_block_size
 
-        ! unpairings
-        WRITE (unit_nr, *) "Max. # allowed unpairings upon excitation:", tidft_env%unpairings
-
-        ! dimensionality of independent variables non-zero matrices
-         DO stateI = 1, tidft_env%nstates
-            DO ivar = 1, 3
-               IF (ivar E.Q. 1 .AND. tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1) .NE. 0) THEN ! doubly occ orbital
-                  WRITE (unit_nr,  *) "Dimensionality of doubly occ orbital matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
-               ELSE IF (ivar E.Q. 2 .AND. tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2) .NE. 0) THEN ! singly occ alpha
-                  WRITE (unit_nr,  *) "Dimensionality of singly occ alpha matrix:", tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2)
-               ELSE ! singly occ beta
-                  WRITE (unit_nr,  *) "Dimensionality of singly occ beta matrix:",tidft_env%e_states(stateI)%slater_det(1)%ncols_var(3)
-               ENDIF
-            ENDDO
-         ENDDO ! stateI
+         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
+         WRITE (unit_nr, '()')
 
       ENDIF ! unit_nr > 0
 

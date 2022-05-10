@@ -141,8 +141,6 @@ CONTAINS
       ! get a pointer to the environment
       CALL get_qs_env(qs_env, tidft_env=tidft_env)
 
-      WRITE(*,*) "Welcome to TIDFT -- an awesome variational method for excited states"
-
       tidft_env%calc_forces = calc_forces
       CALL tidft_init(qs_env, tidft_env)
 
@@ -202,7 +200,7 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(dbcsr_distribution_type)                      :: dist
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao, 
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao 
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
