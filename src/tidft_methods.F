@@ -74,9 +74,63 @@ MODULE tidft_methods
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'almo_scf_methods'
 
-   PUBLIC stitch_columns, determinant_generalized
+   PUBLIC stitch_columns, determinant_generalized, determinant_local
 
 CONTAINS
+
+! **************************************************************************************************
+!> \brief Computes the determinant of a square matrix via LU-decomposition
+!> \param matrix_a ...
+!> \param determinant ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE determinant_local(matrix_a, determinant)
+      REAL(KIND=dp), DIMENSION(:,:), INTENT(IN)          :: matrix_a
+      REAL(KIND=dp), INTENT(OUT)                         :: determinant
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'determinant_local'
+
+      INTEGER                                            :: handle, i, info, n, m
+      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: ipivot
+      REAL(KIND=dp)                                      :: determinant_temp
+      REAL(KIND=dp), DIMENSION(:, :), ALLOCATABLE        :: a
+      INTEGER lda
+
+      CALL timeset(routineN, handle)
+
+      n = SIZE(matrix_a,1)
+      m = SIZE(matrix_a,2)
+      IF (m .NE. n) CPABORT("Matrix is not square")
+
+      ALLOCATE(a(n,m))
+      a(:,:)=matrix_a(:,:)
+      
+      ALLOCATE (ipivot(n))
+      ipivot(:) = 0
+
+      lda = SIZE(a, 1)
+      CALL dgetrf(n, n, a, lda, ipivot, info)
+      IF (info .NE. 0) CPABORT("DGETRF failed to compute LU decomposition")
+
+      determinant_temp = 1.0_dp
+      DO i = 1, n
+         IF (ipivot(i) .NE. i) THEN
+            determinant_temp = -determinant_temp*a(i, i)
+         ELSE
+            determinant_temp = determinant_temp*a(i, i)
+         END IF
+      END DO
+
+      DEALLOCATE (ipivot)
+      DEALLOCATE(a)
+
+      determinant = determinant_temp
+
+      CALL timestop(handle)
+
+   END SUBROUTINE
 
 ! *****************************************************************************
 !> \brief Computes the determinant of a square matrix
@@ -103,20 +157,19 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      !CALL dbcsr_get_info(matrix, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
+      CALL dbcsr_get_info(matrix, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
 
-      !NULLIFY (fm_matrix, fm_struct)
-      !CALL cp_fm_struct_create(fm_struct, context=blacs_env, nrow_global=nfullrows_total, &
-      !                         ncol_global=nfullcols_total, para_env=para_env)
-      !CALL cp_fm_create(fm_matrix, fm_struct, name="fm_matrix")
-      !CALL cp_fm_struct_release(fm_struct)
+      NULLIFY (fm_matrix, fm_struct)
+      CALL cp_fm_struct_create(fm_struct, context=blacs_env, nrow_global=nfullrows_total, &
+                               ncol_global=nfullcols_total, para_env=para_env)
+      CALL cp_fm_create(fm_matrix, fm_struct, name="fm_matrix")
+      CALL cp_fm_struct_release(fm_struct)
 
-      !CALL copy_dbcsr_to_fm(matrix, fm_matrix)
+      CALL copy_dbcsr_to_fm(matrix, fm_matrix)
 
-      !CALL cp_fm_lu_decompose(fm_matrix, det, correct_sign = .TRUE.)
-!det = 1.0_dp
+      CALL cp_fm_lu_decompose(fm_matrix, det, correct_sign = .TRUE.)
 
-      !CALL cp_fm_release(fm_matrix)
+      CALL cp_fm_release(fm_matrix)
 
       CALL timestop(handle)
 

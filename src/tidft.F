@@ -37,6 +37,7 @@ MODULE tidft
                                               print_optimizer_options
    USE tidft_types,                     ONLY: tidft_env_type
    USE tidft_methods,                   ONLY: stitch_columns, &
+                                              determinant_local, &
                                               determinant_generalized
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init
@@ -622,10 +623,9 @@ CONTAINS
                         ! compute the determinant and save it to the Phi matrix
                         CALL determinant_generalized( &
                                 matrix = tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
-                                det = determinant_spd, & !tidft_env%mat_phi(stateI,stateJ,ispin), &
+                                det = tidft_env%mat_phi(stateI,stateJ,ispin), &
                                 para_env = tidft_env%para_env, &
                                 blacs_env = tidft_env%blacs_env)
-                        tidft_env%mat_phi(stateI,stateJ,ispin) = 1.0_dp
                         tidft_env%mat_phi(stateJ,stateI,ispin)=tidft_env%mat_phi(stateI,stateJ,ispin)
                         IF (unit_nr > 0) THEN
                            WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
@@ -680,8 +680,41 @@ CONTAINS
          ENDDO ! idet
       ENDDO ! stateI
 
+      ! Print phi matrices
+      DO ispin = 1, nspins
+         WRITE (*,*) "Phi matrix, spin ", ispin
+         DO ivar = 1, nstates
+            WRITE (*,*) tidft_env%mat_phi(ivar,:,ispin)
+         ENDDO
+         WRITE (*,*)
+      ENDDO
+
       ! compute interstate nonorthogonality penalty
       interstate_nonorthogonality_penalty = 0.0_dp
+      DO ispin = 1, nspins
+
+         CALL determinant_local(tidft_env%mat_phi(:,:,ispin), determinant_spd)
+         ! compute the product of the diagonal elements
+         DetDiagonalSigma = 1.0_dp
+         DO ivar = 1, nstates
+            DetDiagonalSigma = DetDiagonalSigma * tidft_env%mat_phi(ivar,ivar,ispin)
+         ENDDO
+
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, *) "INTERSTATE Spin: ", ispin, "Phi Det", determinant_spd, "Diag-Phi Det", DetDiagonalSigma
+         ENDIF
+
+         penalty_stateI = - tidft_env%interstate_nonorthogonality_penalty_coeff * &
+                              ( LOG(determinant_spd) - LOG(DetDiagonalSigma) )
+
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Spin ", ispin, penalty_stateI
+         ENDIF
+
+         interstate_nonorthogonality_penalty = interstate_nonorthogonality_penalty + &
+            penalty_stateI
+
+      ENDDO
 
       DEALLOCATE(fake_e_per_block)
 

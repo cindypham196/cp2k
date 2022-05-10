@@ -659,9 +659,6 @@ CONTAINS
             "an awesome variational method for excited states", REPEAT("-", 3)
          WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
 
-         !WRITE (unit_nr, '()')
-         !WRITE (unit_nr, '(T2,A,A,A)') REPEAT("-", 31), " TI-DFT settings ", REPEAT("-", 31)
-
          ! ROKS or UKS
          IF (tidft_env%restricted) THEN
             WRITE (unit_nr, '(T2,A)') "Restricted open-shell KS method is used"
