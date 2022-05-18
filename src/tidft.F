@@ -103,6 +103,7 @@ MODULE tidft
    USE qs_rho_types,                    ONLY: qs_rho_get,&
                                               qs_rho_type
    USE qs_scf_post_scf,                 ONLY: qs_scf_compute_properties
+   USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_scf_types,                    ONLY: qs_scf_env_type,&
                                               scf_env_release
 #include "./base/base_uses.f90"
@@ -210,6 +211,7 @@ CONTAINS
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: fake_e_per_block
       INTEGER                                            :: group, nsize
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: diagonal
+      TYPE(qs_energy_type), POINTER                      :: qs_energy
 
       CALL timeset(routineN, handle)
 
@@ -597,6 +599,8 @@ CONTAINS
          WRITE (unit_nr, '(T2,A38,F40.10)') "Sum of all states", obj_energy
          WRITE (unit_nr, '()')
       ENDIF
+      
+      DEALLOCATE(fake_e_per_block)
 
       !! compute nonorthogonality penalty
       tidft_env%mat_phi(:,:,:) = 0.0_dp
@@ -680,6 +684,12 @@ CONTAINS
          ENDDO ! idet
       ENDDO ! stateI
 
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, '(T2,A38,F40.10)') "Intrastate nonorthogonality penalty", &
+            intrastate_nonorthogonality_penalty
+         WRITE (unit_nr, '()')
+      ENDIF
+
       ! Print phi matrices
       DO ispin = 1, nspins
          WRITE (*,*) "Phi matrix, spin ", ispin
@@ -716,7 +726,23 @@ CONTAINS
 
       ENDDO
 
-      DEALLOCATE(fake_e_per_block)
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, '()')
+         WRITE (unit_nr, '(T2,A38,F40.10)') "Sum of energies of all states", obj_energy
+         WRITE (unit_nr, '(T2,A38,F40.10)') "Intrastate nonorthogonality penalty", &
+            intrastate_nonorthogonality_penalty
+         WRITE (unit_nr, '(T2,A38,F40.10)') "Interstate nonorthogonality penalty", &
+            interstate_nonorthogonality_penalty
+         WRITE (unit_nr, '(T2,A38,F40.10)') "Objective function", &
+            obj_energy + &
+            intrastate_nonorthogonality_penalty + &
+            interstate_nonorthogonality_penalty
+         WRITE (unit_nr, '()')
+      ENDIF
+
+      ! Return the sum of all energies to QS
+      CALL get_qs_env(qs_env, energy=qs_energy)
+      qs_energy%total = obj_energy
 
       CALL timestop(handle)
 
