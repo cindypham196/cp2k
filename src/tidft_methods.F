@@ -19,7 +19,8 @@ MODULE tidft_methods
                                               cite_reference
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr
-   USE cp_fm_basic_linalg,              ONLY: cp_fm_lu_decompose
+   USE cp_fm_basic_linalg,              ONLY: cp_fm_lu_decompose,&
+                                              cp_fm_adjugate
    USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
                                               cp_fm_struct_release,&
                                               cp_fm_struct_type
@@ -74,7 +75,8 @@ MODULE tidft_methods
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'almo_scf_methods'
 
-   PUBLIC stitch_columns, determinant_generalized, determinant_local
+   PUBLIC stitch_columns, determinant_generalized, determinant_local, &
+          cp_dbcsr_adjugate
 
 CONTAINS
 
@@ -134,20 +136,20 @@ CONTAINS
 
 ! *****************************************************************************
 !> \brief Computes the adjugate of a square DBCSR matrix
-!> \param matrix - input: initial matrix, output: adjugate
+!> \param matrix - input: initial matrix, output: the adjugate
 !> \param det - determinant
 !> \par History
 !>       2022.05 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE adjugate(matrix, det, para_env, blacs_env)
+   SUBROUTINE cp_dbcsr_adjugate(matrix, det, para_env, blacs_env)
 
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
       REAL(KIND=dp), INTENT(INOUT)                       :: det
       TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'adjugate'
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'cp_dbcsr_adjugate'
 
       INTEGER                                            :: handle, &
                                                             nfullcols_total, &
@@ -167,179 +169,16 @@ CONTAINS
 
       CALL copy_dbcsr_to_fm(matrix, fm_matrix)
 
-      CALL cp_fm_adjugate(fm_matrix) 
+      ! Do the work - compute adjugate
+      CALL cp_fm_adjugate(fm_matrix, det)
+
+      CALL copy_fm_to_dbcsr(fm_matrix, matrix)
 
       CALL cp_fm_release(fm_matrix)
 
       CALL timestop(handle)
 
-   END SUBROUTINE adjugate
-
-! **************************************************************************************************
-!> \brief SVD of a cp_fm_type matrix
-!> \param matrix_a the matrix to invert
-!> \param matrix_inverse the inverse of matrix_a
-!> \param det_a the determinant of matrix_a
-!> \param eps_svd optional parameter to active SVD based inversion, singular values below eps_svd
-!>                are screened
-!> \param eigval optionally return matrix eigenvalues/singular values
-!> \par History
-!>      note of Jan Wilhelm (12.2015)
-!>      - computation of determinant corrected
-!>      - determinant only computed if det_a is present
-!>      12.2016 added option to use SVD instead of LU [Nico Holmberg]
-!>      - Use cp_fm_get diag instead of n times cp_fm_get_element (A. Bussy)
-!> \author Florian Schiffmann(02.2007)
-! **************************************************************************************************
-   SUBROUTINE cp_fm_invert(matrix_a, matrix_adjugate, det_a, eps_svd, eigval)
-
-      TYPE(cp_fm_type), POINTER                :: matrix_a, matrix_adjugate
-      REAL(KIND=dp), INTENT(OUT), OPTIONAL     :: det_a
-      REAL(KIND=dp), INTENT(IN), OPTIONAL      :: eps_svd
-      REAL(KIND=dp), DIMENSION(:), POINTER, &
-         INTENT(INOUT), OPTIONAL               :: eigval
-
-      INTEGER                                  :: n
-      REAL(KIND=dp)                            :: my_eps_svd
-      REAL(KIND=dp), DIMENSION(:, :), POINTER  :: a
-      TYPE(cp_fm_type), POINTER                :: matrix_lu
-
-#if defined(__SCALAPACK)
-      TYPE(cp_fm_type), POINTER                :: u, vt, sigma, inv_sigma_ut
-      INTEGER                                  :: i, info, liwork, lwork, group, exponent_of_minus_one
-      INTEGER, DIMENSION(9)                    :: desca
-      LOGICAL                                  :: quenched
-      REAL(KIND=dp)                            :: alpha, beta
-      REAL(KIND=dp), DIMENSION(:), POINTER     :: diag
-      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:) :: work
-#else
-      LOGICAL                                  :: sign
-      REAL(KIND=dp)                            :: eps1
-#endif
-
-      CALL cp_fm_create(matrix=matrix_lu, &
-                        matrix_struct=matrix_a%matrix_struct, &
-                        name="A_lu"//TRIM(ADJUSTL(cp_to_string(1)))//"MATRIX")
-      CALL cp_fm_to_fm(matrix_a, matrix_lu)
-
-      a => matrix_lu%local_data
-      n = matrix_lu%matrix_struct%nrow_global
-
-#if defined(__SCALAPACK)
-
-      ! Allocate storage
-      CALL cp_fm_create(matrix=u, &
-                        matrix_struct=matrix_a%matrix_struct, &
-                        name="LEFT_SINGULAR_MATRIX")
-      CALL cp_fm_set_all(u, alpha=0.0_dp)
-      CALL cp_fm_create(matrix=vt, &
-                        matrix_struct=matrix_a%matrix_struct, &
-                        name="RIGHT_SINGULAR_MATRIX")
-      CALL cp_fm_set_all(vt, alpha=0.0_dp)
-      ALLOCATE (diag(n))
-      diag(:) = 0.0_dp
-      desca(:) = matrix_lu%matrix_struct%descriptor(:)
-      ALLOCATE (work(1))
-
-      ! Run workspace query
-      lwork = -1
-      CALL pdgesvd('V', 'V', n, n, matrix_lu%local_data, 1, 1, desca, diag, u%local_data, &
-                   1, 1, desca, vt%local_data, 1, 1, desca, work, lwork, info)
-      lwork = INT(work(1))
-      DEALLOCATE (work)
-      ALLOCATE (work(lwork))
-
-      ! Perform SVD
-      CALL pdgesvd('V', 'V', n, n, matrix_lu%local_data, 1, 1, desca, diag, u%local_data, &
-                   1, 1, desca, vt%local_data, 1, 1, desca, work, lwork, info)
-      ! info == n+1 implies homogeneity error when the number of procs is large
-      ! this likely isnt a problem, but maybe we should handle it separately
-      IF (info /= 0 .AND. info /= n + 1) &
-         CPABORT("Singular value decomposition failed.")
-
-      ! Construct adjugate: inversion is avoided by constructing the product of det(D)*D^(-1)
-      CALL cp_fm_create(matrix=sigma, &
-                        matrix_struct=matrix_a%matrix_struct, &
-                        name="SINGULAR_VALUE_MATRIX")
-      CALL cp_fm_set_all(sigma, alpha=0.0_dp)
-      DO i = 1, n ! loop over diagonal values of det(D)*D^(-1) 
-         adjugate_value = 1.0_dp
-         DO j = 1, n ! loop over diagonal elements of D
-            IF (i .EQ. j) CYCLE ! one value must be omitted
-            adjugate_value = adjugate_value * diag(j)
-         ENDDO
-         CALL cp_fm_set_element(sigma, i, i, adjugate_value)
-      END DO
-
-      ! det(D)*D^(-1) . U^T
-      CALL cp_fm_create(matrix=inv_sigma_ut, &
-                        matrix_struct=matrix_a%matrix_struct, &
-                        name="SINGULAR_VALUE_MATRIX")
-      CALL cp_fm_set_all(inv_sigma_ut, alpha=0.0_dp)
-      CALL pdgemm('N', 'T', n, n, n, 1.0_dp, sigma%local_data, 1, 1, desca, &
-                  u%local_data, 1, 1, desca, 0.0_dp, inv_sigma_ut%local_data, 1, 1, desca)
-      ! temp = V . ( det(D)*D^(-1) . U^T )
-      CALL cp_fm_set_all(matrix_adjugate, alpha=0.0_dp)
-      CALL pdgemm('T', 'N', n, n, n, 1.0_dp, vt%local_data, 1, 1, desca, &
-                  inv_sigma_ut%local_data, 1, 1, desca, 0.0_dp, matrix_adjugate%local_data, 1, 1, desca)
-
-      ! Scale adjugate by det(U)
-ALTERNATIVE CALL cp_fm_lu_decompose(fm_matrix, det, correct_sign = .TRUE.)
-      ALLOCATE (ipivot(n + u%matrix_struct%nrow_block))
-      ipivot(:) = 0
-      desca(:) = u%matrix_struct%descriptor(:)
-      CALL pdgetrf(n, n, u%local_data, 1, 1, desca, ipivot, info)
-      diag(:) = 0.0_dp
-      CALL cp_fm_get_diag(u, diag)
-      exponent_of_minus_one = 0
-      determinant = 1.0_dp
-      DO i = 1, n
-         determinant = determinant*diag(i)
-         IF (ipivot(i) .NE. i) THEN
-            exponent_of_minus_one = exponent_of_minus_one + 1
-         END IF
-      ENDDO
-      group = u%matrix_struct%para_env%group
-      CALL mp_sum(exponent_of_minus_one, group)
-      determinant = determinant*(-1.0_dp)**exponent_of_minus_one
-      CALL cp_fm_scale(determinant, matrix_adjugate)
-      DEALLOCATE (ipivot)
-
-      ! Scale adjugate by det(V^T)
-      ALLOCATE (ipivot(n + vt%matrix_struct%nrow_block))
-      ipivot(:) = 0
-      desca(:) = vt%matrix_struct%descriptor(:)
-      CALL pdgetrf(n, n, vt%local_data, 1, 1, desca, ipivot, info)
-      diag(:) = 0.0_dp
-      CALL cp_fm_get_diag(vt, diag)
-      exponent_of_minus_one = 0
-      determinant = 1.0_dp
-      DO i = 1, n
-         determinant = determinant*diag(i)
-         IF (ipivot(i) .NE. i) THEN
-            exponent_of_minus_one = exponent_of_minus_one + 1
-         END IF
-      ENDDO
-      group = vt%matrix_struct%para_env%group
-      CALL mp_sum(exponent_of_minus_one, group)
-      determinant = determinant*(-1.0_dp)**exponent_of_minus_one
-      CALL cp_fm_scale(determinant, matrix_adjugate)
-
-      ! Clean up
-      DEALLOCATE (diag)
-      DEALLOCATE (work)
-      CALL cp_fm_release(u)
-      CALL cp_fm_release(vt)
-      CALL cp_fm_release(sigma)
-      CALL cp_fm_release(inv_sigma_ut)
-
-#else
-      CALL get_pseudo_inverse_svd(matrix_a%local_data, matrix_adjugate%local_data, eps_svd, &
-                                  determinant, eigval)
-#endif
-      CALL cp_fm_release(matrix_lu)
-
-   END SUBROUTINE cp_fm_invert
+   END SUBROUTINE cp_dbcsr_adjugate
 
 ! *****************************************************************************
 !> \brief Computes the determinant of a square matrix

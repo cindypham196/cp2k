@@ -68,7 +68,8 @@ MODULE cp_fm_basic_linalg
              cp_fm_cholesky_restore, & ! apply Cholesky decomposition
              cp_fm_Gram_Schmidt_orthonorm, & ! Gram-Schmidt orthonormalization of columns of a full matrix, &
              cp_fm_det, & ! determinant of a real matrix with correct sign
-             cp_fm_matvec ! matrix-vector multiplication (vector replicated)
+             cp_fm_matvec, & ! matrix-vector multiplication (vector replicated)
+             cp_fm_adjugate ! computes the adjugate of a square matrix and its determinant
 
    REAL(KIND=dp), EXTERNAL :: dlange, pdlange, pdlatra
    REAL(KIND=sp), EXTERNAL :: slange, pslange, pslatra
@@ -420,6 +421,146 @@ CONTAINS
       almost_determinant = determinant 
       CALL timestop(handle)
    END SUBROUTINE
+
+! **************************************************************************************************
+!> \brief Computes the adjugate of a square cp_fm_type matrix
+!> \param matrix_a - on entry, the initial matrix
+!>                   on exit, the adjugate of the matrix
+!> \param det_a - the determinant of the initial matrix
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin (02.2007)
+! **************************************************************************************************
+   SUBROUTINE cp_fm_adjugate(matrix_a, det_a)
+
+      TYPE(cp_fm_type), POINTER                :: matrix_a
+      REAL(KIND=dp), INTENT(OUT)               :: det_a
+
+      INTEGER                                  :: n
+      TYPE(cp_fm_type), POINTER                :: matrix_temp
+      TYPE(cp_fm_type), POINTER                :: u, vt, detDinvD 
+      REAL(KIND=dp), DIMENSION(:), POINTER     :: diag
+      REAL(KIND=dp)                            :: determinant, adjugate_value
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:) :: work
+      INTEGER                                  :: i, j, info, liwork, lwork
+
+#if defined(__SCALAPACK)
+      INTEGER, DIMENSION(9)                    :: desca
+#else
+      INTEGER                                  :: lda, ldu, ldvt
+#endif
+
+      CALL cp_fm_create(matrix=matrix_temp, &
+                        matrix_struct=matrix_a%matrix_struct, &
+                        name="ADJ_MATRIX")
+      CALL cp_fm_to_fm(matrix_a, matrix_temp)
+
+      !a => matrix_temp%local_data
+      n = matrix_temp%matrix_struct%nrow_global
+
+      ! Allocate storage
+      CALL cp_fm_create(matrix=u, &
+                        matrix_struct=matrix_a%matrix_struct, &
+                        name="LEFT_SINGULAR_MATRIX")
+      CALL cp_fm_set_all(u, alpha=0.0_dp)
+      CALL cp_fm_create(matrix=vt, &
+                        matrix_struct=matrix_a%matrix_struct, &
+                        name="RIGHT_SINGULAR_MATRIX")
+      CALL cp_fm_set_all(vt, alpha=0.0_dp)
+      ALLOCATE (diag(n))
+      diag(:) = 0.0_dp
+
+#if defined(__SCALAPACK)
+
+      ! Run workspace query
+      ALLOCATE (work(1))
+      lwork = -1
+      desca(:) = matrix_temp%matrix_struct%descriptor(:)
+      CALL pdgesvd('V', 'V', n, n, matrix_temp%local_data, 1, 1, desca, diag, u%local_data, &
+                   1, 1, desca, vt%local_data, 1, 1, desca, work, lwork, info)
+      lwork = INT(work(1))
+      DEALLOCATE (work)
+      ALLOCATE (work(lwork))
+
+      ! Perform SVD
+      CALL pdgesvd('V', 'V', n, n, matrix_temp%local_data, 1, 1, desca, diag, u%local_data, &
+                   1, 1, desca, vt%local_data, 1, 1, desca, work, lwork, info)
+      ! info == n+1 implies homogeneity error when the number of procs is large
+      ! this likely isnt a problem, but maybe we should handle it separately
+      IF (info /= 0 .AND. info /= n + 1) &
+         CPABORT("Singular value decomposition failed.")
+
+      DEALLOCATE (work)
+
+#else
+
+      ! Run workspace query
+      lda = SIZE(matrix_temp%local_data, 1)
+      ldu = SIZE(u%local_data, 1)
+      ldvt = SIZE(vt%local_data, 1)
+      ALLOCATE (work(1))
+      lwork = -1
+      CALL dgesvd('A', 'A', n, n, matrix_temp%local_data, lda, diag, u%local_data, &
+                   ldu, vt%local_data, ldvt, work, lwork, info)
+      lwork = INT(work(1))
+      DEALLOCATE (work)
+      ALLOCATE (work(lwork))
+
+      ! Perform SVD
+      CALL dgesvd('A', 'A', n, n, matrix_temp%local_data, lda, diag, u%local_data, &
+                   ldu, vt%local_data, ldvt, work, lwork, info)
+      IF (info /= 0) CPABORT("Singular value decomposition failed.")
+
+      DEALLOCATE (work)
+
+#endif
+
+      ! Construct adjugate using the diagonal matrix D, which contains singular values:
+      ! the key trick is to avoid inversion by constructing the product of det(D)*D^(-1)
+      CALL cp_fm_create(matrix=detDinvD, &
+                        matrix_struct=matrix_a%matrix_struct, &
+                        name="ADJUGATE_CORE")
+      CALL cp_fm_set_all(detDinvD, alpha=0.0_dp)
+      det_a = 1.0_dp
+      DO i = 1, n ! loop over diagonal values of det(D)*D^(-1) 
+         adjugate_value = 1.0_dp
+         DO j = 1, n ! loop over diagonal elements of D
+            IF (i .EQ. j) CYCLE ! one value must be omitted
+            adjugate_value = adjugate_value * diag(j)
+         ENDDO
+         CALL cp_fm_set_element(detDinvD, i, i, adjugate_value)
+         det_a = det_a * diag(i)
+      END DO
+
+      ! re-use temp to store det(D)*D^(-1) . U^T
+      CALL cp_fm_set_all(matrix_temp, alpha=0.0_dp)
+      CALL cp_fm_gemm('N', 'T', n, n, n, 1.0_dp, detDinvD, u, 0.0_dp, matrix_temp)
+      !CALL pdgemm('N', 'T', n, n, n, 1.0_dp, detDinvD%local_data, 1, 1, desca, &
+      !            u%local_data, 1, 1, desca, 0.0_dp, matrix_temp%local_data, 1, 1, desca)
+      ! adjugate_incomplete = V . ( det(D)*D^(-1) . U^T )
+      CALL cp_fm_set_all(matrix_a, alpha=0.0_dp)
+      CALL cp_fm_gemm('T', 'N', n, n, n, 1.0_dp, vt, matrix_temp, 0.0_dp, matrix_a)
+      !CALL pdgemm('T', 'N', n, n, n, 1.0_dp, vt%local_data, 1, 1, desca, &
+      !            matrix_temp%local_data, 1, 1, desca, 0.0_dp, matrix_a%local_data, 1, 1, desca)
+
+      ! Scale adjugate by det(U)
+      CALL cp_fm_lu_decompose(u, determinant, correct_sign = .TRUE.)
+      CALL cp_fm_scale(determinant, matrix_a)
+      det_a = det_a * determinant
+
+      ! Scale adjugate by det(V^T)
+      CALL cp_fm_lu_decompose(vt, determinant, correct_sign = .TRUE.)
+      CALL cp_fm_scale(determinant, matrix_a)
+      det_a = det_a * determinant
+
+      ! Clean up
+      DEALLOCATE (diag)
+      CALL cp_fm_release(detDinvD)
+      CALL cp_fm_release(u)
+      CALL cp_fm_release(vt)
+      CALL cp_fm_release(matrix_temp)
+
+   END SUBROUTINE cp_fm_adjugate
 
 ! **************************************************************************************************
 !> \brief computes matrix_c = beta * matrix_c + alpha * ( matrix_a  ** transa ) * ( matrix_b ** transb )

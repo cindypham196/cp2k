@@ -38,7 +38,8 @@ MODULE tidft
    USE tidft_types,                     ONLY: tidft_env_type
    USE tidft_methods,                   ONLY: stitch_columns, &
                                               determinant_local, &
-                                              determinant_generalized
+                                              determinant_generalized, &
+                                              cp_dbcsr_adjugate
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
@@ -208,6 +209,7 @@ CONTAINS
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(dbcsr_type)                                   :: tempNO1
+      TYPE(dbcsr_type)                                   :: temp2
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: fake_e_per_block
       INTEGER                                            :: group, nsize
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: diagonal
@@ -635,6 +637,26 @@ CONTAINS
                            WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
                                               "Determinant: ", tidft_env%mat_phi(stateI,stateJ,ispin)
                         ENDIF
+
+                        CALL dbcsr_create(tempNO1, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                        CALL dbcsr_create(temp2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                        CALL dbcsr_copy(tempNO1, tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                        CALL cp_dbcsr_adjugate(matrix=tempNO1, &
+                                det = interstate_nonorthogonality_penalty, &
+                                para_env = tidft_env%para_env, &
+                                blacs_env = tidft_env%blacs_env)
+                        CALL dbcsr_multiply("N", "N", 1.0_dp, tempNO1, &
+                                tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
+                                0.0_dp, temp2, &
+                                filter_eps=tidft_env%eps_filter)
+                        IF (unit_nr > 0) THEN
+                           WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
+                                              "Determinan2: ", interstate_nonorthogonality_penalty
+                        ENDIF
+                        CALL dbcsr_scale(temp2, 1.0_dp/interstate_nonorthogonality_penalty)
+                        CALL dbcsr_print(temp2)
+                        CALL dbcsr_release(tempNO1)
+                        CALL dbcsr_release(temp2)
 
                         IF (stateI.EQ.stateJ) THEN
 
