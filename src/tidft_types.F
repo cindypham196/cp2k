@@ -163,6 +163,7 @@ MODULE tidft_types
       TYPE(dbcsr_type), DIMENSION(:,:,:,:), ALLOCATABLE  :: mat_sigma
       ! inverse MO overlap OxO - for each state (stateI, spinS)
       TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_inv
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_var_sigma
 
       ! Overlap of electronic states (stateI, stateJ)
       REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: mat_phi

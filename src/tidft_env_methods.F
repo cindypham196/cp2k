@@ -393,6 +393,7 @@ CONTAINS
 
       ALLOCATE(tidft_env%mat_sigma(nstates,nstates,ndets,nspins))
       ALLOCATE(tidft_env%mat_sigma_inv(nstates,ndets,nspins))
+      ALLOCATE(tidft_env%mat_var_sigma(3))
       DO idet = 1, ndets
          DO stateI = 1, nstates
             ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(nspins))
@@ -471,7 +472,19 @@ CONTAINS
                        symmetry_new = dbcsr_type_no_symmetry, &
                        nmos = (/-1, nmos_stateI/) )
 
-            ENDIF
+               IF (stateI .EQ. 1) THEN
+
+                  CALL matrix_layout( &
+                          matrix_ao_template = matrix_s0, &
+                          matrix_new = tidft_env%mat_var_sigma(ivar) , &
+                          name_new = 'm_var_sigma', &
+                          orbital_type_new = (/almo_mat_dim_occ, almo_mat_dim_occ/), &
+                          symmetry_new = dbcsr_type_no_symmetry, &
+                          nmos = (/nmos_stateI, nmos_stateI/) ) ! these are not MOs but independent vars
+
+               ENDIF
+
+            ENDIF ! non-zero ncols_var
 
          ENDDO ! ivar
 
@@ -568,6 +581,10 @@ CONTAINS
 
                CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
 
+               IF (stateI .EQ. 1) THEN
+                  CALL dbcsr_release(tidft_env%mat_var_sigma(ivar))
+               ENDIF
+
             ENDIF
 
          ENDDO ! ivar
@@ -576,6 +593,7 @@ CONTAINS
 
       DEALLOCATE(tidft_env%mat_sigma)
       DEALLOCATE(tidft_env%mat_sigma_inv)
+      DEALLOCATE(tidft_env%mat_var_sigma)
       DO idet = 1, ndets
          DO stateI = 1, nstates
             DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t)

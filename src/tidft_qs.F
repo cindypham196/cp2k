@@ -169,7 +169,7 @@ CONTAINS
                        ncores = ncores, &
                        ! CINDY: you cannot use uninitialized variable: suggested_blk_size!!!
                        ! I commented out your line below and simply set the var to 10
-                       ! Please fix this issue
+                       ! RZK-WARNING: Please fix this issue
                        !suggested_blk_size = suggested_blk_size, &
                        suggested_blk_size = 10, &
                        blk_sizes = block_sizes_new, &
