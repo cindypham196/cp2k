@@ -76,7 +76,7 @@ MODULE tidft_methods
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'almo_scf_methods'
 
    PUBLIC stitch_columns, determinant_generalized, determinant_local, &
-          cp_dbcsr_adjugate
+          cp_dbcsr_adjugate, split_columns, matrix_invert_local
 
 CONTAINS
 
@@ -88,17 +88,58 @@ CONTAINS
 !>       2022.05 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
+   SUBROUTINE matrix_invert_local(matrix_a)
+      REAL(KIND=dp), DIMENSION(:,:), INTENT(INOUT)       :: matrix_a
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'matrix_invert_local'
+
+      INTEGER                                            :: handle, i, info, n, &
+                                                            m, lda, j
+      !REAL(KIND=dp), DIMENSION(:, :), ALLOCATABLE        :: a
+
+      CALL timeset(routineN, handle)
+
+      n = SIZE(matrix_a,1)
+      m = SIZE(matrix_a,2)
+      IF (m .NE. n) CPABORT("Matrix is not square")
+
+      lda = SIZE(matrix_a, 1)
+      CALL dpotrf('U', n, matrix_a, lda, info)
+      IF (info .NE. 0) CPABORT("Cholesky decomposition failed")
+
+      CALL dpotri('U', n, matrix_a, lda, info)
+      IF (info .NE. 0) CPABORT("Cholesky inversion failed")
+
+      DO i = 1, n
+         DO j = i+1, n
+            matrix_a(j,i) = matrix_a(i,j)
+         ENDDO
+      ENDDO
+
+      CALL timestop(handle)
+
+   END SUBROUTINE
+
+! **************************************************************************************************
+!> \brief Computes the determinant of a square matrix via LU-decomposition
+!> \param matrix_a ...
+!> \param determinant ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
    SUBROUTINE determinant_local(matrix_a, determinant)
+
       REAL(KIND=dp), DIMENSION(:,:), INTENT(IN)          :: matrix_a
       REAL(KIND=dp), INTENT(OUT)                         :: determinant
 
       CHARACTER(len=*), PARAMETER :: routineN = 'determinant_local'
 
-      INTEGER                                            :: handle, i, info, n, m
+      INTEGER                                            :: handle, i, info, n, &
+                                                            m, lda
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: ipivot
       REAL(KIND=dp)                                      :: determinant_temp
       REAL(KIND=dp), DIMENSION(:, :), ALLOCATABLE        :: a
-      INTEGER lda
 
       CALL timeset(routineN, handle)
 
@@ -358,12 +399,15 @@ CONTAINS
       CALL dbcsr_complete_redistribute(matrix_stitched, matrix_intermediate, &
               keep_sparsity=.FALSE.)
 
-      CALL dbcsr_get_info(matrix_left, nblkrows_total=nblocks_offset)
+      CALL dbcsr_get_info(matrix_left, nblkcols_total=nblocks_offset)
+      CALL dbcsr_set(matrix_left, 0.0_dp)
+      CALL dbcsr_set(matrix_right, 0.0_dp)
+      CALL dbcsr_filter(matrix_left,1.0_dp)
+      CALL dbcsr_filter(matrix_right,1.0_dp)
       CALL dbcsr_work_create(matrix_left, work_mutable=.TRUE.)
       CALL dbcsr_work_create(matrix_right, work_mutable=.TRUE.)
 
       CALL dbcsr_iterator_start(iter, matrix_intermediate)
-
       DO WHILE (dbcsr_iterator_blocks_left(iter))
 
          CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)

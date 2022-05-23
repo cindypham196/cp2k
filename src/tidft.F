@@ -37,12 +37,15 @@ MODULE tidft
                                               print_optimizer_options
    USE tidft_types,                     ONLY: tidft_env_type
    USE tidft_methods,                   ONLY: stitch_columns, &
+                                              split_columns, &
                                               determinant_local, &
+                                              matrix_invert_local, &
                                               determinant_generalized, &
                                               cp_dbcsr_adjugate
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init
-   USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
+   USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks,&
+                                              matrix_layout
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE bibliography,                    ONLY: Khaliullin2013,&
                                               Kolafa2004,&
@@ -70,7 +73,7 @@ MODULE tidft
         dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_nblkcols_total, &
         dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, dbcsr_reserve_block2d, dbcsr_scale, &
         dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create, &
-        dbcsr_print, dbcsr_get_diag
+        dbcsr_print, dbcsr_get_diag, dbcsr_set_diag, dbcsr_transposed
    USE domain_submatrix_methods,        ONLY: init_submatrices,&
                                               release_submatrices
    USE input_constants,                 ONLY: &
@@ -209,11 +212,23 @@ CONTAINS
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(dbcsr_type)                                   :: tempNO1, mat_proj_var1
-      TYPE(dbcsr_type)                                   :: temp2
+      TYPE(dbcsr_type)                                   :: temp2, mat_var23, mat_var23_sigma
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: fake_e_per_block
       INTEGER                                            :: group, nsize
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: diagonal
       TYPE(qs_energy_type), POINTER                      :: qs_energy
+      LOGICAL                                            :: energy_component, &
+                                                            nonorthogonality_penalty_component
+
+      ! GRADIENT
+      TYPE(dbcsr_type)                                   :: tempNO2, tempOO1, &
+                                                            tempOO2, ST, STsiginv
+      TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:)      :: mat_g, &
+                                                            mat_g_intra, &
+                                                            mat_g_inter
+      TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:,:)    :: mat_g_energy
+      INTEGER                                            :: opposite_spin
+
 
       CALL timeset(routineN, handle)
 
@@ -272,8 +287,9 @@ CONTAINS
 
          ! matrices of independent variables
          ! unrestricted case: no. of electron pairs is zero
-         CALL dbcsr_create(mat_proj_var1, template=tidft_env%mat_s)
          DO stateI = 1, nstates
+
+            CALL dbcsr_create(mat_proj_var1, template=tidft_env%mat_s)
 
             DO ivar = 1, 3
 
@@ -354,17 +370,73 @@ CONTAINS
 
                   ENDIF
 
-                  CALL orthogonalize_mos(ket=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-                                         overlap=tidft_env%mat_var_sigma(ivar), &
-                                         metric=tidft_env%mat_s, &
-                                         retain_locality=.FALSE., &
-                                         only_normalize=.FALSE., &
-                                         nocc_of_domain=fake_e_per_block, &
-                                         eps_filter=tidft_env%eps_filter, &
-                                         order_lanczos=tidft_env%order_lanczos, &
-                                         eps_lanczos=tidft_env%eps_lanczos, &
-                                         max_iter_lanczos=tidft_env%max_iter_lanczos, &
-                                         smear=tidft_env%smear)
+                  IF (tidft_env%triplet_correction .AND. ivar .GT. 1) THEN
+
+                     ! The singly-occupied alpha and beta electrons must be orthogonalized simultaneusly 
+                     ! Do this for ivar.EQ.3, when R1 is projected out from both singly-occupied states
+
+                     ! Do nothing for ivar.EQ.2
+                     IF (ivar .EQ. 3) THEN
+
+                        CALL matrix_layout( &
+                                matrix_ao_template = tidft_env%mat_s, &
+                                matrix_new = mat_var23 , &
+                                name_new = 'm_var23', &
+                                orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+                                symmetry_new = dbcsr_type_no_symmetry, &
+                                nmos = (/-1, 2/) ) ! 2 singly-occupied orbitals - alpha and beta
+                        CALL matrix_layout( &
+                                matrix_ao_template = tidft_env%mat_s, &
+                                matrix_new = mat_var23_sigma , &
+                                name_new = 'm_var23_sigma', &
+                                orbital_type_new = (/almo_mat_dim_occ, almo_mat_dim_occ/), &
+                                symmetry_new = dbcsr_type_no_symmetry, &
+                                nmos = (/2, 2/) ) ! these are not MOs but independent vars
+   
+                        CALL stitch_columns( &
+                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+                                mat_var23 &
+                             )
+   
+                        CALL orthogonalize_mos(ket=mat_var23, &
+                                               overlap=mat_var23_sigma, &
+                                               metric=tidft_env%mat_s, &
+                                               retain_locality=.FALSE., &
+                                               only_normalize=.FALSE., &
+                                               nocc_of_domain=fake_e_per_block, &
+                                               eps_filter=tidft_env%eps_filter, &
+                                               order_lanczos=tidft_env%order_lanczos, &
+                                               eps_lanczos=tidft_env%eps_lanczos, &
+                                               max_iter_lanczos=tidft_env%max_iter_lanczos, &
+                                               smear=tidft_env%smear)
+   
+                        CALL split_columns( &
+                                mat_var23, &
+                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(3) &
+                             )
+   
+                        CALL dbcsr_release(mat_var23)
+                        CALL dbcsr_release(mat_var23_sigma)
+
+                     ENDIF
+
+                  ELSE ! not triplet_correction
+
+                     CALL orthogonalize_mos(ket=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+                                            overlap=tidft_env%mat_var_sigma(ivar), &
+                                            metric=tidft_env%mat_s, &
+                                            retain_locality=.FALSE., &
+                                            only_normalize=.FALSE., &
+                                            nocc_of_domain=fake_e_per_block, &
+                                            eps_filter=tidft_env%eps_filter, &
+                                            order_lanczos=tidft_env%order_lanczos, &
+                                            eps_lanczos=tidft_env%eps_lanczos, &
+                                            max_iter_lanczos=tidft_env%max_iter_lanczos, &
+                                            smear=tidft_env%smear)
+
+                  ENDIF ! triplet correction
 
                   IF (ivar .EQ. 1) THEN
                      CALL dbcsr_multiply("N", "T", 1.0_dp, &
@@ -377,9 +449,9 @@ CONTAINS
                ENDIF ! non-zero columns
 
             ENDDO ! end ivar
+            CALL dbcsr_release(mat_proj_var1)
 
          ENDDO  ! end stateI
-         CALL dbcsr_release(mat_proj_var1)
 
 !         ! CINDY's code starts here
 !         ! Combine X1-X3 to generate MOs mat_t(alpha) and mat_t(beta) for ROKS and UKS
@@ -650,7 +722,7 @@ CONTAINS
       DEALLOCATE(fake_e_per_block)
 
       !! compute nonorthogonality penalty
-      tidft_env%mat_phi(:,:,:) = 0.0_dp
+      tidft_env%mat_phi_spin(:,:,:) = 0.0_dp
       intrastate_nonorthogonality_penalty = 0.0_dp
       DO stateI = 1, nstates
          DO idet = 1, ndets
@@ -674,39 +746,16 @@ CONTAINS
                         ! compute the determinant and save it to the Phi matrix
                         CALL determinant_generalized( &
                                 matrix = tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
-                                det = tidft_env%mat_phi(stateI,stateJ,ispin), &
+                                det = tidft_env%mat_phi_spin(stateI,stateJ,ispin), &
                                 para_env = tidft_env%para_env, &
                                 blacs_env = tidft_env%blacs_env)
-                        tidft_env%mat_phi(stateJ,stateI,ispin)=tidft_env%mat_phi(stateI,stateJ,ispin)
+                        tidft_env%mat_phi_spin(stateJ,stateI,ispin)=tidft_env%mat_phi_spin(stateI,stateJ,ispin)
                         IF (unit_nr > 0) THEN
                            WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
-                                              "Determinant: ", tidft_env%mat_phi(stateI,stateJ,ispin)
+                                              "Determinant: ", tidft_env%mat_phi_spin(stateI,stateJ,ispin)
                         ENDIF
 
-! Test ADJUGATE subroutine
-!CALL dbcsr_create(tempNO1, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
-!CALL dbcsr_create(temp2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
-!CALL dbcsr_copy(tempNO1, tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
-!CALL cp_dbcsr_adjugate(matrix=tempNO1, &
-!        det = interstate_nonorthogonality_penalty, &
-!        para_env = tidft_env%para_env, &
-!        blacs_env = tidft_env%blacs_env)
-!CALL dbcsr_multiply("N", "N", 1.0_dp, tempNO1, &
-!        tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
-!        0.0_dp, temp2, &
-!        filter_eps=tidft_env%eps_filter)
-!IF (unit_nr > 0) THEN
-!   WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
-!                      "Determinan2: ", interstate_nonorthogonality_penalty
-!ENDIF
-!CALL dbcsr_scale(temp2, 1.0_dp/interstate_nonorthogonality_penalty)
-!CALL dbcsr_print(temp2)
-!CALL dbcsr_release(tempNO1)
-!CALL dbcsr_release(temp2)
-
                         IF (stateI.EQ.stateJ) THEN
-
-CALL dbcsr_print(tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
 
                            IF (debug_mode) THEN
                               CALL determinant(tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
@@ -732,11 +781,11 @@ CALL dbcsr_print(tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
                                                  "Det. diagon: ", DetDiagonalSigma
                               WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
                                                  "Det. s*sd-1: ", &
-                                                 tidft_env%mat_phi(stateI,stateJ,ispin) / DetDiagonalSigma
+                                                 tidft_env%mat_phi_spin(stateI,stateJ,ispin) / DetDiagonalSigma
                            ENDIF
 
                            penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff * &
-                              ( LOG(tidft_env%mat_phi(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
+                              ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
 
                            IF (unit_nr > 0) THEN
                               WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State ", stateI, penalty_stateI
@@ -764,37 +813,42 @@ CALL dbcsr_print(tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
       DO ispin = 1, nspins
          WRITE (*,*) "Phi matrix, spin ", ispin
          DO ivar = 1, nstates
-            WRITE (*,*) tidft_env%mat_phi(ivar,:,ispin)
+            WRITE (*,*) tidft_env%mat_phi_spin(ivar,:,ispin)
          ENDDO
          WRITE (*,*)
       ENDDO
 
+      ! Hadamard product of spin matrices to obtain full phi
+      IF (nspins .EQ. 2) THEN
+         tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,2)
+      ELSE
+         tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,1)
+      ENDIF
+
+      ! Print phi matrix
+      WRITE (*,*) "Phi matrix"
+      DO ivar = 1, nstates
+         WRITE (*,*) tidft_env%mat_phi(ivar,:)
+      ENDDO
+      WRITE (*,*)
+
       ! compute interstate nonorthogonality penalty
       interstate_nonorthogonality_penalty = 0.0_dp
-      DO ispin = 1, nspins
 
-         CALL determinant_local(tidft_env%mat_phi(:,:,ispin), determinant_spd)
-         ! compute the product of the diagonal elements
-         DetDiagonalSigma = 1.0_dp
-         DO ivar = 1, nstates
-            DetDiagonalSigma = DetDiagonalSigma * tidft_env%mat_phi(ivar,ivar,ispin)
-         ENDDO
-
-         IF (unit_nr > 0) THEN
-            WRITE (unit_nr, *) "INTERSTATE Spin: ", ispin, "Phi Det", determinant_spd, "Diag-Phi Det", DetDiagonalSigma
-         ENDIF
-
-         penalty_stateI = - tidft_env%interstate_nonorthogonality_penalty_coeff * &
-                              ( LOG(determinant_spd) - LOG(DetDiagonalSigma) )
-
-         IF (unit_nr > 0) THEN
-            WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Spin ", ispin, penalty_stateI
-         ENDIF
-
-         interstate_nonorthogonality_penalty = interstate_nonorthogonality_penalty + &
-            penalty_stateI
-
+      ! compute the product of the diagonal elements
+      DetDiagonalSigma = 1.0_dp
+      DO ivar = 1, nstates
+         DetDiagonalSigma = DetDiagonalSigma * tidft_env%mat_phi(ivar,ivar)
       ENDDO
+      CALL determinant_local(tidft_env%mat_phi, determinant_spd)
+
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, *) "INTERSTATE DET: ", determinant_spd, "DIAG-DET: ", DetDiagonalSigma
+      ENDIF
+
+      interstate_nonorthogonality_penalty = &
+         - tidft_env%interstate_nonorthogonality_penalty_coeff * &
+         ( LOG(determinant_spd/DetDiagonalSigma) )
 
       IF (unit_nr > 0) THEN
          WRITE (unit_nr, '()')
@@ -813,6 +867,413 @@ CALL dbcsr_print(tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
       ! Return the sum of all energies to QS
       CALL get_qs_env(qs_env, energy=qs_energy)
       qs_energy%total = obj_energy
+
+      ! GRADIENT CALCULATIONS
+
+      ! Allocate all matrices
+energy_component=.TRUE.
+nonorthogonality_penalty_component=.TRUE.
+ALLOCATE(mat_g(nstates, nspins))
+
+!ivar,idet
+!DO ispin = 1, nspins
+!   DO stateI = 1, nstates
+!       CALL dbcsr_create(mat_g(stateI, ispin), &
+!               template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+!       CALL dbcsr_set(mat_g(stateI, ispin), 0.0_dp)
+!       CALL dbcsr_print(mat_g(stateI, ispin))
+!   ENDDO ! stateI
+!ENDDO ! ispin
+
+      ALLOCATE(mat_g_energy(nstates, nspins, ndets))
+      ALLOCATE(mat_g_intra(nstates, nspins))
+      ALLOCATE(mat_g_inter(nstates, nspins))
+
+      DO ispin = 1, nspins
+         DO stateI = 1, nstates
+            CALL dbcsr_create(mat_g_intra(stateI, ispin), &
+                    template=tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin))
+            CALL dbcsr_create(mat_g_inter(stateI, ispin), &
+                    template=tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin))
+            CALL dbcsr_set(mat_g_intra(stateI, ispin), 0.0_dp)
+            CALL dbcsr_set(mat_g_inter(stateI, ispin), 0.0_dp)
+            DO idet = 1, ndets
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+               IF ( nmos_stateI .GT. 0) THEN
+                  CALL dbcsr_create(mat_g_energy(stateI, ispin, idet), &
+                          template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+                  CALL dbcsr_set(mat_g_energy(stateI, ispin, idet), 0.0_dp)
+               ENDIF ! zero MOs
+            ENDDO ! idet
+         ENDDO ! stateI
+      ENDDO ! ispin
+
+      tidft_env%mat_phi_inv(:,:)=tidft_env%mat_phi(:,:)
+      CALL matrix_invert_local(tidft_env%mat_phi_inv)
+
+      ! Print inverted phi
+      WRITE (*,*) "Phi inv matrix"
+      DO ivar = 1, nstates
+         WRITE (*,*) tidft_env%mat_phi_inv(ivar,:)
+      ENDDO
+      WRITE (*,*)
+
+      DO ispin = 1, nspins
+         DO stateI = 1, nstates
+            DO idet = 1, ndets
+
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+
+               IF ( nmos_stateI .GT. 0) THEN
+
+                  CALL dbcsr_create(tempNO1, &
+                          template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+                  CALL dbcsr_create(tempNO2, &
+                          template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+                  CALL dbcsr_create(tempOO1, &
+                          template=tidft_env%mat_sigma_inv(stateI,idet,ispin))
+                  CALL dbcsr_create(ST, &
+                          template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+                  CALL dbcsr_create(STsiginv, &
+                          template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+
+                  ! T.siginv
+                  CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                          tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                          tidft_env%mat_sigma_inv(stateI,idet,ispin), &
+                          0.0_dp, tempNO1, &
+                          filter_eps=tidft_env%eps_filter)
+                  ! S.Tsiginv
+                  CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                          tidft_env%mat_s, &
+                          tempNO1, &
+                          0.0_dp, STsiginv, &
+                          filter_eps=tidft_env%eps_filter)
+
+                  ! Compute the energy component
+                  IF (energy_component) THEN
+
+                     ! F.Tsiginv
+                     CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                             tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), &
+                             tempNO1, &
+                             0.0_dp, mat_g_energy(stateI, ispin, idet), &
+                             filter_eps=tidft_env%eps_filter)
+                     ! Tt.FTsiginv
+                     CALL dbcsr_multiply("T", "N", 1.0_dp, &
+                             tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                             mat_g_energy(stateI, ispin, idet), &
+                             0.0_dp, tempOO1, &
+                             filter_eps=tidft_env%eps_filter)
+                     ! FTsiginv - STsiginv.TtFTsiginv
+                     CALL dbcsr_multiply("N", "N", -1.0_dp, &
+                             STsiginv, &
+                             tempOO1, &
+                             1.0_dp, mat_g_energy(stateI, ispin, idet), &
+                             filter_eps=tidft_env%eps_filter)
+                     ! Scale by 2.0
+                     CALL dbcsr_scale(mat_g_energy(stateI, ispin, idet), 2.0_dp)
+
+                  ENDIF ! energy_component
+
+                  IF (nonorthogonality_penalty_component) THEN
+
+                     ! Do NOT compute for triplet_correction and the first determinant
+                     IF (.NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
+
+                        ! Intrastate term
+                        ! G = STsiginv
+                        CALL dbcsr_copy(mat_g_intra(stateI, ispin), STsiginv)
+                        ! d^(-1)
+                        CALL dbcsr_get_info(tidft_env%mat_sigma(stateI, stateI, idet, ispin), &
+                                nfullrows_total=nsize, group=group)
+                        ALLOCATE (diagonal(nsize))
+                        CALL dbcsr_get_diag(tidft_env%mat_sigma(stateI, stateI, idet, ispin), diagonal)
+                        diagonal(:) = 1.0_dp/diagonal(:) ! invert the diagonal
+                        CALL dbcsr_set(tempOO1, 0.0_dp)
+                        CALL dbcsr_set_diag(tempOO1, diagonal)
+                        CALL dbcsr_filter(tempOO1, tidft_env%eps_filter)
+                        DEALLOCATE(diagonal)
+                        ! S.T
+                        CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                tidft_env%mat_s, &
+                                tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                0.0_dp, ST, &
+                                filter_eps=tidft_env%eps_filter)
+                        ! G = G - ST.d^(-1)
+                        CALL dbcsr_multiply("N", "N", -1.0_dp, &
+                                ST, &
+                                tempOO1, &
+                                1.0_dp, mat_g_intra(stateI, ispin), &
+                                filter_eps=tidft_env%eps_filter)
+                        CALL dbcsr_scale(mat_g_intra(stateI, ispin), & 
+                                -2.0_dp*tidft_env%intrastate_nonorthogonality_penalty_coeff)
+
+                        ! Interstate term
+                        DO stateJ = 1, nstates
+
+                           nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(idet)%nelectrons_ab(ispin)
+
+                           IF ( nmos_stateJ .GT. 0) THEN
+
+                              ! Compute ADJUGATE
+                              ! RZK-WARNING: potential analytical error: ajugate of (I,J) OR (J,I) ?
+                              IF (stateJ .GE. stateI) THEN
+                                 CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                                 CALL dbcsr_copy(tempOO2, tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                              ELSE
+                                 CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
+                                 CALL dbcsr_transposed(tempOO2, tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
+                              ENDIF
+
+                              ! RZK-warning time can be saved by computing ADJ only for half of the matrices
+                              CALL cp_dbcsr_adjugate(matrix=tempOO2, &
+                                      det = determinant_spd, &
+                                      para_env = tidft_env%para_env, &
+                                      blacs_env = tidft_env%blacs_env)
+                              !CALL dbcsr_create(temp2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                              !CALL dbcsr_multiply("N", "N", 1.0_dp, tempOO2, &
+                              !        tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
+                              !        0.0_dp, temp2, &
+                              !        filter_eps=tidft_env%eps_filter)
+                              !CALL dbcsr_scale(temp2, 1.0_dp/determinant_spd)
+                              !CALL dbcsr_print(temp2)
+                              !CALL dbcsr_release(temp2)
+
+                              IF (ispin .EQ. 1) THEN
+                                 opposite_spin = 2
+                              ELSE
+                                 opposite_spin = 1
+                              ENDIF
+                              CALL dbcsr_scale(tempOO2, &
+                                      tidft_env%mat_phi_spin(stateJ,stateI,opposite_spin) * &
+                                      tidft_env%mat_phi_inv(stateJ,stateI) )
+                              CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                      ST, &
+                                      tempOO2, &
+                                      1.0_dp, mat_g_inter(stateI, ispin), &
+                                      filter_eps=tidft_env%eps_filter)
+                              CALL dbcsr_release(tempOO2)
+
+                           ENDIF ! zero MOs for state J
+
+                        ENDDO ! stateJ loop
+
+                        CALL dbcsr_add(mat_g_inter(stateI, ispin), STsiginv, 1.0_dp, -1.0_dp)
+                        CALL dbcsr_scale(mat_g_inter(stateI, ispin), & 
+                                -2.0_dp*tidft_env%interstate_nonorthogonality_penalty_coeff)
+
+                     ENDIF ! only triplet determinant is used in the penalty
+
+                  ENDIF ! nonorthogonality_penalty_component
+
+                  CALL dbcsr_release(tempNO1)
+                  CALL dbcsr_release(tempNO2)
+                  CALL dbcsr_release(tempOO1)
+                  CALL dbcsr_release(ST)
+                  CALL dbcsr_release(STsiginv)
+
+               ENDIF ! zero MOs
+
+            ENDDO ! idet
+         ENDDO ! stateI
+      ENDDO ! ispin
+
+      !DO stateI = 1, nstates
+
+      !   CALL dbcsr_create(mat_proj_var1, template=tidft_env%mat_s)
+
+      !   DO ivar = 1, 3
+
+      !      nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+
+      !      IF ( nmos_stateI .GT. 0 ) THEN
+
+      !         ! Generate random matrix
+      !         CALL dbcsr_init_random(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                 mini_seed=stateI+ivar*2)
+
+      !         IF (stateI .EQ. 1) THEN ! ground state is treated differently
+
+      !            !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+
+      !            CALL dbcsr_create(tempNO1, &
+      !               template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+
+      !            ! Obtain GS orbitals by projecting random MOs onto the generated GS DM
+      !            CALL dbcsr_multiply("N", "N", 1.0_dp, &
+      !                          tidft_env%mat_s, &
+      !                          tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                          0.0_dp, tempNO1,filter_eps=tidft_env%eps_filter)
+
+      !            IF (ivar .EQ. 3) THEN
+      !               ispin = 2 !RZK-WARNING: do we always have the second DM when we need it?
+      !            ELSE
+      !               ispin = 1
+      !            ENDIF
+      !            CALL dbcsr_multiply("N", "N", 1.0_dp, &
+      !                          rho_ao(ispin)%matrix, &
+      !                          tempNO1, &
+      !                          0.0_dp, tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                          filter_eps=tidft_env%eps_filter)
+
+      !            CALL dbcsr_release(tempNO1)
+
+      !         ELSE ! excited states
+      !            ! RZK-WARNING: introduce a new user-defined INPUT-FILE variable that specifies 
+      !            ! the percient of the random component in the guess
+      !            random_percentile = 0.05_dp
+      !            ! Obtain ES by slightly perturbing generated GS orbitals
+      !            CALL dbcsr_add(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !               tidft_env%e_states(1)%slater_det(1)%mat_var(ivar), &
+      !               random_percentile, 1.0_dp - random_percentile)
+      !         ENDIF
+
+      !         ! Orthogonalize vectors describing variables in several steps
+      !         ! * Orthogonalize doubly occupied orbitals 
+      !         ! * Create the projector R1 onto the doubly occupied subspace
+      !         ! * Project out the doubly occupied subspace from both singly-occupied
+      !         !   alpha and singly-occupied beta subspaces
+      !         ! * Orthogonalize singly occupied orbitals
+
+      !         ! Project out the doubly occupied subspace if any
+      !         IF (ivar .NE. 1) THEN
+
+      !            IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1) .NE. 0) THEN
+
+      !               CALL dbcsr_create(tempNO1, &
+      !                  template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+
+      !               CALL dbcsr_multiply("N", "N", 1.0_dp, &
+      !                             tidft_env%mat_s, &
+      !                             tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                             0.0_dp, tempNO1, &
+      !                             filter_eps=tidft_env%eps_filter)
+
+      !               CALL dbcsr_multiply("N", "N", -1.0_dp, &
+      !                             mat_proj_var1, &
+      !                             tempNO1, &
+      !                             1.0_dp, tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                             filter_eps=tidft_env%eps_filter)
+
+      !               CALL dbcsr_release(tempNO1)
+
+      !            ENDIF
+
+      !         ENDIF
+
+      !         IF (tidft_env%triplet_correction .AND. ivar .GT. 1) THEN
+
+      !            ! The singly-occupied alpha and beta electrons must be orthogonalized simultaneusly 
+      !            ! Do this for ivar.EQ.3, when R1 is projected out from both singly-occupied states
+
+      !            ! Do nothing for ivar.EQ.2
+      !            IF (ivar .EQ. 3) THEN
+
+      !               CALL matrix_layout( &
+      !                       matrix_ao_template = tidft_env%mat_s, &
+      !                       matrix_new = mat_var23 , &
+      !                       name_new = 'm_var23', &
+      !                       orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+      !                       symmetry_new = dbcsr_type_no_symmetry, &
+      !                       nmos = (/-1, 2/) ) ! 2 singly-occupied orbitals - alpha and beta
+      !               CALL matrix_layout( &
+      !                       matrix_ao_template = tidft_env%mat_s, &
+      !                       matrix_new = mat_var23_sigma , &
+      !                       name_new = 'm_var23_sigma', &
+      !                       orbital_type_new = (/almo_mat_dim_occ, almo_mat_dim_occ/), &
+      !                       symmetry_new = dbcsr_type_no_symmetry, &
+      !                       nmos = (/2, 2/) ) ! these are not MOs but independent vars
+   
+      !               CALL stitch_columns( &
+      !                       tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+      !                       tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+      !                       mat_var23 &
+      !                    )
+   
+      !               CALL orthogonalize_mos(ket=mat_var23, &
+      !                                      overlap=mat_var23_sigma, &
+      !                                      metric=tidft_env%mat_s, &
+      !                                      retain_locality=.FALSE., &
+      !                                      only_normalize=.FALSE., &
+      !                                      nocc_of_domain=fake_e_per_block, &
+      !                                      eps_filter=tidft_env%eps_filter, &
+      !                                      order_lanczos=tidft_env%order_lanczos, &
+      !                                      eps_lanczos=tidft_env%eps_lanczos, &
+      !                                      max_iter_lanczos=tidft_env%max_iter_lanczos, &
+      !                                      smear=tidft_env%smear)
+   
+      !               CALL split_columns( &
+      !                       mat_var23, &
+      !                       tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+      !                       tidft_env%e_states(stateI)%slater_det(1)%mat_var(3) &
+      !                    )
+   
+      !               CALL dbcsr_release(mat_var23)
+      !               CALL dbcsr_release(mat_var23_sigma)
+
+      !            ENDIF
+
+      !         ELSE ! not triplet_correction
+
+      !            CALL orthogonalize_mos(ket=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                                   overlap=tidft_env%mat_var_sigma(ivar), &
+      !                                   metric=tidft_env%mat_s, &
+      !                                   retain_locality=.FALSE., &
+      !                                   only_normalize=.FALSE., &
+      !                                   nocc_of_domain=fake_e_per_block, &
+      !                                   eps_filter=tidft_env%eps_filter, &
+      !                                   order_lanczos=tidft_env%order_lanczos, &
+      !                                   eps_lanczos=tidft_env%eps_lanczos, &
+      !                                   max_iter_lanczos=tidft_env%max_iter_lanczos, &
+      !                                   smear=tidft_env%smear)
+
+      !         ENDIF ! triplet correction
+
+      !         IF (ivar .EQ. 1) THEN
+      !            CALL dbcsr_multiply("N", "T", 1.0_dp, &
+      !                          tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                          tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+      !                          0.0_dp, mat_proj_var1, &
+      !                          filter_eps=tidft_env%eps_filter)
+      !         ENDIF
+   
+      !      ENDIF ! non-zero columns
+
+      !   ENDDO ! end ivar
+      !   CALL dbcsr_release(mat_proj_var1)
+
+      !ENDDO  ! end stateI
+
+
+
+      ! Release derivatives wrt T
+      DO ispin = 1, nspins
+         DO stateI = 1, nstates
+            DO idet = 1, ndets
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+               IF ( nmos_stateI .GT. 0) THEN
+                  CALL dbcsr_print(mat_g_energy(stateI, ispin, idet))
+                  CALL dbcsr_release(mat_g_energy(stateI, ispin, idet))
+               ENDIF ! zero MOs
+            ENDDO ! idet
+            CALL dbcsr_print(mat_g_intra(stateI, ispin))
+            CALL dbcsr_release(mat_g_intra(stateI, ispin))
+            CALL dbcsr_print(mat_g_inter(stateI, ispin))
+            CALL dbcsr_release(mat_g_inter(stateI, ispin))
+         ENDDO ! stateI
+      ENDDO ! ispin
+      DEALLOCATE(mat_g_energy)
+      DEALLOCATE(mat_g_intra)
+      DEALLOCATE(mat_g_inter)
+
+!ivar, idet
+!DO ispin = 1, nspins
+!   DO stateI = 1, nstates
+!      CALL dbcsr_release(mat_g(stateI, ispin))
+!   ENDDO ! stateI
+!ENDDO ! ispin
+DEALLOCATE(mat_g)
 
       CALL timestop(handle)
 

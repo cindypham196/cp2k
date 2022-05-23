@@ -166,7 +166,9 @@ MODULE tidft_types
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_var_sigma
 
       ! Overlap of electronic states (stateI, stateJ)
-      REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: mat_phi
+      REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: mat_phi_spin
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi_inv
 
    END TYPE tidft_env_type
 

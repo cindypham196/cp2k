@@ -282,7 +282,9 @@ CONTAINS
       nslater = tidft_env%ndets
 
       ALLOCATE(tidft_env%e_states(nstates))
-      ALLOCATE(tidft_env%mat_phi(nstates,nstates,nspins))
+      ALLOCATE(tidft_env%mat_phi_spin(nstates,nstates,nspins))
+      ALLOCATE(tidft_env%mat_phi(nstates,nstates))
+      ALLOCATE(tidft_env%mat_phi_inv(nstates,nstates))
       DO stateI = 1, nstates
          tidft_env%e_states(stateI)%nslater = nslater
          ALLOCATE(tidft_env%e_states(stateI)%slater_det(nslater))
@@ -374,7 +376,7 @@ CONTAINS
                                                             stateI, ndets, &
                                                             nmos_stateI, &
                                                             nmos_stateI_flip, &
-                                                            stateJ, &
+                                                            stateJ, n_left, &
                                                             nmos_stateJ
 
       CALL timeset(routineN, handle)
@@ -603,7 +605,9 @@ CONTAINS
          ENDDO
       ENDDO
 
+      DEALLOCATE(tidft_env%mat_phi_inv)
       DEALLOCATE(tidft_env%mat_phi)
+      DEALLOCATE(tidft_env%mat_phi_spin)
       DEALLOCATE(tidft_env%e_states)
 
       CALL cp_para_env_release(tidft_env%para_env)
