@@ -13,7 +13,9 @@
 ! **************************************************************************************************
 MODULE tidft_methods
    USE almo_scf_types,                  ONLY: almo_scf_env_type,&
-                                              almo_scf_history_type
+                                              almo_scf_history_type,&
+                                              almo_mat_dim_aobasis,&
+                                              almo_mat_dim_occ
    USE bibliography,                    ONLY: Kolafa2004,&
                                               Kuhne2007,&
                                               cite_reference
@@ -53,7 +55,6 @@ MODULE tidft_methods
                                               select_row,&
                                               select_row_col
    USE fermi_utils,                     ONLY: FermiFixed
-!! for smearing
    USE input_constants,                 ONLY: almo_domain_layout_molecular,&
                                               almo_mat_distr_atomic,&
                                               almo_scf_diag,&
@@ -65,6 +66,7 @@ MODULE tidft_methods
                                               matrix_sqrt_Newton_Schulz
    USE kinds,                           ONLY: dp
    USE mathlib,                         ONLY: binomial
+   USE tidft_qs,                        ONLY: matrix_layout
    USE util,                            ONLY: sort
    USE machine,                         ONLY: m_flush
 #include "./base/base_uses.f90"
@@ -76,9 +78,217 @@ MODULE tidft_methods
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'almo_scf_methods'
 
    PUBLIC stitch_columns, determinant_generalized, determinant_local, &
-          cp_dbcsr_adjugate, split_columns, matrix_invert_local
+          cp_dbcsr_adjugate, split_columns, matrix_invert_local, &
+          gradMO_to_gradVAR_increment
 
 CONTAINS
+
+! **************************************************************************************************
+!> \brief Converts MO-matrices to the corresponding matrices of independent variables
+!> \param mat_g_out ...
+!> \param ncols_var ...
+!> \param mat_g_in ...
+!> \param idet ...
+!> \param ispin ...
+!> \param nspins ...
+!> \param triplet_correction ...
+!> \param energy_term ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE gradMO_to_gradVAR_increment(mat_g_out, ncols_var, mat_g_in, mat_s, &
+      idet, ispin, nspins, triplet_correction, energy_term)
+
+      TYPE(dbcsr_type), DIMENSION(3), INTENT(INOUT)      :: mat_g_out
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+      TYPE(dbcsr_type), INTENT(IN)                       :: mat_g_in
+      TYPE(dbcsr_type), INTENT(IN)                       :: mat_s
+      INTEGER, INTENT(IN)                                :: idet, ispin, nspins
+      LOGICAL                                            :: triplet_correction, &
+                                                            energy_term
+
+      REAL(KIND=dp)                                      :: triplet_correction_energy_det1_multiplier 
+      INTEGER                                            :: varA, varB, &
+                                                            ncolsA, ncolsB
+      TYPE(dbcsr_type)                                   :: tempNVarA, tempNVarB, &
+                                                            mat_var23
+
+
+      triplet_correction_energy_det1_multiplier = 1.0_dp
+      IF (triplet_correction .AND. energy_term) THEN
+         IF (idet.EQ.1) triplet_correction_energy_det1_multiplier = 2.0_dp
+         IF (idet.EQ.2) triplet_correction_energy_det1_multiplier = -1.0_dp
+      ENDIF
+
+      IF (nspins .EQ. 1) THEN
+
+         ! idet is 1 since closed-shell calculations cannot have more determinants
+         CPASSERT(idet.EQ.1)
+
+         ! scale the term using spin factor 2.0
+         CALL dbcsr_add(mat_g_out(1), &
+                 mat_g_in, &
+                 1.0_dp, 2.0_dp*triplet_correction_energy_det1_multiplier)
+
+      ELSE
+
+         IF (idet .EQ. 2) THEN ! this is the "spin-flipped" determinant
+
+            varA = 1
+            ncolsA = ncols_var(varA)
+
+            IF (ispin .EQ. 1) THEN
+            ! Alpha T-matrix: contains Var1, Var2, Var3. Only ncols(Var1) can be zero
+
+               IF (ncolsA .NE. 0) THEN
+               ! separate into v1, v2 and v3 using two splits
+               ! the convention: the rightmost colum is the "spin-flipped" electron
+
+                  ! first split
+                  CALL dbcsr_create(tempNVarA, template=mat_g_out(varA))
+                  CALL matrix_layout( &
+                          matrix_ao_template = mat_s, &
+                          matrix_new = mat_var23 , &
+                          name_new = 'm_var23', &
+                          orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+                          symmetry_new = dbcsr_type_no_symmetry, &
+                          nmos = (/-1, 2/) ) ! 2 singly-occupied orbitals - alpha and beta
+                  CALL split_columns( &
+                          mat_g_in, &
+                          tempNVarA, &
+                          mat_var23 )
+                  CALL dbcsr_add(mat_g_out(varA), &
+                          tempNVarA, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+                  CALL dbcsr_release(tempNVarA)
+
+                  ! second split
+                  CALL dbcsr_create(tempNVarA, template=mat_g_out(2))
+                  CALL dbcsr_create(tempNVarB, template=mat_g_out(3))
+                  CALL split_columns( &
+                          mat_var23, &
+                          tempNVarA, &
+                          tempNVarB )
+                  CALL dbcsr_add(mat_g_out(2), &
+                          tempNVarA, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+                  CALL dbcsr_add(mat_g_out(3), &
+                          tempNVarB, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+                  CALL dbcsr_release(tempNVarA)
+                  CALL dbcsr_release(tempNVarB)
+                  CALL dbcsr_release(mat_var23)
+
+               ELSE ! ncolsA==0
+               ! no doubly-occupied MOs: separate into v2 and v3
+               ! the convention: the rightmost colum is the "spin-flipped" electron
+
+                  CALL dbcsr_create(tempNVarA, template=mat_g_out(2))
+                  CALL dbcsr_create(tempNVarB, template=mat_g_out(3))
+                  CALL split_columns( &
+                          mat_g_in, &
+                          tempNVarA, &
+                          tempNVarB )
+                  CALL dbcsr_add(mat_g_out(2), &
+                          tempNVarA, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+                  CALL dbcsr_add(mat_g_out(3), &
+                          tempNVarB, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+                  CALL dbcsr_release(tempNVarA)
+                  CALL dbcsr_release(tempNVarB)
+
+               ENDIF ! ncolsA decision
+
+            ELSE ! beta electrons
+            ! Beta T-matrix: contains only Var1. ncols(Var1) can be zero
+
+               IF (ncolsA .NE. 0) THEN
+               ! no singly-occupied MOs
+
+                  CALL dbcsr_add(mat_g_out(varA), &
+                          mat_g_in, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+
+               ELSE ! ncolsA==0
+               ! zero beta electrons
+               ! this is allowed but such situations should be caught on the upper levels
+
+                  CPABORT("Cannot end up here: zero T matrices must be filtered out")
+
+               ENDIF
+
+            ENDIF
+
+         ELSE ! idet check
+         ! idet.NE.2 - regular determinants
+
+            varA = 1
+            IF (ispin .EQ. 1) THEN
+               varB = 2
+            ELSE ! beta electrons
+               varB = 3
+            ENDIF
+            ncolsA = ncols_var(varA)
+            ncolsB = ncols_var(varB)
+
+            IF (ncolsA .NE. 0) THEN
+
+               IF (ncolsB .NE. 0) THEN
+               ! Split the matrix since both parts are non-zero
+
+                  CALL dbcsr_create(tempNVarA, template=mat_g_out(varA))
+                  CALL dbcsr_create(tempNVarB, template=mat_g_out(varB))
+                  CALL split_columns( &
+                          mat_g_in, &
+                          tempNVarA, &
+                          tempNVarB )
+                  CALL dbcsr_add(mat_g_out(varA), &
+                          tempNVarA, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+                  CALL dbcsr_add(mat_g_out(varB), &
+                          tempNVarB, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+                  CALL dbcsr_release(tempNVarA)
+                  CALL dbcsr_release(tempNVarB)
+
+               ELSE ! ncolsB==0
+               ! restricted closed-shell cases with no unpairings can be treated here
+               ! but with the 2.0 multiplier
+
+                  ! all MOs are doubly-occupied
+                  CALL dbcsr_add(mat_g_out(varA), &
+                          mat_g_in, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+
+               ENDIF
+
+            ELSE ! ncolsA==0
+            ! no paired electrons
+
+               IF (ncolsB .NE. 0) THEN
+               ! there are only unpaired electrons
+
+                  CALL dbcsr_add(mat_g_out(varB), &
+                          mat_g_in, &
+                          1.0_dp, 1.0_dp*triplet_correction_energy_det1_multiplier)
+
+               ELSE ! ncolsB==0
+               ! no electrons
+               ! this is possible but such situations should be caught on the upper levels
+
+                  CPABORT("Warning: empty matrices should be eliminated above")
+
+               ENDIF
+
+            ENDIF
+
+         ENDIF ! idet check
+
+      ENDIF ! nspins check
+
+   END SUBROUTINE gradMO_to_gradVAR_increment
 
 ! **************************************************************************************************
 !> \brief Computes the determinant of a square matrix via LU-decomposition
