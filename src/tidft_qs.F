@@ -104,20 +104,21 @@ CONTAINS
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
    SUBROUTINE matrix_layout(matrix_ao_template, matrix_new, name_new, &
-      orbital_type_new, symmetry_new, nmos)
+      orbital_type_new, suggested_mo_blk_size, symmetry_new, nmos)
 
       TYPE(tidft_env_type)                               :: tidft_env
       TYPE(dbcsr_type), INTENT(IN)                       :: matrix_ao_template
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix_new
       CHARACTER(len=*), INTENT(IN)                       :: name_new
       INTEGER, DIMENSION(2), INTENT(IN)                  :: orbital_type_new
+      INTEGER, INTENT(IN)                                :: suggested_mo_blk_size
       CHARACTER, INTENT(IN)                              :: symmetry_new
       INTEGER, DIMENSION(2), INTENT(IN), OPTIONAL        :: nmos
 
       INTEGER                                            :: dimen, handle, hold, iatom, iblock_col, &
                                                             iblock_row, imol, mynode, natoms, &
                                                             nblkrows_tot, nlength, nmols, row, &
-                                                            ncores, suggested_blk_size
+                                                            ncores
       INTEGER, DIMENSION(2)                              :: local_nmos
       INTEGER, DIMENSION(:), POINTER :: blk_distr, blk_sizes, block_sizes_new, col_distr_new, &
          col_sizes_new, distr_new_array, row_distr_new, row_sizes_new
@@ -167,11 +168,7 @@ CONTAINS
                CALL create_distribute_mo_blocks( &
                        norbs = local_nmos(dimen), &
                        ncores = ncores, &
-                       ! CINDY: you cannot use uninitialized variable: suggested_blk_size!!!
-                       ! I commented out your line below and simply set the var to 10
-                       ! RZK-WARNING: Please fix this issue
-                       !suggested_blk_size = suggested_blk_size, &
-                       suggested_blk_size = 10, &
+                       suggested_blk_size = suggested_mo_blk_size, &
                        blk_sizes = block_sizes_new, &
                        blk_distr = distr_new_array)
 

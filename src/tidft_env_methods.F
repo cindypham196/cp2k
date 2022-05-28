@@ -16,6 +16,8 @@ MODULE tidft_env_methods
    USE tidft_types,                     ONLY: tidft_env_type
    USE tidft_qs,                        ONLY: matrix_layout,&
                                               tidft_init_ks_matrices
+   USE cp_dbcsr_cholesky,               ONLY: cp_dbcsr_cholesky_decompose,&
+                                              cp_dbcsr_cholesky_invert
    USE cp_para_env,                     ONLY: cp_para_env_release,&
                                               cp_para_env_retain
    USE cp_para_types,                   ONLY: cp_para_env_type
@@ -38,7 +40,7 @@ MODULE tidft_env_methods
         almo_domain_layout_atomic, almo_domain_layout_molecular, almo_frz_crystal, &
         almo_mat_distr_molecular, almo_scf_diag, almo_scf_skip, almo_scf_trustr, cg_hager_zhang, &
         do_bondparm_vdw, molecular_guess, tensor_orthogonal, virt_full, virt_minimal, virt_number, &
-        xalmo_trial_r0_out, optimizer_bfgs
+        xalmo_trial_r0_out, optimizer_pcg, optimizer_trustr
    USE input_section_types,             ONLY: section_vals_get_subs_vals,&
                                               section_vals_type,&
                                               section_vals_val_get
@@ -113,20 +115,40 @@ CONTAINS
                                                             jj, GS_multips, nmultips 
       INTEGER, DIMENSION(:), POINTER                     :: tmplist
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
-      TYPE(section_vals_type), POINTER :: almo_analysis_section, almo_opt_diis_section, &
-         almo_opt_pcg_section, tidft_section, matrix_iterate_section, nlmo_opt_pcg_section, &
-         penalty_section, xalmo_opt_newton_pcg_section, xalmo_opt_pcg_section, &
-         xalmo_opt_trustr_section
+      TYPE(section_vals_type), POINTER                   :: tidft_pcg_optimizer_section, &
+                                                            tidft_section, &
+                                                            penalty_section
 
       CALL timeset(routineN, handle)
 
       tidft_section => section_vals_get_subs_vals(input, "DFT%TIDFT")
-!tiidft      almo_opt_diis_section => section_vals_get_subs_vals(almo_scf_section, &
-!tiidft                                                          "ALMO_OPTIMIZER_DIIS")
 
-      CALL section_vals_val_get(tidft_section, "EPS_FILTER", &
+      CALL section_vals_val_get(tidft_section, &
+              "EPS_FILTER", &
               r_val=tidft_env%eps_filter)
-      CALL section_vals_val_get(tidft_section, "N_EXCITED_STATES", &
+      CALL section_vals_val_get(tidft_section, &
+              "SPIN_PURE", &
+              l_val=tidft_env%spin_pure)
+      CALL section_vals_val_get(tidft_section, &
+              "MAX_UNPAIR", &
+              i_val=tidft_env%unpairings)
+      CALL section_vals_val_get(tidft_section, &
+              "SUGGESTED_MO_BLOCK_SIZE", &
+              i_val=tidft_env%suggested_mo_block_size)
+      CALL section_vals_val_get(tidft_section, &
+              "INITIAL_GUESS_RANDOM_FRAC", &
+              r_val=tidft_env%initial_guess_random_fraction)
+      CALL section_vals_val_get(tidft_section, &
+              "ENERGY_COMPONENT", &
+              l_val=tidft_env%loss_function_components(1))
+      CALL section_vals_val_get(tidft_section, &
+              "INTRASTATE_COMPONENT", &
+              l_val=tidft_env%loss_function_components(2))
+      CALL section_vals_val_get(tidft_section, &
+              "INTERSTATE_COMPONENT", &
+              l_val=tidft_env%loss_function_components(3))
+      CALL section_vals_val_get(tidft_section, &
+              "N_EXCITED_STATES", &
               i_val=tidft_env%nstates)
       ! add the ground state
       tidft_env%nstates = tidft_env%nstates + 1
@@ -134,44 +156,43 @@ CONTAINS
       !CALL section_vals_val_get(tidft_section,"N_EXCITED_STATES",i_rep_val=1, i_vals=tmplist)
       !nmultips = SIZE(tmplist)
 
-      CALL section_vals_val_get(tidft_section, "SPIN_PURE", &
-              l_val=tidft_env%spin_pure)
-      CALL section_vals_val_get(tidft_section, "MAX_UNPAIR", &
-              i_val=tidft_env%unpairings)
-      CALL section_vals_val_get(tidft_section, "PENALTY_COEFF_ALPHA", &
-              r_val=tidft_env%intrastate_nonorthogonality_penalty_coeff)
+      tidft_pcg_optimizer_section => section_vals_get_subs_vals(tidft_section, &
+                                                         "TIDFT_OPTIMIZER_PCG")
+
+      ! optimizers
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "EPS_ERROR", &
+                                r_val=tidft_env%tidft_optimizer_pcg%eps_error)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "MAX_ITER", &
+                                i_val=tidft_env%tidft_optimizer_pcg%max_iter)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "MAX_ITER_OUTER_LOOP", &
+                                i_val=tidft_env%tidft_optimizer_pcg%max_iter_outer_loop)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "LIN_SEARCH_EPS_ERROR", &
+                                r_val=tidft_env%tidft_optimizer_pcg%lin_search_eps_error)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "LIN_SEARCH_STEP_SIZE_GUESS", &
+                                r_val=tidft_env%tidft_optimizer_pcg%lin_search_step_size_guess)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "CONJUGATOR", &
+                                i_val=tidft_env%tidft_optimizer_pcg%conjugator)
+
+      penalty_section => section_vals_get_subs_vals(tidft_section, "PENALTY")
+
+      CALL section_vals_val_get(penalty_section, &
+                                "INTERSTATE_NON_PENALTY_STRENGTH", &
+                                r_val=tidft_env%interstate_nonorthogonality_penalty_coeff)
+      tidft_env%interstate_nonorthogonality_penalty_coeff = &
+         ABS(tidft_env%interstate_nonorthogonality_penalty_coeff)
+      CALL section_vals_val_get(penalty_section, &
+                                "INTRASTATE_NON_PENALTY_STRENGTH", &
+                                r_val=tidft_env%intrastate_nonorthogonality_penalty_coeff)
       tidft_env%intrastate_nonorthogonality_penalty_coeff = &
          ABS(tidft_env%intrastate_nonorthogonality_penalty_coeff)
-      tidft_env%interstate_nonorthogonality_penalty_coeff = &
-         tidft_env%intrastate_nonorthogonality_penalty_coeff
+      CALL section_vals_val_get(penalty_section, &
+                                "PENALTY_STRENGTH_INCREASE_FACTOR", &
+                                r_val=tidft_env%penalty_strength_inc_factor)
+      CALL section_vals_val_get(penalty_section, &
+                                "ALLOWED_DETERMINANT_DEVIATION", &
+                                r_val=tidft_env%allowed_determinant_deviaion)
 
-      ! CINDY: record suggested_blk_size inside tidft_env
-      CALL section_vals_val_get(tidft_section, "SUGGESTED_MO_BLOCK_SIZE", &
-              i_val=tidft_env%suggested_mo_block_size)
-
-!tiidft      ! optimizers
-!tiidft      CALL section_vals_val_get(almo_opt_diis_section, "EPS_ERROR", &
-!tiidft                                r_val=almo_scf_env%opt_block_diag_diis%eps_error)
-!tiidft      CALL section_vals_val_get(almo_opt_diis_section, "MAX_ITER", &
-!tiidft                                i_val=almo_scf_env%opt_block_diag_diis%max_iter)
-!tiidft      CALL section_vals_val_get(almo_opt_diis_section, "EPS_ERROR_EARLY", &
-!tiidft                                r_val=almo_scf_env%opt_block_diag_diis%eps_error_early)
-!tiidft      CALL section_vals_val_get(almo_opt_diis_section, "MAX_ITER_EARLY", &
-!tiidft                                i_val=almo_scf_env%opt_block_diag_diis%max_iter_early)
-!tiidft      CALL section_vals_val_get(almo_opt_diis_section, "N_DIIS", &
-!tiidft                                i_val=almo_scf_env%opt_block_diag_diis%ndiis)
-!tiidft
-!tiidft      ! check for conflicts between options
-!tiidft      IF (almo_scf_env%xalmo_trial_wf .EQ. xalmo_trial_r0_out .AND. &
-!tiidft          almo_scf_env%xalmo_update_algorithm .EQ. almo_scf_trustr) THEN
-!tiidft         CPABORT("Trust region algorithm cannot optimize projected XALMOs")
-!tiidft      ENDIF
-!tiidft
-!tiidft      IF (almo_scf_env%deloc_method .EQ. almo_deloc_xalmo_1diag .AND. &
-!tiidft          almo_scf_env%xalmo_update_algorithm .NE. almo_scf_diag) THEN
-!tiidft         CPABORT("1-step delocalization correction requires a different algorithm")
-!tiidft      ENDIF
-
+      ! check for conflicts between options
     
       CALL timestop(handle)
 
@@ -212,8 +233,11 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
+      ! Set all components to true
+      !tidft_env%loss_function_components(:) = .TRUE.
+
       ! set optimizers' types
-      tidft_env%opt_bfgs%optimizer_type = optimizer_bfgs
+      tidft_env%tidft_optimizer_pcg%optimizer_type = optimizer_pcg
 
       ! get info from the qs_env
       CALL get_qs_env(qs_env, &
@@ -386,6 +410,7 @@ CONTAINS
               matrix_ao_template = matrix_s0, &
               matrix_new = tidft_env%mat_s , &
               name_new = 'm_s', &
+              suggested_mo_blk_size = suggested_blk_size, & ! does not affect AOxAO matrices
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
               symmetry_new = dbcsr_type_symmetric)
 
@@ -400,7 +425,7 @@ CONTAINS
          DO stateI = 1, nstates
             ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(nspins))
             ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(nspins))
-            ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(nspins))
+            !ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(nspins))
             ! It is not necessary to allocate mat_var for the other determinant(s)
             IF (idet.EQ.1) ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
          ENDDO
@@ -421,11 +446,12 @@ CONTAINS
                           matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) , &
                           name_new = 'm_T_Ia', &
                           orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+                          suggested_mo_blk_size = suggested_blk_size, &
                           symmetry_new = dbcsr_type_no_symmetry, &
                           nmos = (/-1, nmos_stateI/) )
 
                   CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), template=matrix_s0)
-                  CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin), template=matrix_s0)
+                  !CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin), template=matrix_s0)
 
                   DO stateJ = stateI, nstates
 
@@ -438,6 +464,7 @@ CONTAINS
                                 matrix_new = tidft_env%mat_sigma(stateI, stateJ, idet, ispin) , &
                                 name_new = 'm_sig_IJab', &
                                 orbital_type_new = (/almo_mat_dim_occ, almo_mat_dim_occ/), &
+                                suggested_mo_blk_size = suggested_blk_size, &
                                 symmetry_new = dbcsr_type_no_symmetry, &
                                 nmos = (/nmos_stateI, nmos_stateJ/) )
 
@@ -471,6 +498,7 @@ CONTAINS
                        matrix_new = tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar) , &
                        name_new = 'm_X_Ia', &
                        orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+                       suggested_mo_blk_size = suggested_blk_size, &
                        symmetry_new = dbcsr_type_no_symmetry, &
                        nmos = (/-1, nmos_stateI/) )
 
@@ -481,6 +509,7 @@ CONTAINS
                           matrix_new = tidft_env%mat_var_sigma(ivar) , &
                           name_new = 'm_var_sigma', &
                           orbital_type_new = (/almo_mat_dim_occ, almo_mat_dim_occ/), &
+                          suggested_mo_blk_size = suggested_blk_size, &
                           symmetry_new = dbcsr_type_no_symmetry, &
                           nmos = (/nmos_stateI, nmos_stateI/) ) ! these are not MOs but independent vars
 
@@ -549,7 +578,7 @@ CONTAINS
 
                   CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
                   CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin))
-                  CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin))
+                  !CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin))
 
                   DO stateJ = stateI, nstates
 
@@ -600,7 +629,7 @@ CONTAINS
          DO stateI = 1, nstates
             DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t)
             DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks)
-            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj)
+            !DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj)
             IF (idet.EQ.1) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
          ENDDO
       ENDDO
@@ -646,6 +675,18 @@ CONTAINS
       ENDIF
 
       CALL dbcsr_filter(tidft_env%mat_s, tidft_env%eps_filter)
+
+      ! invert S using cholesky for dense matrices
+      CALL dbcsr_copy(tidft_env%mat_s_inv, tidft_env%mat_s)
+      CALL cp_dbcsr_cholesky_decompose(tidft_env%mat_s_inv, &
+              para_env=tidft_env%para_env, &
+              blacs_env=tidft_env%blacs_env)
+      CALL cp_dbcsr_cholesky_invert(tidft_env%mat_s_inv, &
+              para_env=tidft_env%para_env, &
+              blacs_env=tidft_env%blacs_env, &
+              upper_to_full=.TRUE.)
+      CALL dbcsr_filter(tidft_env%mat_s_inv, &
+              tidft_env%eps_filter)
 
       CALL timestop(handle)
 

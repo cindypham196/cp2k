@@ -89,7 +89,8 @@ MODULE tidft_types
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_t
 
       ! Projector onto occupied subspace NxN - for each spin
-      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_proj
+      ! Do not store - it is easy to compute from MOs
+      !TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_proj
 
       ! Kohn-Sham Hamiltonian NxN - for each spin
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
@@ -138,9 +139,14 @@ MODULE tidft_types
       ! Descriptors of electronic states
       TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
 
-      ! penalty coefficients
+      LOGICAL, DIMENSION(100)                            :: loss_function_components
+
+      ! penalty related variables
       REAL(KIND=dp)                                      :: intrastate_nonorthogonality_penalty_coeff
       REAL(KIND=dp)                                      :: interstate_nonorthogonality_penalty_coeff
+      REAL(KIND=dp)                                      :: penalty_strength_inc_factor
+      REAL(KIND=dp)                                      :: allowed_determinant_deviaion
+      REAL(KIND=dp)                                      :: initial_guess_random_fraction
 
       ! Keep some numerical thresholds
       REAL(KIND=dp)                                      :: eps_filter
@@ -150,7 +156,7 @@ MODULE tidft_types
       INTEGER                                            :: sigma_inv_algorithm = 1 ! Cholesky
       INTEGER                                            :: suggested_mo_block_size
       ! Options for various optimizers
-      TYPE(optimizer_options_type)                       :: opt_bfgs
+      TYPE(optimizer_options_type)                       :: tidft_optimizer_pcg
 
       !!!!!!!!!!!!!!!!!!!!!!!
       !!!!!! MATRICES !!!!!!!
@@ -158,6 +164,7 @@ MODULE tidft_types
 
       ! Basis fucntions overlap NxN
       TYPE(dbcsr_type)                                   :: mat_s
+      TYPE(dbcsr_type)                                   :: mat_s_inv
 
       ! MO overlap OxO (stateI, stateJ, spinS)
       TYPE(dbcsr_type), DIMENSION(:,:,:,:), ALLOCATABLE  :: mat_sigma
@@ -169,6 +176,7 @@ MODULE tidft_types
       REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: mat_phi_spin
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi_inv
+      REAL(KIND=dp)                                      :: det_mat_phi
 
    END TYPE tidft_env_type
 

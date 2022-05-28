@@ -45,7 +45,8 @@ MODULE tidft_methods
         dbcsr_nblkcols_total, dbcsr_nblkrows_total, dbcsr_print, dbcsr_release, &
         dbcsr_reserve_block2d, dbcsr_scale_by_vector, dbcsr_set, dbcsr_set_diag, dbcsr_transposed, &
         dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create, &
-        dbcsr_complete_redistribute, dbcsr_distribution_new, dbcsr_distribution_release
+        dbcsr_complete_redistribute, dbcsr_distribution_new, dbcsr_distribution_release, &
+        dbcsr_norm_maxabsnorm, dbcsr_norm, dbcsr_dot
    USE domain_submatrix_methods,        ONLY: &
         add_submatrices, construct_dbcsr_from_submatrices, construct_submatrices, &
         copy_submatrices, copy_submatrix_data, init_submatrices, multiply_submatrices, &
@@ -79,9 +80,292 @@ MODULE tidft_methods
 
    PUBLIC stitch_columns, determinant_generalized, determinant_local, &
           cp_dbcsr_adjugate, split_columns, matrix_invert_local, &
-          gradMO_to_gradVAR_increment
+          gradMO_to_gradVAR_increment, &
+          tidft_optimizer_mainvar_multiply, &
+          tidft_optimizer_mainvar_dot, &
+          tidft_optimizer_mainvar_add, &
+          tidft_optimizer_mainvar_copy, &
+          tidft_optimizer_gradient_norm
 
 CONTAINS
+
+! **************************************************************************************************
+!> \brief Mutliply all mainvar matrices (index i) by the same NxN matrix
+!>        C_i = beta C_i + alpha A**tranA . B_i**tranB
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_multiply(transA, transB, alpha, matA, matB, &
+      beta, matC, filter_eps, ncols_var)
+
+      CHARACTER, INTENT(IN)                              :: transA, transB
+      TYPE(dbcsr_type), INTENT(IN)                       :: matA
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: matB
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: matC
+      REAL(KIND=dp), INTENT(IN)                          :: alpha, beta, &
+                                                            filter_eps
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars, &
+                                                            nstates2, nvars2
+
+      nstates = SIZE(matB, 1)
+      nvars = SIZE(matB, 2)
+      CPASSERT(nvars.EQ.3)
+
+      nstates2 = SIZE(matC, 1)
+      CPASSERT(nstates.EQ.nstates2)
+      nvars2 = SIZE(matC, 2)
+      CPASSERT(nvars.EQ.nvars2)
+
+      DO ivar = 1, nvars
+
+         IF (ncols_var(ivar).GT.0) THEN
+
+            DO istate = 1, nstates
+
+                  CALL dbcsr_multiply(transA, transB, &
+                          alpha, &
+                          matA, &
+                          matB(istate,ivar), &
+                          beta, &
+                          matC(istate,ivar), &
+                          filter_eps=filter_eps)
+
+            ENDDO ! stateI
+
+         ENDIF
+
+      ENDDO ! ivar
+
+   END SUBROUTINE tidft_optimizer_mainvar_multiply
+
+! **************************************************************************************************
+!> \brief Dot product of matrices describing main variables: 
+!>        dot_product = sum_states ( 2 Tr(L1**T . R1) + Tr(L2**T.R2) + Tr (L3**T.R3) )
+!>        The subroutine is made tensorially consistent
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_dot(mat_left, mat_right, &
+      mat_left_covariant, mat_right_covariant, metric, metric_inv, &
+      dot_product, ncols_var, eps_filter)
+
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: mat_left, mat_right
+      LOGICAL, INTENT(IN)                                :: mat_left_covariant, &
+                                                            mat_right_covariant
+      TYPE(dbcsr_type), OPTIONAL, INTENT(IN)             :: metric
+      TYPE(dbcsr_type), OPTIONAL, INTENT(IN)             :: metric_inv
+      REAL(KIND=dp), INTENT(OUT)                         :: dot_product
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+      REAL(KIND=dp), OPTIONAL, INTENT(IN)                :: eps_filter
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars, &
+                                                            nstates2, nvars2
+      REAL(KIND=dp)                                      :: prod, factor
+      LOGICAL                                            :: mat_left_contravariant, &
+                                                            mat_right_contravariant
+      TYPE(dbcsr_type)                                   :: mat_temp
+
+      mat_left_contravariant = .NOT.mat_left_covariant
+      mat_right_contravariant = .NOT.mat_right_covariant
+
+      IF (mat_left_contravariant .AND. mat_right_contravariant) THEN
+         CPASSERT(PRESENT(metric))
+         CPASSERT(PRESENT(eps_filter))
+      ENDIF
+
+      IF (mat_left_covariant .AND. mat_right_covariant) THEN
+         CPASSERT(PRESENT(metric_inv))
+         CPASSERT(PRESENT(eps_filter))
+      ENDIF
+
+      nstates = SIZE(mat_left, 1)
+      nvars = SIZE(mat_left, 2)
+      CPASSERT(nvars.EQ.3)
+
+      nstates2 = SIZE(mat_right, 1)
+      CPASSERT(nstates.EQ.nstates2)
+      nvars2 = SIZE(mat_right, 2)
+      CPASSERT(nvars.EQ.nvars2)
+
+      dot_product = 0.0_dp
+      DO ivar = 1, nvars
+
+         IF (ncols_var(ivar).GT.0) THEN
+
+            !RZK-WARNING: this factor of 2 worries me. Should it be 1?
+            IF (ivar.EQ.1) THEN
+               factor = 1.0_dp
+            ELSE
+               factor = 1.0_dp
+            ENDIF
+
+            DO istate = 1, nstates
+
+               IF (mat_left_contravariant .AND. mat_right_contravariant) THEN
+
+                  CALL dbcsr_create(mat_temp, template=mat_right(istate,ivar))
+                  CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                          metric, &
+                          mat_right(istate,ivar), &
+                          0.0_dp, mat_temp, &
+                          filter_eps=eps_filter)
+                  CALL dbcsr_dot(mat_left(istate,ivar), mat_temp, prod)
+                  CALL dbcsr_release(mat_temp)
+
+               ELSE IF (mat_left_covariant .AND. mat_right_covariant) THEN
+
+                  CALL dbcsr_create(mat_temp, template=mat_right(istate,ivar))
+                  CALL dbcsr_multiply("N", "N", 1.0_dp, & 
+                          metric_inv, &
+                          mat_right(istate,ivar), &
+                          0.0_dp, mat_temp, &
+                          filter_eps=eps_filter)
+                  CALL dbcsr_dot(mat_left(istate,ivar), mat_temp, prod)
+                  CALL dbcsr_release(mat_temp)
+
+               ELSE
+
+                  CALL dbcsr_dot(mat_left(istate,ivar), mat_right(istate,ivar), prod)
+
+               ENDIF
+
+               dot_product = dot_product + factor * prod
+
+            ENDDO ! stateI
+
+         ENDIF
+
+      ENDDO ! ivar
+
+   END SUBROUTINE tidft_optimizer_mainvar_dot
+
+! **************************************************************************************************
+!> \brief Add matrices describing main variables: 
+!>        mat_dest = alpha * mat_dest + beta * mat_source
+!> \param mat_dest ...
+!> \param mat_source ...
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_add(mat_dest, mat_source, alpha, beta, ncols_var)
+
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: mat_dest
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: mat_source
+      REAL(KIND=dp), INTENT(IN)                          :: alpha, beta
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars, &
+                                                            nstates2, nvars2
+
+      nstates = SIZE(mat_source, 1)
+      nvars = SIZE(mat_source, 2)
+      CPASSERT(nvars.EQ.3)
+
+      nstates2 = SIZE(mat_dest, 1)
+      CPASSERT(nstates.EQ.nstates2)
+      nvars2 = SIZE(mat_dest, 2)
+      CPASSERT(nvars.EQ.nvars2)
+
+      DO istate = 1, nstates
+         DO ivar = 1, nvars
+            IF (ncols_var(ivar).GT.0) THEN
+               CALL dbcsr_add(mat_dest(istate,ivar), mat_source(istate,ivar), &
+                       alpha, beta)
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+
+   END SUBROUTINE tidft_optimizer_mainvar_add
+
+! **************************************************************************************************
+!> \brief Copy matrices describing main variables
+!> \param mat_dest ...
+!> \param mat_source ...
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_copy(mat_dest, mat_source, ncols_var)
+
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: mat_dest
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: mat_source
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars, &
+                                                            nstates2, nvars2
+
+      nstates = SIZE(mat_source, 1)
+      nvars = SIZE(mat_source, 2)
+      CPASSERT(nvars.EQ.3)
+
+      nstates2 = SIZE(mat_dest, 1)
+      CPASSERT(nstates.EQ.nstates2)
+      nvars2 = SIZE(mat_dest, 2)
+      CPASSERT(nvars.EQ.nvars2)
+
+      DO istate = 1, nstates
+         DO ivar = 1, nvars
+            IF (ncols_var(ivar).GT.0) THEN
+               CALL dbcsr_copy(mat_dest(istate,ivar), mat_source(istate,ivar))
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+
+   END SUBROUTINE tidft_optimizer_mainvar_copy
+
+! **************************************************************************************************
+!> \brief Compute the gradient norm
+!> \param mat_grad ...
+!> \param ncols_var ...
+!> \param grad_norm ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_gradient_norm(mat_grad, ncols_var, grad_norm)
+
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: mat_grad
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+      REAL(KIND=dp), INTENT(OUT)                         :: grad_norm
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: grad_norm_array
+
+      nstates = SIZE(mat_grad, 1)
+      nvars = SIZE(mat_grad, 2)
+      CPASSERT(nvars.EQ.3)
+
+      ALLOCATE(grad_norm_array(nstates,nvars))
+      grad_norm_array=0.0_dp
+
+      DO istate = 1, nstates
+         DO ivar = 1, nvars
+            IF (ncols_var(ivar).GT.0) THEN
+            CALL dbcsr_norm(matrix=mat_grad(istate,ivar), &
+                            which_norm=dbcsr_norm_maxabsnorm, &
+                            norm_scalar=grad_norm_array(istate,ivar))
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+      grad_norm = MAXVAL(grad_norm_array)
+
+      DEALLOCATE(grad_norm_array)
+
+   END SUBROUTINE tidft_optimizer_gradient_norm
 
 ! **************************************************************************************************
 !> \brief Converts MO-matrices to the corresponding matrices of independent variables
@@ -152,6 +436,7 @@ CONTAINS
                           matrix_new = mat_var23 , &
                           name_new = 'm_var23', &
                           orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+                          suggested_mo_blk_size = 2, &
                           symmetry_new = dbcsr_type_no_symmetry, &
                           nmos = (/-1, 2/) ) ! 2 singly-occupied orbitals - alpha and beta
                   CALL split_columns( &
