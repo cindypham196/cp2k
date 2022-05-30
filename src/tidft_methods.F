@@ -85,6 +85,9 @@ MODULE tidft_methods
           tidft_optimizer_mainvar_dot, &
           tidft_optimizer_mainvar_add, &
           tidft_optimizer_mainvar_copy, &
+          tidft_optimizer_mainvar_set, &
+          tidft_optimizer_mainvar_print, &
+          dbcsr_set_element, &
           tidft_optimizer_gradient_norm
 
 CONTAINS
@@ -287,6 +290,69 @@ CONTAINS
       ENDDO ! stateI
 
    END SUBROUTINE tidft_optimizer_mainvar_add
+
+! **************************************************************************************************
+!> \brief 
+!> \param mat_dest ...
+!> \param mat_source ...
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_print(mat, ncols_var)
+
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: mat
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars
+
+      nstates = SIZE(mat, 1)
+      nvars = SIZE(mat, 2)
+      CPASSERT(nvars.EQ.3)
+
+      DO istate = 1, nstates
+         DO ivar = 1, nvars
+            IF (ncols_var(ivar).GT.0) THEN
+               CALL dbcsr_print(mat(istate,ivar))
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+
+   END SUBROUTINE tidft_optimizer_mainvar_print
+
+! **************************************************************************************************
+!> \brief Copy matrices describing main variables
+!> \param mat_dest ...
+!> \param mat_source ...
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_set(mat, val, ncols_var)
+
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: mat
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+      REAL(KIND=dp), INTENT(IN)                          :: val
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars
+
+      nstates = SIZE(mat, 1)
+      nvars = SIZE(mat, 2)
+      CPASSERT(nvars.EQ.3)
+
+      DO istate = 1, nstates
+         DO ivar = 1, nvars
+            IF (ncols_var(ivar).GT.0) THEN
+               CALL dbcsr_set(mat(istate,ivar), val)
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+
+   END SUBROUTINE tidft_optimizer_mainvar_set
 
 ! **************************************************************************************************
 !> \brief Copy matrices describing main variables
@@ -758,6 +824,57 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE determinant_generalized
+
+! **************************************************************************************************
+!> \brief 
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE dbcsr_set_element(mat, val, iblkrow, irow, iblkcol, icol)
+
+      TYPE(dbcsr_type), INTENT(INOUT)                    :: mat
+      REAL(KIND=dp), INTENT(IN)                          :: val
+      INTEGER, INTENT(IN)                                :: iblkrow, irow, &
+                                                            iblkcol, icol
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'dbcsr_set_element'
+
+      INTEGER                                            :: handle, mynode, &
+                                                            hold
+      REAL(kind=dp), DIMENSION(:, :), POINTER            :: p_block, p_new_block
+      LOGICAL                                            :: found
+      TYPE(dbcsr_distribution_type)                      :: dist
+
+      CALL timeset(routineN, handle)
+
+      CALL dbcsr_get_info(mat, distribution=dist)
+      CALL dbcsr_distribution_get(dist, mynode=mynode)
+
+      CALL dbcsr_get_stored_coordinates(mat, iblkrow, iblkcol, hold)
+
+      IF ( hold .EQ. mynode ) THEN
+
+         CALL dbcsr_get_block_p(mat, iblkrow, iblkcol, p_block, found)
+
+         IF (found) THEN
+            p_block(irow,icol) = val
+         ELSE
+            ! block does not exist
+            CALL dbcsr_work_create(mat, work_mutable=.TRUE.)
+            NULLIFY (p_new_block)
+            CALL dbcsr_reserve_block2d(mat, iblkrow, iblkcol, p_new_block)
+            CPASSERT(ASSOCIATED(p_new_block))
+            p_new_block(:,:) = 0.0_dp
+            p_new_block(irow,icol) = val
+            CALL dbcsr_finalize(mat)
+         ENDIF
+   
+      ENDIF ! mynode
+
+      CALL timestop(handle)
+
+   END SUBROUTINE dbcsr_set_element
 
 ! **************************************************************************************************
 !> \brief Join columns of two matrices to produce a new matrix.

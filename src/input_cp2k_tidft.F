@@ -140,6 +140,19 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="NUMERICAL_GRADIENT", &
+                          description="Debugging option. Use numerical, not analytical, gradients in WF optimization.", &
+                          usage="NUMERICAL_GRADIENT .FALSE.", default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUMERICAL_GRADIENT_DX", &
+                          description="Set dx when evaluating numerical gradients.", &
+                          usage="NUMERICAL_GRADIENT_DX 1.0E-5", default_r_val=1.0E-06_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       !tiidftCALL keyword_create(keyword, __LOCATION__, name="ALMO_SCF_GUESS", &
       !tiidft                    description="The method to generate initial ALMOs.", &
       !tiidft                    usage="ALMO_SCF_GUESS MOLECULAR", &

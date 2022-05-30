@@ -140,6 +140,8 @@ MODULE tidft_types
       TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
 
       LOGICAL, DIMENSION(100)                            :: loss_function_components
+      LOGICAL                                            :: numerical_gradient
+      REAL(KIND=dp)                                      :: numerical_gradient_dx
 
       ! penalty related variables
       REAL(KIND=dp)                                      :: intrastate_nonorthogonality_penalty_coeff

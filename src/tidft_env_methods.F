@@ -148,6 +148,12 @@ CONTAINS
               "INTERSTATE_COMPONENT", &
               l_val=tidft_env%loss_function_components(3))
       CALL section_vals_val_get(tidft_section, &
+              "NUMERICAL_GRADIENT", &
+              l_val=tidft_env%numerical_gradient)
+      CALL section_vals_val_get(tidft_section, &
+              "NUMERICAL_GRADIENT_DX", &
+              r_val=tidft_env%numerical_gradient_dx)
+      CALL section_vals_val_get(tidft_section, &
               "N_EXCITED_STATES", &
               i_val=tidft_env%nstates)
       ! add the ground state
@@ -502,6 +508,7 @@ CONTAINS
                        symmetry_new = dbcsr_type_no_symmetry, &
                        nmos = (/-1, nmos_stateI/) )
 
+               ! Create template, one state is sufficient
                IF (stateI .EQ. 1) THEN
 
                   CALL matrix_layout( &

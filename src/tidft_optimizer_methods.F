@@ -60,6 +60,9 @@ MODULE tidft_optimizer_methods
                                               tidft_optimizer_mainvar_multiply, &
                                               tidft_optimizer_mainvar_copy, &
                                               tidft_optimizer_gradient_norm, &
+                                              tidft_optimizer_mainvar_print, &
+                                              tidft_optimizer_mainvar_set, &
+                                              dbcsr_set_element, &
                                               stitch_columns, &
                                               split_columns, &
                                               determinant_local, &
@@ -171,7 +174,8 @@ CONTAINS
          !det_diff = prev_determinant - tidft_env%det_mat_phi
 
          ! Check whether the determinant is sufficiently close to 1
-         IF ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion) THEN
+         IF ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion &
+             .OR. .NOT.tidft_env%loss_function_components(3)) THEN
             EXIT
          ENDIF
 
@@ -271,7 +275,8 @@ CONTAINS
       outer_iteration = 0
       grad_norm = 0.0_dp
       penalty_func_new = 0.0_dp
-      linear_search_type = 2 ! safe restart, no quadratic assumption, takes more steps
+      linear_search_type = 1 ! quadratic search
+      !linear_search_type = 2 ! safe restart, no quadratic assumption, takes more steps
       energy_function = 0.0_dp
 
       DO
@@ -314,11 +319,20 @@ CONTAINS
             ! compute objective (loss) function
             ! compute the gradient
             loss_components(:) = 0.0_dp
-            CALL mainvar_to_loss_and_gradient( &
-                    qs_env = qs_env, &
-                    tidft_env = tidft_env, &
-                    loss_components_out = loss_components, &
-                    gradient_out = optimizer_storage%grad )
+            IF (tidft_env%numerical_gradient) THEN
+               CALL tidft_optimizer_numerical_gradient( &
+                       qs_env = qs_env, &
+                       tidft_env = tidft_env, &
+                       dx = tidft_env%numerical_gradient_dx, &
+                       loss_components_out = loss_components, &
+                       gradient_out = optimizer_storage%grad )
+            ELSE
+               CALL mainvar_to_loss_and_gradient( &
+                       qs_env = qs_env, &
+                       tidft_env = tidft_env, &
+                       loss_components_out = loss_components, &
+                       gradient_out = optimizer_storage%grad )
+            ENDIF
             energy_function = loss_components(1)
             penalty_func_new = loss_components(2) + loss_components(3)
             objf_new = SUM(loss_components)
@@ -478,7 +492,7 @@ CONTAINS
                              ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
                   ENDIF
-WRITE(*,*) "BETA:", beta 
+
                   IF (reset_conjugator) THEN
 
                      beta = 0.0_dp
@@ -581,9 +595,9 @@ WRITE(*,*) "BETA:", beta
                      ! alternative method for finding step size
                      ! do not use quadratic approximation, only gradient signs
                      IF (g1sign .NE. g0sign) THEN
-                        step_size = -step_size/1.2; 
+                        step_size = -step_size/2.0; 
                      ELSE
-                        step_size = step_size*1.1; 
+                        step_size = step_size*1.5; 
                      ENDIF
                   ENDIF
                   ! end alternative LS types
@@ -671,12 +685,13 @@ WRITE(*,*) "BETA:", beta
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
    SUBROUTINE mainvar_to_loss_and_gradient(qs_env, tidft_env, &
-      loss_components_out, gradient_out)
+      loss_components_out, gradient_out, silent)
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
       REAL(KIND=dp), DIMENSION(100), INTENT(OUT)         :: loss_components_out
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: gradient_out
+      LOGICAL, INTENT(IN), OPTIONAL                      :: silent
 
       CHARACTER(len=*), PARAMETER :: routineN = 'mainvar_to_loss_and_gradient', &
          routineP = moduleN//':'//routineN
@@ -687,7 +702,7 @@ WRITE(*,*) "BETA:", beta
                                                             stateI, ivar, nstates, idet, &
                                                             ndets, slaterI, stateJ, &
                                                             nmos_stateJ
-      LOGICAL                                            :: aspc_guess
+      LOGICAL                                            :: aspc_guess, my_silent
       REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
                                                             random_percentile, &
                                                             energy_singlet, energy_triplet, &
@@ -723,6 +738,9 @@ WRITE(*,*) "BETA:", beta
 
       CALL timeset(routineN, handle)
 
+      my_silent=.FALSE.
+      IF (PRESENT(silent)) my_silent=silent
+
       ! get a useful output_unit
       logger => cp_get_default_logger()
       IF (logger%para_env%ionode) THEN
@@ -730,6 +748,9 @@ WRITE(*,*) "BETA:", beta
       ELSE
          unit_nr = -1
       ENDIF
+      
+      ! supress output if necessary
+      IF (my_silent) unit_nr = -1
 
       ! to re-use some almo_scf subroutines set 
       ! nocc_of_domain to the negative number
@@ -1029,78 +1050,85 @@ WRITE(*,*) "BETA:", beta
 
          DO stateI = 1, nstates
 
-            DO idet = 1, ndets
+            IF (tidft_env%triplet_correction) THEN
+               idet = 2
+            ELSE
+               idet = 1
+            ENDIF
 
-               IF (tidft_env%triplet_correction .AND. idet.EQ.1) cycle ! only triplet determinant is used
+            !DO idet = 1, ndets
 
-               DO ispin = 1, nspins
+            !   IF (tidft_env%triplet_correction .AND. idet.EQ.1) cycle ! only triplet determinant is used
 
-                  nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+            DO ispin = 1, nspins
 
-                  IF ( nmos_stateI .GT. 0) THEN
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
 
-                     ! compute sigma unless it is already computed with the energy
-                     IF (.NOT.energy_component) THEN
-                        CALL get_overlap(bra=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                                         ket=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                                         overlap=tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
-                                         metric=tidft_env%mat_s, &
-                                         retain_overlap_sparsity=.FALSE., &
-                                         eps_filter=tidft_env%eps_filter)
-                     ENDIF
-                     ! compute the determinant and save it to the Phi matrix
-                     CALL determinant_generalized( &
-                             matrix = tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
-                             det = tidft_env%mat_phi_spin(stateI,stateI,ispin), &
-                             para_env = tidft_env%para_env, &
-                             blacs_env = tidft_env%blacs_env)
-                     IF (unit_nr > 0) THEN
-                        WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
-                                           "Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
-                     ENDIF
+               IF ( nmos_stateI .GT. 0) THEN
 
-                     !IF (debug_mode) THEN
-                     !   CALL determinant(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
-                     !           determinant_spd, &
-                     !           tidft_env%eps_filter)
-                     !   IF (unit_nr > 0) THEN
-                     !      WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
-                     !                         "SPD determi: ", determinant_spd
-                     !   ENDIF
-                     !ENDIF
+                  ! compute sigma unless it is already computed with the energy
+                  IF (.NOT.energy_component) THEN
+                     CALL get_overlap(bra=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                      ket=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                      overlap=tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
+                                      metric=tidft_env%mat_s, &
+                                      retain_overlap_sparsity=.FALSE., &
+                                      eps_filter=tidft_env%eps_filter)
+                  ENDIF
+                  ! compute the determinant and save it to the Phi matrix
+                  CALL determinant_generalized( &
+                          matrix = tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
+                          det = tidft_env%mat_phi_spin(stateI,stateI,ispin), &
+                          para_env = tidft_env%para_env, &
+                          blacs_env = tidft_env%blacs_env)
+                  !IF (unit_nr > 0) THEN
+                  !   WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
+                  !                      "Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
+                  !ENDIF
 
-                     ! compute the product of the diagonal elements
-                     CALL dbcsr_get_info(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
-                             nfullrows_total=nsize, group=group)
-                     ALLOCATE (diagonal(nsize))
-                     CALL dbcsr_get_diag(tidft_env%mat_sigma(stateI,stateI,idet,ispin), diagonal)
-                     CALL mp_sum(diagonal, group)
-                     DetDiagonalSigma = PRODUCT(diagonal)
-                     DEALLOCATE(diagonal)
+                  !IF (debug_mode) THEN
+                  !   CALL determinant(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
+                  !           determinant_spd, &
+                  !           tidft_env%eps_filter)
+                  !   IF (unit_nr > 0) THEN
+                  !      WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
+                  !                         "SPD determi: ", determinant_spd
+                  !   ENDIF
+                  !ENDIF
 
-                     !IF (unit_nr > 0) THEN
-                     !   WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
-                     !                      "Det. diagon: ", DetDiagonalSigma
-                     !   WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
-                     !                      "Det. s*sd-1: ", &
-                     !                      tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
-                     !ENDIF
+                  ! compute the product of the diagonal elements
+                  CALL dbcsr_get_info(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
+                          nfullrows_total=nsize, group=group)
+                  ALLOCATE (diagonal(nsize))
+                  CALL dbcsr_get_diag(tidft_env%mat_sigma(stateI,stateI,idet,ispin), diagonal)
+                  CALL mp_sum(diagonal, group)
+                  DetDiagonalSigma = PRODUCT(diagonal)
+                  DEALLOCATE(diagonal)
 
-                     penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff * &
-                        ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
+                  IF (unit_nr > 0) THEN
+                     !WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
+                     !                   "Det. diagon: ", DetDiagonalSigma
+                     WRITE (unit_nr, '(T2,A23,I5,2I2,A25,F21.16)') &
+                        "State, Slater, Spin: ", stateI, idet, ispin, &
+                        "Normalized determinant: ", &
+                        tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
+                  ENDIF
 
-                     !IF (unit_nr > 0) THEN
-                     !   WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State penalty ", stateI, penalty_stateI
-                     !ENDIF
+                  penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff * &
+                     ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
 
-                     intrastate_nonorthogonality_penalty = intrastate_nonorthogonality_penalty + &
-                        penalty_stateI
+                  !IF (unit_nr > 0) THEN
+                  !   WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State penalty ", stateI, penalty_stateI
+                  !ENDIF
 
-                  ENDIF ! zero MOs for state I
+                  intrastate_nonorthogonality_penalty = intrastate_nonorthogonality_penalty + &
+                     penalty_stateI
 
-               ENDDO ! ispin
+               ENDIF ! zero MOs for state I
 
-            ENDDO ! idet
+            ENDDO ! ispin
+
+            !ENDDO ! idet
 
          ENDDO ! stateI
 
@@ -1188,11 +1216,14 @@ WRITE(*,*) "BETA:", beta
          ENDIF
    
          ! Print phi matrix
-         WRITE (*,*) "Phi matrix"
-         DO ivar = 1, nstates
-            WRITE (*,*) tidft_env%mat_phi(ivar,:)
-         ENDDO
-         !WRITE (*,*)
+         !IF (unit_nr > 0) THEN
+         !   WRITE (unit_nr, *)
+         !   WRITE (unit_nr, *) "Phi matrix"
+         !   DO ivar = 1, nstates
+         !      WRITE (unit_nr,*) tidft_env%mat_phi(ivar,:)
+         !   ENDDO
+         !ENDIF
+
    
          ! compute the product of the diagonal elements
          DetDiagonalSigma = 1.0_dp
@@ -1201,15 +1232,17 @@ WRITE(*,*) "BETA:", beta
          ENDDO
          CALL determinant_local(tidft_env%mat_phi, determinant_spd)
    
-         !IF (unit_nr > 0) THEN
-         !   WRITE (unit_nr, *) "INTERSTATE DET: ", determinant_spd, "DIAG-DET: ", DetDiagonalSigma
-         !ENDIF
+         tidft_env%det_mat_phi = determinant_spd/DetDiagonalSigma
+
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, '(T2,A38,F40.10)') "Normalized determinant of PHI: ", &
+               tidft_env%det_mat_phi
+         ENDIF
    
          interstate_nonorthogonality_penalty = &
             - tidft_env%interstate_nonorthogonality_penalty_coeff * &
-            ( LOG(determinant_spd/DetDiagonalSigma) )
+            ( LOG(tidft_env%det_mat_phi) )
 
-         tidft_env%det_mat_phi = determinant_spd/DetDiagonalSigma
 
       ENDIF ! interstate_penalty_component
 
@@ -1249,12 +1282,7 @@ WRITE(*,*) "BETA:", beta
 
       DO ispin = 1, nspins
          DO stateI = 1, nstates
-            CALL dbcsr_create(mat_g_intra(stateI, ispin), &
-                    template=tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin))
-            CALL dbcsr_create(mat_g_inter(stateI, ispin), &
-                    template=tidft_env%e_states(stateI)%slater_det(2)%mat_t(ispin))
-            CALL dbcsr_set(mat_g_intra(stateI, ispin), 0.0_dp)
-            CALL dbcsr_set(mat_g_inter(stateI, ispin), 0.0_dp)
+
             DO idet = 1, ndets
                nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
                IF ( nmos_stateI .GT. 0) THEN
@@ -1263,6 +1291,19 @@ WRITE(*,*) "BETA:", beta
                   CALL dbcsr_set(mat_g_energy(stateI, ispin, idet), 0.0_dp)
                ENDIF ! zero MOs
             ENDDO ! idet
+
+            IF (tidft_env%triplet_correction) THEN
+               idet = 2
+            ELSE
+               idet = 1
+            ENDIF
+            CALL dbcsr_create(mat_g_intra(stateI, ispin), &
+                    template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+            CALL dbcsr_create(mat_g_inter(stateI, ispin), &
+                    template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+            CALL dbcsr_set(mat_g_intra(stateI, ispin), 0.0_dp)
+            CALL dbcsr_set(mat_g_inter(stateI, ispin), 0.0_dp)
+
          ENDDO ! stateI
       ENDDO ! ispin
 
@@ -1293,8 +1334,6 @@ WRITE(*,*) "BETA:", beta
                   !ENDIF
 
                   CALL dbcsr_create(tempNO1, &
-                          template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
-                  CALL dbcsr_create(tempNO2, &
                           template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
                   CALL dbcsr_create(tempOO1, &
                           template=tidft_env%mat_sigma_inv(stateI,idet,ispin))
@@ -1379,7 +1418,7 @@ WRITE(*,*) "BETA:", beta
 
                      ! Do NOT compute for triplet_correction and the first determinant
                      ! This means compute for triplet_correction==.FALSE. .OR. idet.EQ.2
-                     IF (.NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
+                     IF ( .NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
 
                         ! Intrastate term
                         ! G = STsiginv
@@ -1429,17 +1468,17 @@ WRITE(*,*) "BETA:", beta
 
                      ! Do NOT compute for triplet_correction and the first determinant
                      ! This means compute for triplet_correction==.FALSE. .OR. idet.EQ.2
-                     IF (.NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
+                     IF ( .NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
 
-                        ! S.T
-                        not_evaluated = .NOT. intrastate_penalty_component
-                        IF (not_evaluated) THEN
-                           CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                   tidft_env%mat_s, &
-                                   tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                                   0.0_dp, ST, &
-                                   filter_eps=tidft_env%eps_filter)
-                        ENDIF
+                        !! S.T - not required here, ST_J is necessary under the J-loop
+                        !not_evaluated = .NOT. intrastate_penalty_component
+                        !IF (not_evaluated) THEN
+                        !   CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                        !           tidft_env%mat_s, &
+                        !           tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                        !           0.0_dp, ST, &
+                        !           filter_eps=tidft_env%eps_filter)
+                        !ENDIF
 
                         DO stateJ = 1, nstates
 
@@ -1456,8 +1495,15 @@ WRITE(*,*) "BETA:", beta
                                  CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
                                  CALL dbcsr_transposed(tempOO2, tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
                               ENDIF
+                              !IF (stateJ .GE. stateI) THEN
+                              !   CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                              !   CALL dbcsr_transposed(tempOO2, tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                              !ELSE
+                              !   CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
+                              !   CALL dbcsr_copy(tempOO2, tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
+                              !ENDIF
 
-                              ! RZK-warning time can be saved by computing ADJ only for half of the matrices
+                              ! RZK-WARNING time can be saved by computing ADJ only for half of the matrices
                               CALL cp_dbcsr_adjugate(matrix=tempOO2, &
                                       det = determinant_spd, &
                                       para_env = tidft_env%para_env, &
@@ -1470,7 +1516,6 @@ WRITE(*,*) "BETA:", beta
                               !CALL dbcsr_scale(temp2, 1.0_dp/determinant_spd)
                               !CALL dbcsr_print(temp2)
                               !CALL dbcsr_release(temp2)
-
                               IF (ispin .EQ. 1) THEN
                                  opposite_spin = 2
                               ELSE
@@ -1479,11 +1524,28 @@ WRITE(*,*) "BETA:", beta
                               CALL dbcsr_scale(tempOO2, &
                                       tidft_env%mat_phi_spin(stateJ,stateI,opposite_spin) * &
                                       tidft_env%mat_phi_inv(stateJ,stateI) )
+
+                              ! S.T_Jindex
+                              ! RZK-WARNING: optimize N^2 re-evaluations to N
+                              CALL dbcsr_create(tempNO2, &
+                                      template=tidft_env%e_states(stateJ)%slater_det(idet)%mat_t(ispin))
+                              not_evaluated = .NOT. intrastate_penalty_component
+                              IF (stateI.NE.stateJ .OR. not_evaluated) THEN
+                                 CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                         tidft_env%mat_s, &
+                                         tidft_env%e_states(stateJ)%slater_det(idet)%mat_t(ispin), &
+                                         0.0_dp, tempNO2, &
+                                         filter_eps=tidft_env%eps_filter)
+                              ELSE
+                                 CALL dbcsr_copy(tempNO2,ST)
+                              ENDIF
+
                               CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                      ST, &
+                                      tempNO2, &
                                       tempOO2, &
                                       1.0_dp, mat_g_inter(stateI, ispin), &
                                       filter_eps=tidft_env%eps_filter)
+                              CALL dbcsr_release(tempNO2)
                               CALL dbcsr_release(tempOO2)
 
                            ENDIF ! zero MOs for state J
@@ -1510,7 +1572,6 @@ WRITE(*,*) "BETA:", beta
                   ENDIF ! interstate_penalty_component
 
                   CALL dbcsr_release(tempNO1)
-                  CALL dbcsr_release(tempNO2)
                   CALL dbcsr_release(tempOO1)
                   CALL dbcsr_release(ST)
                   CALL dbcsr_release(STsiginv)
@@ -1552,6 +1613,239 @@ WRITE(*,*) "BETA:", beta
       CALL timestop(handle)
 
    END SUBROUTINE mainvar_to_loss_and_gradient
+
+! **************************************************************************************************
+!> \brief Copy matrices describing main variables from tidft_env into storage: 
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_numerical_gradient(qs_env, tidft_env, dx, &
+      loss_components_out, gradient_out)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+      REAL(KIND=dp)                                      :: dx
+      REAL(KIND=dp), DIMENSION(100), INTENT(OUT)         :: loss_components_out
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: gradient_out
+
+      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: mat_x0, mat_dx, &
+                                                            mat_current_x, &
+                                                            grad
+      REAL(KIND=dp), DIMENSION(100)                      :: loss
+      REAL(KIND=dp)                                      :: y0, current_y_minus, &
+                                                            current_y_plus, &
+                                                            current_grad_plus, &
+                                                            current_grad_minus, &
+                                                            current_grad, &
+                                                            sanity_check
+      INTEGER                                            :: istate, ivar, nmos, &
+                                                            nstates, nblkrows, &
+                                                            nblkcols, iblkcol, &
+                                                            iblkrow, irow, icol, &
+                                                            plusminus, unit_nr
+      INTEGER, DIMENSION(:), POINTER                     :: row_blk_sizes, &
+                                                            col_blk_sizes
+      TYPE(cp_logger_type), POINTER                      :: logger
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      nstates = tidft_env%nstates
+
+      ! set variables
+      ALLOCATE(mat_x0(nstates,3))
+      ALLOCATE(mat_dx(nstates,3))
+      ALLOCATE(mat_current_x(nstates,3))
+      ALLOCATE(grad(nstates,3))
+      DO istate = 1, nstates
+         DO ivar = 1, 3
+            IF (tidft_env%e_states(istate)%slater_det(1)%ncols_var(ivar).NE.0) THEN
+               CALL dbcsr_create(mat_x0(istate, ivar), &
+                       template=tidft_env%e_states(istate)%slater_det(1)%mat_var(ivar))
+               CALL dbcsr_create(mat_dx(istate, ivar), &
+                       template=tidft_env%e_states(istate)%slater_det(1)%mat_var(ivar))
+               CALL dbcsr_create(mat_current_x(istate, ivar), &
+                       template=tidft_env%e_states(istate)%slater_det(1)%mat_var(ivar))
+               CALL dbcsr_create(grad(istate, ivar), &
+                       template=tidft_env%e_states(istate)%slater_det(1)%mat_var(ivar))
+               CALL dbcsr_set(mat_x0(istate, ivar), 0.0_dp)
+               CALL dbcsr_set(mat_dx(istate, ivar), 0.0_dp)
+               CALL dbcsr_set(mat_current_x(istate, ivar), 0.0_dp)
+               CALL dbcsr_set(grad(istate, ivar), 0.0_dp)
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+
+      ! update theta
+      CALL tidft_optimizer_mainvar_copy_from_env( &
+              mat_x0, &
+              tidft_env)
+
+      loss_components_out(:) = 0.0_dp
+      CALL mainvar_to_loss_and_gradient( &
+              qs_env = qs_env, &
+              tidft_env = tidft_env, &
+              loss_components_out = loss_components_out, &
+              gradient_out = grad )
+      y0 = SUM(loss_components_out)
+
+WRITE(*,*)
+WRITE(*,*) "ANALYTICAL GRADIENT"
+WRITE(*,*)
+      CALL tidft_optimizer_mainvar_print(grad, &
+              tidft_env%e_states(1)%slater_det(1)%ncols_var)
+
+      DO istate = 1, nstates
+         DO ivar = 1, 3
+            nmos = tidft_env%e_states(istate)%slater_det(1)%ncols_var(ivar)
+            IF (nmos.GT.0) THEN
+
+               CALL dbcsr_get_info(mat_x0(istate,ivar), &
+                       row_blk_size=row_blk_sizes, &
+                       col_blk_size=col_blk_sizes, &
+                       nblkrows_total=nblkrows, &
+                       nblkcols_total=nblkcols)
+
+               DO iblkrow = 1, nblkrows
+                  DO irow = 1, row_blk_sizes(iblkrow)
+                     DO iblkcol = 1, nblkcols
+                        DO icol = 1, col_blk_sizes(iblkcol)
+   
+                           CALL tidft_optimizer_mainvar_set( &
+                                   mat_dx, 0.0_dp, &
+                                   tidft_env%e_states(1)%slater_det(1)%ncols_var)
+
+                           CALL dbcsr_set_element(mat_dx(istate,ivar), dx, &
+                                   iblkrow, irow, iblkcol, icol)
+                           !WRITE(*,*) "CURRENT dx: ", istate, ivar, iblkrow, irow, iblkcol, icol
+                           !CALL dbcsr_print(mat_dx(istate,ivar))
+
+                           DO plusminus = -1, 1, 2
+   
+                              CALL tidft_optimizer_mainvar_copy( &
+                                      mat_current_x, &
+                                      mat_x0, &
+                                      ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
+   
+                              CALL tidft_optimizer_mainvar_add( &
+                                      mat_current_x, &
+                                      mat_dx, &
+                                      1.0_dp, 1.0_dp*plusminus, &
+                                      ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
+   
+                              CALL tidft_optimizer_mainvar_copy_to_env( &
+                                      tidft_env, &
+                                      mat_current_x)
+   
+                              loss(:) = 0.0_dp
+                              CALL mainvar_to_loss_and_gradient( &
+                                      qs_env = qs_env, &
+                                      tidft_env = tidft_env, &
+                                      loss_components_out = loss, &
+                                      gradient_out = grad, &
+                                      silent = .TRUE.)
+
+                              IF (plusminus.EQ.-1) THEN
+                                 current_y_minus = SUM(loss)
+                              ELSE
+                                 current_y_plus = SUM(loss)
+                              ENDIF
+
+                           ENDDO !plusminus
+
+                           current_grad_plus = (current_y_plus-y0)/dx
+                           current_grad_minus = (current_y_minus-y0)/(-dx)
+                           current_grad = 0.5_dp * ( current_grad_plus + current_grad_minus )
+
+                           sanity_check = 100.0_dp*ABS(current_grad_plus-current_grad_minus)/current_grad
+                           IF (sanity_check .GT. 5.0_dp) THEN
+                              IF (unit_nr > 0) THEN
+                                 WRITE(unit_nr, '(T2,A38,E12.1,F27.1,A1)') &
+                                    "Numerical gradient is not accurate: ", current_grad, sanity_check, "%"
+                              ENDIF
+                              CPWARN("Plus-minus gradient values disagree! Reduce dx.")
+                           ENDIF
+
+
+                           CALL dbcsr_set_element(gradient_out(istate,ivar), current_grad, &
+                                   iblkrow, irow, iblkcol, icol)
+
+                        ENDDO ! icol
+                     ENDDO ! iblkcol
+                  ENDDO ! irow
+               ENDDO ! iblkrow
+
+            ENDIF
+
+         ENDDO ! ivar
+      ENDDO ! stateI
+
+WRITE(*,*)
+WRITE(*,*) "NUMERICAL GRADIENT"
+WRITE(*,*)
+      CALL tidft_optimizer_mainvar_print(gradient_out, &
+              tidft_env%e_states(1)%slater_det(1)%ncols_var)
+
+      ! set variables
+      DO istate = 1, nstates
+         DO ivar = 1, 3
+            IF (tidft_env%e_states(istate)%slater_det(1)%ncols_var(ivar).NE.0) THEN
+               CALL dbcsr_release(mat_x0(istate, ivar))
+               CALL dbcsr_release(mat_dx(istate, ivar))
+               CALL dbcsr_release(mat_current_x(istate, ivar))
+               CALL dbcsr_release(grad(istate, ivar))
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+      DEALLOCATE(mat_x0)
+      DEALLOCATE(mat_dx)
+      DEALLOCATE(mat_current_x)
+      DEALLOCATE(grad)
+
+   END SUBROUTINE tidft_optimizer_numerical_gradient
+
+! **************************************************************************************************
+!> \brief Copy matrices describing main variables from storage into tidft_env
+!> \param ncols_var ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_copy_to_env(tidft_env, mat_source)
+
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env 
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: mat_source
+
+      INTEGER                                            :: istate, ivar, nmos, &
+                                                            nstates, nvars, &
+                                                            nstates2, nvars2
+
+      nstates = SIZE(mat_source, 1)
+      nvars = SIZE(mat_source, 2)
+      CPASSERT(nvars.EQ.3)
+
+      nstates2 = tidft_env%nstates
+      CPASSERT(nstates.EQ.nstates2)
+
+      DO istate = 1, nstates
+         DO ivar = 1, nvars
+            nmos = tidft_env%e_states(istate)%slater_det(1)%ncols_var(ivar)
+            IF (nmos.GT.0) THEN
+               CALL dbcsr_copy( &
+                       tidft_env%e_states(istate)%slater_det(1)%mat_var(ivar), &
+                       mat_source(istate,ivar))
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
+
+   END SUBROUTINE tidft_optimizer_mainvar_copy_to_env
 
 ! **************************************************************************************************
 !> \brief Copy matrices describing main variables from tidft_env into storage: 
