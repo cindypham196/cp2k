@@ -103,6 +103,59 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       CHARACTER(LEN=59)                                  :: print_string
+      INTEGER                                            :: unit_nr, &
+                                                            original_nstates, &
+                                                            current_no_of_states
+      REAL(KIND=dp)                                      :: prev_determinant
+      TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(qs_energy_type), POINTER                      :: qs_energy
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%mepos == logger%para_env%source) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      IF (tidft_env%state_by_state) THEN
+
+         original_nstates = tidft_env%nstates
+   
+         DO current_no_of_states = 1, original_nstates
+   
+            tidft_env%nstates = current_no_of_states
+            CALL penalty_strength_variation(qs_env, tidft_env)
+   
+         ENDDO
+   
+         !tidft_env%nstates = original_nstates
+
+      ELSE
+
+         CALL penalty_strength_variation(qs_env, tidft_env)
+
+      ENDIF
+
+   END SUBROUTINE tidft_variational_optimization
+
+! **************************************************************************************************
+!> \brief Optimizes penalty strenght and calls fixed-strength TIDFT optimization
+!> \param qs_env ...
+!> \param tidft_env ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE penalty_strength_variation(qs_env, tidft_env)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'penalty_strength_variation', &
+         routineP = moduleN//':'//routineN
+
+      CHARACTER(LEN=59)                                  :: print_string
       INTEGER                                            :: unit_nr
       REAL(KIND=dp)                                      :: prev_determinant
       TYPE(cp_logger_type), POINTER                      :: logger
@@ -217,7 +270,7 @@ CONTAINS
 
       ENDIF
 
-   END SUBROUTINE tidft_variational_optimization
+   END SUBROUTINE penalty_strength_variation
 
 ! **************************************************************************************************
 !> \brief Optimization of MOs using PCG minimizers
@@ -333,6 +386,7 @@ CONTAINS
                        loss_components_out = loss_components, &
                        gradient_out = optimizer_storage%grad )
             ENDIF
+            
             energy_function = loss_components(1)
             penalty_func_new = loss_components(2) + loss_components(3)
             objf_new = SUM(loss_components)
@@ -701,7 +755,7 @@ CONTAINS
                                                             nspins, unit_nr, nmos_stateI, &
                                                             stateI, ivar, nstates, idet, &
                                                             ndets, slaterI, stateJ, &
-                                                            nmos_stateJ
+                                                            nmos_stateJ, first_state
       LOGICAL                                            :: aspc_guess, my_silent
       REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
                                                             random_percentile, &
@@ -761,6 +815,9 @@ CONTAINS
       nstates = tidft_env%nstates
       ndets=1
       IF (tidft_env%triplet_correction) ndets = 2
+
+      first_state = 1
+      IF (tidft_env%state_by_state) first_state = nstates
 
       energy_component=tidft_env%loss_function_components(1)
       intrastate_penalty_component=tidft_env%loss_function_components(2)
@@ -864,7 +921,7 @@ CONTAINS
       ! Reverse order of determinants allows to use empty singlet determinants
       ! to temporarily store the triplet determinant
       DO idet = ndets, 1, -1
-         DO stateI = 1, nstates
+         DO stateI = first_state, nstates
             DO ispin = 1, nspins
 
                !IF (unit_nr > 0) THEN
@@ -944,7 +1001,7 @@ CONTAINS
 
          ALLOCATE(mat_proj(nspins))
 
-         DO stateI = 1, nstates
+         DO stateI = first_state, nstates
    
             DO idet = 1, ndets
    
@@ -1042,13 +1099,17 @@ CONTAINS
 
       DEALLOCATE(fake_e_per_block)
 
-      tidft_env%mat_phi_spin(:,:,:) = 0.0_dp
+      ! During state-by-state optimization
+      ! nullifying mat_phi_spin erases info on fixed states
+      !tidft_env%mat_phi_spin(:,:,:) = 0.0_dp
+      tidft_env%mat_phi(:,:) = 0.0_dp
+      tidft_env%mat_phi_inv(:,:) = 0.0_dp
 
       intrastate_nonorthogonality_penalty = 0.0_dp
       IF (intrastate_penalty_component) THEN 
       !! compute intrastate nonorthogonality penalty
 
-         DO stateI = 1, nstates
+         DO stateI = first_state, nstates
 
             IF (tidft_env%triplet_correction) THEN
                idet = 2
@@ -1203,7 +1264,7 @@ CONTAINS
          !DO ispin = 1, nspins
          !   WRITE (*,*) "Phi matrix, spin ", ispin
          !   DO ivar = 1, nstates
-         !      WRITE (*,*) tidft_env%mat_phi_spin(ivar,:,ispin)
+         !      WRITE (*,*) tidft_env%mat_phi_spin(ivar, 1:nstates, ispin)
          !   ENDDO
          !   WRITE (*,*)
          !ENDDO
@@ -1216,13 +1277,13 @@ CONTAINS
          ENDIF
    
          ! Print phi matrix
-         !IF (unit_nr > 0) THEN
-         !   WRITE (unit_nr, *)
-         !   WRITE (unit_nr, *) "Phi matrix"
-         !   DO ivar = 1, nstates
-         !      WRITE (unit_nr,*) tidft_env%mat_phi(ivar,:)
-         !   ENDDO
-         !ENDIF
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, *)
+            WRITE (unit_nr, *) "Phi matrix"
+            DO ivar = 1, nstates
+               WRITE (unit_nr,*) tidft_env%mat_phi(ivar, 1:nstates)
+            ENDDO
+         ENDIF
 
    
          ! compute the product of the diagonal elements
@@ -1230,8 +1291,12 @@ CONTAINS
          DO ivar = 1, nstates
             DetDiagonalSigma = DetDiagonalSigma * tidft_env%mat_phi(ivar,ivar)
          ENDDO
-         CALL determinant_local(tidft_env%mat_phi, determinant_spd)
-   
+         CALL determinant_local(tidft_env%mat_phi, determinant_spd, nstates)
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, '(T2,A38,F40.10)') "Determinant of Diagonal(PHI): ", &
+               DetDiagonalSigma
+         ENDIF
+
          tidft_env%det_mat_phi = determinant_spd/DetDiagonalSigma
 
          IF (unit_nr > 0) THEN
@@ -1281,7 +1346,7 @@ CONTAINS
       ALLOCATE(mat_g_inter(nstates, nspins))
 
       DO ispin = 1, nspins
-         DO stateI = 1, nstates
+         DO stateI = first_state, nstates
 
             DO idet = 1, ndets
                nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
@@ -1307,17 +1372,18 @@ CONTAINS
          ENDDO ! stateI
       ENDDO ! ispin
 
-      tidft_env%mat_phi_inv(:,:)=tidft_env%mat_phi(:,:)
-      CALL matrix_invert_local(tidft_env%mat_phi_inv)
+      IF (interstate_penalty_component .OR. intrastate_penalty_component) THEN
+         tidft_env%mat_phi_inv(:,:)=tidft_env%mat_phi(:,:)
+         CALL matrix_invert_local(tidft_env%mat_phi_inv, nstates)
+         ! Print inverted phi
+         !WRITE (*,*) "Phi inv matrix"
+         !DO ivar = 1, nstates
+         !   WRITE (*,*) tidft_env%mat_phi_inv(ivar, 1:nstates)
+         !ENDDO
+         !WRITE (*,*)
+      ENDIF
 
-      ! Print inverted phi
-      !WRITE (*,*) "Phi inv matrix"
-      !DO ivar = 1, nstates
-      !   WRITE (*,*) tidft_env%mat_phi_inv(ivar,:)
-      !ENDDO
-      !WRITE (*,*)
-
-      DO stateI = 1, nstates
+      DO stateI = first_state, nstates
          DO idet = 1, ndets
             DO ispin = 1, nspins
 
@@ -1584,7 +1650,7 @@ CONTAINS
 
       ! Release derivatives wrt T
       DO ispin = 1, nspins
-         DO stateI = 1, nstates
+         DO stateI = first_state, nstates
             DO idet = 1, ndets
                nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
                IF ( nmos_stateI .GT. 0) THEN
@@ -1601,14 +1667,6 @@ CONTAINS
       DEALLOCATE(mat_g_energy)
       DEALLOCATE(mat_g_intra)
       DEALLOCATE(mat_g_inter)
-
-      !DO stateI = 1, nstates
-      !   DO ivar = 1, 3
-      !      IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
-      !         CALL dbcsr_print(gradient_out(stateI, ivar))
-      !      ENDIF
-      !   ENDDO ! ivar
-      !ENDDO ! stateI
 
       CALL timestop(handle)
 
@@ -1644,7 +1702,8 @@ CONTAINS
                                                             nstates, nblkrows, &
                                                             nblkcols, iblkcol, &
                                                             iblkrow, irow, icol, &
-                                                            plusminus, unit_nr
+                                                            plusminus, unit_nr, &
+                                                            first_state
       INTEGER, DIMENSION(:), POINTER                     :: row_blk_sizes, &
                                                             col_blk_sizes
       TYPE(cp_logger_type), POINTER                      :: logger
@@ -1658,6 +1717,9 @@ CONTAINS
       ENDIF
 
       nstates = tidft_env%nstates
+
+      first_state = 1
+      IF (tidft_env%state_by_state) first_state = nstates
 
       ! set variables
       ALLOCATE(mat_x0(nstates,3))
@@ -1702,7 +1764,7 @@ WRITE(*,*)
       CALL tidft_optimizer_mainvar_print(grad, &
               tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
-      DO istate = 1, nstates
+      DO istate = first_state, nstates
          DO ivar = 1, 3
             nmos = tidft_env%e_states(istate)%slater_det(1)%ncols_var(ivar)
             IF (nmos.GT.0) THEN

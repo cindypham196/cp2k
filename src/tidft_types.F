@@ -140,6 +140,7 @@ MODULE tidft_types
       TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
 
       LOGICAL, DIMENSION(100)                            :: loss_function_components
+      LOGICAL                                            :: state_by_state
       LOGICAL                                            :: numerical_gradient
       REAL(KIND=dp)                                      :: numerical_gradient_dx
 

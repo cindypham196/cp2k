@@ -148,6 +148,9 @@ CONTAINS
               "INTERSTATE_COMPONENT", &
               l_val=tidft_env%loss_function_components(3))
       CALL section_vals_val_get(tidft_section, &
+              "STATE_BY_STATE", &
+              l_val=tidft_env%state_by_state)
+      CALL section_vals_val_get(tidft_section, &
               "NUMERICAL_GRADIENT", &
               l_val=tidft_env%numerical_gradient)
       CALL section_vals_val_get(tidft_section, &

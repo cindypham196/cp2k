@@ -649,8 +649,10 @@ CONTAINS
 !>       2022.05 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE matrix_invert_local(matrix_a)
+   SUBROUTINE matrix_invert_local(matrix_a, n0)
+
       REAL(KIND=dp), DIMENSION(:,:), INTENT(INOUT)       :: matrix_a
+      INTEGER, OPTIONAL, INTENT(IN)                      :: n0
 
       CHARACTER(len=*), PARAMETER :: routineN = 'matrix_invert_local'
 
@@ -660,9 +662,13 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      n = SIZE(matrix_a,1)
-      m = SIZE(matrix_a,2)
-      IF (m .NE. n) CPABORT("Matrix is not square")
+      IF (.NOT.PRESENT(n0)) THEN
+         n = SIZE(matrix_a,1)
+         m = SIZE(matrix_a,2)
+         IF (m .NE. n) CPABORT("Matrix is not square")
+      ELSE
+         n = n0
+      ENDIF
 
       lda = SIZE(matrix_a, 1)
       CALL dpotrf('U', n, matrix_a, lda, info)
@@ -689,10 +695,11 @@ CONTAINS
 !>       2022.05 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE determinant_local(matrix_a, determinant)
+   SUBROUTINE determinant_local(matrix_a, determinant, n0)
 
       REAL(KIND=dp), DIMENSION(:,:), INTENT(IN)          :: matrix_a
       REAL(KIND=dp), INTENT(OUT)                         :: determinant
+      INTEGER, OPTIONAL, INTENT(IN)                      :: n0
 
       CHARACTER(len=*), PARAMETER :: routineN = 'determinant_local'
 
@@ -704,12 +711,16 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      n = SIZE(matrix_a,1)
-      m = SIZE(matrix_a,2)
-      IF (m .NE. n) CPABORT("Matrix is not square")
+      IF (.NOT.PRESENT(n0)) THEN
+         n = SIZE(matrix_a,1)
+         m = SIZE(matrix_a,2)
+         IF (m .NE. n) CPABORT("Matrix is not square")
+      ELSE
+         n = n0
+      ENDIF
 
-      ALLOCATE(a(n,m))
-      a(:,:)=matrix_a(:,:)
+      ALLOCATE(a(n,n))
+      a(1:n,1:n)=matrix_a(1:n,1:n)
       
       ALLOCATE (ipivot(n))
       ipivot(:) = 0
