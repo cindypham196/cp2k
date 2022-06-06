@@ -11,6 +11,7 @@
 ! **************************************************************************************************
 MODULE tidft_env_methods
 
+   USE cp_units,                        ONLY: cp_unit_to_cp2k
    USE almo_scf_types,                  ONLY: almo_mat_dim_aobasis,&
                                               almo_mat_dim_occ
    USE tidft_types,                     ONLY: tidft_env_type
@@ -36,6 +37,7 @@ MODULE tidft_env_methods
         dbcsr_reserve_block2d, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_work_create, &
         dbcsr_type_symmetric, dbcsr_print, dbcsr_add_on_diag
    USE input_constants,                 ONLY: &
+        use_mom_ref_coac, use_mom_ref_com, use_mom_ref_user, use_mom_ref_zero, &
         almo_constraint_distance, almo_deloc_none, almo_deloc_xalmo_1diag, &
         almo_domain_layout_atomic, almo_domain_layout_molecular, almo_frz_crystal, &
         almo_mat_distr_molecular, almo_scf_diag, almo_scf_skip, almo_scf_trustr, cg_hager_zhang, &
@@ -79,6 +81,7 @@ CONTAINS
       CALL timeset(routineN, handle)
 
       ALLOCATE (tidft_env)
+      !ALLOCATE (tidft_env%dipole_reference_point(3))
 
       ! get basic quantities from the qs_env
       CALL get_qs_env(qs_env, input=input, dft_control=dft_control)
@@ -115,6 +118,7 @@ CONTAINS
                                                             jj, GS_multips, nmultips 
       INTEGER, DIMENSION(:), POINTER                     :: tmplist
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: nstates
+      LOGICAL                                            :: explicit
       TYPE(section_vals_type), POINTER                   :: tidft_pcg_optimizer_section, &
                                                             tidft_section, &
                                                             penalty_section
@@ -164,6 +168,25 @@ CONTAINS
       ! Read in the number of excited states of different multiplicities
       !CALL section_vals_val_get(tidft_section,"N_EXCITED_STATES",i_rep_val=1, i_vals=tmplist)
       !nmultips = SIZE(tmplist)
+      CALL section_vals_val_get(tidft_section, &
+              "DIPOLE_REFERENCE_TYPE", &
+              i_val=tidft_env%dipole_reference_type)
+      !CALL section_vals_val_get(tidft_section, &
+      !        "DIPOLE_REFERENCE_POINT", &
+      !        explicit=explicit)
+      !IF (explicit) THEN
+      !   CALL section_vals_val_get(tidft_section, &
+      !           "REFERENCE_POINT", r_vals=tidft_env%dipole_reference_point)
+      !   DO jj = 1, 3 
+      !      tidft_env%dipole_reference_point = cp_unit_to_cp2k(&
+      !         tidft_env%dipole_reference_point(jj), "angstrom")
+      !   ENDDO
+      !ELSE
+      !   NULLIFY (tidft_env%dipole_reference_point)
+      !   IF (tidft_env%dipole_reference_type == use_mom_ref_user) THEN
+      !      CPABORT("User-defined reference point should be given explicitly")
+      !   END IF
+      !END IF
 
       tidft_pcg_optimizer_section => section_vals_get_subs_vals(tidft_section, &
                                                          "TIDFT_OPTIMIZER_PCG")
@@ -428,6 +451,7 @@ CONTAINS
       ndets = tidft_env%ndets
 
       ALLOCATE(tidft_env%mat_sigma(nstates,nstates,ndets,nspins))
+      ALLOCATE(tidft_env%mat_adj_sigma(nstates,nstates,ndets,nspins))
       ALLOCATE(tidft_env%mat_sigma_inv(nstates,ndets,nspins))
       ALLOCATE(tidft_env%mat_var_sigma(3))
       DO idet = 1, ndets
@@ -476,6 +500,9 @@ CONTAINS
                                 suggested_mo_blk_size = suggested_blk_size, &
                                 symmetry_new = dbcsr_type_no_symmetry, &
                                 nmos = (/nmos_stateI, nmos_stateJ/) )
+
+                        CALL dbcsr_create(tidft_env%mat_adj_sigma(stateI, stateJ, idet, ispin), &
+                                template=tidft_env%mat_sigma(stateI, stateJ, idet, ispin))
 
                      ENDIF ! zero MOs for state J
 
@@ -597,6 +624,7 @@ CONTAINS
                      IF ( nmos_stateJ .GT. 0) THEN
 
                          CALL dbcsr_release(tidft_env%mat_sigma(stateI, stateJ, idet, ispin))
+                         CALL dbcsr_release(tidft_env%mat_adj_sigma(stateI, stateJ, idet, ispin))
 
                      ENDIF ! zero MOs for J
 
@@ -633,6 +661,7 @@ CONTAINS
       ENDDO ! stateI
 
       DEALLOCATE(tidft_env%mat_sigma)
+      DEALLOCATE(tidft_env%mat_adj_sigma)
       DEALLOCATE(tidft_env%mat_sigma_inv)
       DEALLOCATE(tidft_env%mat_var_sigma)
       DO idet = 1, ndets

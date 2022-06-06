@@ -15,6 +15,7 @@ MODULE input_cp2k_tidft
    USE cp_output_handling,              ONLY: cp_print_key_section_create,&
                                               low_print_level
    USE input_constants,                 ONLY: &
+        use_mom_ref_coac, use_mom_ref_com, use_mom_ref_user, use_mom_ref_zero, &
         almo_deloc_none, almo_deloc_scf, almo_deloc_x, almo_deloc_x_then_scf, &
         almo_deloc_xalmo_1diag, almo_deloc_xalmo_scf, almo_deloc_xalmo_x, almo_frz_crystal, &
         almo_frz_none, almo_scf_diag, almo_scf_pcg, almo_scf_skip, almo_scf_trustr, atomic_guess, &
@@ -160,57 +161,28 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      !tiidftCALL keyword_create(keyword, __LOCATION__, name="ALMO_SCF_GUESS", &
-      !tiidft                    description="The method to generate initial ALMOs.", &
-      !tiidft                    usage="ALMO_SCF_GUESS MOLECULAR", &
-      !tiidft                    default_i_val=atomic_guess, &
-      !tiidft                    enum_c_vals=s2a("MOLECULAR", "ATOMIC"), &
-      !tiidft                    enum_desc=s2a("SCF calculations on single molecules controlled by the regular SCF "// &
-      !tiidft                                  "keywords outside ALMO options. This kind of calculation is expensive "// &
-      !tiidft                                  "and only recommended if ALMO SCF does not converge from the ATOMIC guess.", &
-      !tiidft                                  "Superposition of atomic densities."), &
-      !tiidft                    enum_i_vals=(/molecular_guess, atomic_guess/))
-      !tiidftCALL section_add_keyword(section, keyword)
-      !tiidftCALL keyword_release(keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="DIPOLE_REFERENCE_TYPE", &
+                          description="Type of the reference point to calculate electric "// &
+                          "dipole moments using the dipole integrals in the length form.", &
+                          enum_c_vals=s2a("COM", "COAC", "USER_DEFINED", "ZERO"), &
+                          enum_desc=s2a("Center of mass", &
+                                        "Center of atomic charges", &
+                                        "User-defined point", &
+                                        "Origin of the coordinate system"), &
+                          enum_i_vals=(/use_mom_ref_com, &
+                                        use_mom_ref_coac, &
+                                        use_mom_ref_user, &
+                                        use_mom_ref_zero/), &
+                          default_i_val=use_mom_ref_com)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
 
-      !tiidftCALL keyword_create(keyword, __LOCATION__, name="MO_OVERLAP_INV_ALG", &
-      !tiidft                    description="Algorithm to invert MO overlap matrix.", &
-      !tiidft                    usage="MO_OVERLAP_INV_ALG LS_HOTELLING", &
-      !tiidft                    default_i_val=spd_inversion_ls_hotelling, &
-      !tiidft                    enum_c_vals=s2a("LS_HOTELLING", "LS_TAYLOR", "DENSE_CHOLESKY"), &
-      !tiidft                    enum_desc=s2a("Linear scaling iterative Hotelling algorithm. Fast for large sparse matrices.", &
-      !tiidft                                  "Linear scaling algorithm based on Taylor expansion of (A+B)^(-1).", &
-      !tiidft                                  "Stable but dense Cholesky algorithm. Cubically scaling."), &
-      !tiidft                    enum_i_vals=(/spd_inversion_ls_hotelling, spd_inversion_ls_taylor, spd_inversion_dense_cholesky/))
-      !tiidftCALL section_add_keyword(section, keyword)
-      !tiidftCALL keyword_release(keyword)
-
-      !tiidftCALL keyword_create(keyword, __LOCATION__, name="ALMO_EXTRAPOLATION_ORDER", &
-      !tiidft                    description="Number of previous states used for the ASPC extrapolation of the ALMO "// &
-      !tiidft                    "initial guess. 0 implies that the guess is given by ALMO_SCF_GUESS at each step.", &
-      !tiidft                    usage="ALMO_EXTRAPOLATION_ORDER 3", default_i_val=3)
-      !tiidftCALL section_add_keyword(section, keyword)
-      !tiidftCALL keyword_release(keyword)
-
-      !tiidftCALL keyword_create(keyword, __LOCATION__, name="XALMO_ALGORITHM", &
-      !tiidft                    description="Specifies the algorithm to update ALMOs on eXtended domains (XALMOs).", &
-      !tiidft                    usage="XALMO_ALGORITHM TRUST_REGION", &
-      !tiidft                    default_i_val=almo_scf_pcg, &
-      !tiidft                    enum_c_vals=s2a("DIAG", "PCG", "TRUST_REGION"), &
-      !tiidft                    enum_desc=s2a("DIIS-accelerated diagonalization.", &
-      !tiidft                                  "PCG algorithm controlled by XALMO_OPTIMIZER_PCG.", &
-      !tiidft                                  "Trust-region optimizer controlled by XALMO_OPTIMIZER_TRUSTR"), &
-      !tiidft                    enum_i_vals=(/almo_scf_diag, almo_scf_pcg, almo_scf_trustr/))
-      !tiidftCALL section_add_keyword(section, keyword)
-      !tiidftCALL keyword_release(keyword)
-
-      !tiidftCALL keyword_create(keyword, __LOCATION__, name="RETURN_ORTHOGONALIZED_MOS", &
-      !tiidft                    description="Orthogonalize Kohn-Sham orbitls before they are returned"// &
-      !tiidft                    "to Quickstep (i.e. for calculation of properties)", &
-      !tiidft                    usage="RETURN_ORTHOGONALIZED_MOS .TRUE.", default_l_val=.TRUE., &
-      !tiidft                    lone_keyword_l_val=.TRUE.)
-      !tiidftCALL section_add_keyword(section, keyword)
-      !tiidftCALL keyword_release(keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="DIPOLE_REFERENCE_POINT", &
+                          description="User-defined reference point in the dipole moment calculation.", &
+                          usage="DIPOLE_REFERENCE_POINT x y z", &
+                          repeats=.FALSE., n_var=3, type_of_var=real_t, unit_str='angstrom')
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
 
       NULLIFY (subsection)
       CALL create_optimizer_section(subsection, optimizer_tidft_pcg)

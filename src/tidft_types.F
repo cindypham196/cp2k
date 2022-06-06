@@ -94,6 +94,7 @@ MODULE tidft_types
 
       ! Kohn-Sham Hamiltonian NxN - for each spin
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_ks
+      REAL(KIND=dp)                                      :: slater_energy
 
    END TYPE slater_det_type
 
@@ -103,6 +104,7 @@ MODULE tidft_types
       ! Number of Slater determinants describing the electronic state
       INTEGER                                            :: nslater
       TYPE(slater_det_type), DIMENSION(:), ALLOCATABLE   :: slater_det
+      REAL(KIND=dp)                                      :: state_energy
 
    END TYPE e_state_type
 
@@ -151,6 +153,10 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: allowed_determinant_deviaion
       REAL(KIND=dp)                                      :: initial_guess_random_fraction
 
+      ! dipole evaluation
+      INTEGER                                            :: dipole_reference_type
+      !REAL(kind=dp), DIMENSION(:), POINTER               :: dipole_reference_point
+
       ! Keep some numerical thresholds
       REAL(KIND=dp)                                      :: eps_filter
       INTEGER                                            :: order_lanczos = 3
@@ -171,6 +177,7 @@ MODULE tidft_types
 
       ! MO overlap OxO (stateI, stateJ, spinS)
       TYPE(dbcsr_type), DIMENSION(:,:,:,:), ALLOCATABLE  :: mat_sigma
+      TYPE(dbcsr_type), DIMENSION(:,:,:,:), ALLOCATABLE  :: mat_adj_sigma
       ! inverse MO overlap OxO - for each state (stateI, spinS)
       TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_inv
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_var_sigma
@@ -197,6 +204,7 @@ CONTAINS
 
       TYPE(tidft_env_type), POINTER                      :: tidft_env
 
+      !DEALLOCATE (tidft_env%dipole_reference_point)
       DEALLOCATE (tidft_env)
 
    END SUBROUTINE tidft_env_release

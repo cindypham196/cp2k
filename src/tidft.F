@@ -16,6 +16,7 @@ MODULE tidft
                                               distribute_domains,&
                                               orthogonalize_mos,&
                                               get_overlap
+   USE physcon,                         ONLY: evolt
    USE almo_scf_optimizer,              ONLY: almo_scf_block_diagonal,&
                                               almo_scf_construct_nlmos,&
                                               almo_scf_xalmo_eigensolver,&
@@ -56,11 +57,16 @@ MODULE tidft
                                               Scheiber2018,&
                                               Staub2019,&
                                               cite_reference
+   USE qs_operators_ao,                 ONLY: rRc_xyz_ao
+   USE moments_utils,                   ONLY: get_reference_point
+   USE kahan_sum,                       ONLY: accurate_dot_product
    USE cp_blacs_env,                    ONLY: cp_blacs_env_release,&
                                               cp_blacs_env_retain
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_syevd
-   USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm
+   USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm, &
+                                              dbcsr_allocate_matrix_set, &
+                                              dbcsr_deallocate_matrix_set
    USE cp_fm_types,                     ONLY: cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
@@ -72,7 +78,7 @@ MODULE tidft
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
         dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
-        dbcsr_get_info, dbcsr_get_stored_coordinates, &
+        dbcsr_get_info, dbcsr_get_stored_coordinates, dbcsr_init_p, dbcsr_dot, &
         dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
         dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_nblkcols_total, &
         dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, dbcsr_reserve_block2d, dbcsr_scale, &
@@ -114,6 +120,8 @@ MODULE tidft
    USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_scf_types,                    ONLY: qs_scf_env_type,&
                                               scf_env_release
+   USE string_utilities,                ONLY: integer_to_string
+   USE util,                            ONLY: sort
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -161,7 +169,7 @@ CONTAINS
       CALL tidft_variational_optimization(qs_env, tidft_env)
 
       !!! perform post-scf processing
-      !!CALL almo_scf_post(qs_env, almo_scf_env)
+      CALL tidft_post_scf(qs_env, tidft_env)
 
       CALL tidft_env_deallocate(tidft_env)
 
@@ -454,6 +462,262 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE tidft_mainvar_initial_guess
+
+! **************************************************************************************************
+!> \brief Print the final TIDFT excitation energies and oscillator strengths.
+!> \par History
+!>       2022.06 created [Rustam Z Khaliullin]
+!> \author Rustam Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_post_scf(qs_env, tidft_env)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'tidft_post_scf'
+
+      REAL(kind=dp), DIMENSION(3)                        :: reference_point
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: dipole_ao_xyz
+      INTEGER                                            :: unit_nr
+      CHARACTER(len=2)                                   :: lsd_str
+      CHARACTER(len=20)                                  :: mult_str
+      INTEGER                                            :: handle, ideriv, ispin, &
+                                                            istate, nspins, &
+                                                            nstates, idet, &
+                                                            indexGS, indexES, &
+                                                            nderivs, ndets
+      REAL(kind=dp)                                      :: osc_strength, &
+                                                            scaling_factor, &
+                                                            excitationE
+      REAL(kind=dp), ALLOCATABLE, DIMENSION(:, :, :)     :: trans_dipoles_from_GS
+      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: index_true
+      REAL(kind=dp), ALLOCATABLE, DIMENSION(:)           :: energies, energies_temp
+      TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(dbcsr_type)                                   :: tempNO1, tempNO2
+
+      CALL timeset(routineN, handle)
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%mepos == logger%para_env%source) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      nderivs = 3
+      nspins = tidft_env%nspins
+      nstates = tidft_env%nstates
+      ndets=1
+      IF (tidft_env%triplet_correction) ndets = 2
+
+      ! compute components of the dipole operator in the length form
+      NULLIFY (dipole_ao_xyz)
+      CALL dbcsr_allocate_matrix_set(dipole_ao_xyz, nderivs)
+
+      DO ideriv = 1, nderivs
+         CALL dbcsr_init_p(dipole_ao_xyz(ideriv)%matrix)
+         CALL dbcsr_copy(dipole_ao_xyz(ideriv)%matrix, tidft_env%mat_s)
+      END DO
+
+      !CALL get_reference_point( &
+      !        rpoint = reference_point, &
+      !        qs_env=qs_env, &
+      !        reference=tidft_env%dipole_reference_type, &
+      !        ref_point=tidft_env%dipole_reference_point)
+
+      ! Compute the dipole matrix in the AO basis set
+      CALL rRc_xyz_ao( &
+              op=dipole_ao_xyz, &
+              qs_env=qs_env, &
+              !rc=reference_point, &
+              rc=(/0.0_dp, 0.0_dp, 0.0_dp/), &
+              order=1, &
+              minimum_image=.FALSE., &
+              soft=.FALSE.)
+
+      ALLOCATE(index_true(nstates))
+      ALLOCATE(energies(nstates))
+      ALLOCATE(energies_temp(nstates))
+
+      ! RZK-WARNING: which slater/state energy to use - theory is not developed
+      DO istate = 1, nstates
+         energies(istate) = tidft_env%e_states(istate)%state_energy
+      ENDDO
+
+      energies_temp(:) = energies(:)
+      CALL sort(energies_temp, nstates, index_true)
+      indexGS = index_true(1)
+
+      ! transition dipole moment
+      ALLOCATE (trans_dipoles_from_GS(nstates, nderivs, nspins))
+      trans_dipoles_from_GS(:, :, :) = 0.0_dp
+
+      idet = 1
+      IF (tidft_env%triplet_correction) THEN
+         CPWARN("Lowest-energy open-shell singlet determinant is used as the ground state.")
+      ENDIF
+
+      ! RZK-WARNING: If interstate_component is FALSE then ADJ will not be available
+      DO ideriv = 1, nderivs
+         DO ispin = 1, nspins
+
+            ! Check if there are electrons of this spin
+            IF (tidft_env%e_states(indexGS)%slater_det(idet)%nelectrons_ab(ispin) .GT. 0) THEN
+
+               ! tempNO1 = D.T_GS
+               CALL dbcsr_create(tempNO1, &
+                       template=tidft_env%e_states(indexGS)%slater_det(idet)%mat_t(ispin))
+               CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                       dipole_ao_xyz(ideriv)%matrix, &
+                       tidft_env%e_states(indexGS)%slater_det(idet)%mat_t(ispin), &
+                       0.0_dp, tempNO1, &
+                       filter_eps=tidft_env%eps_filter)
+
+               DO istate = 2, nstates
+
+                  indexES = index_true(istate)
+
+                  CALL dbcsr_create(tempNO2, &
+                       template=tidft_env%e_states(indexES)%slater_det(idet)%mat_t(ispin))
+
+                  ! take the normalization into account
+                  scaling_factor = 1.0_dp / SQRT( tidft_env%mat_phi_spin(indexGS,indexGS,ispin) * &
+                     tidft_env%mat_phi_spin(indexES,indexES,ispin) )
+
+                  ! tempNO2 = tempNO1.adj(sigma_GS,ES)
+                  ! RZK-WARNING: Or perhaps tempNO2 = tempNO1.adj(sigma_JI)
+                  IF (indexGS .LE. indexES) THEN
+                     CALL dbcsr_multiply("N", "N", scaling_factor, &
+                             tempNO1, &
+                             tidft_env%mat_adj_sigma(indexGS, indexES, idet, ispin), &
+                             0.0_dp, tempNO2, &
+                             filter_eps=tidft_env%eps_filter)
+                  ELSE
+                     ! Note the transpose
+                     CALL dbcsr_multiply("N", "T", scaling_factor, &
+                             tempNO1, &
+                             tidft_env%mat_adj_sigma(indexES, indexGS, idet, ispin), &
+                             0.0_dp, tempNO2, &
+                             filter_eps=tidft_env%eps_filter)
+                  ENDIF
+
+                  ! trans_dipoles_from_GS(ES,ideriv,ispin) = Trace [tempNO2 . T_ES^t]
+                  CALL dbcsr_dot( &
+                          tempNO2, &
+                          tidft_env%e_states(indexES)%slater_det(idet)%mat_t(ispin), &
+                          trans_dipoles_from_GS(indexES, ideriv, ispin))
+                  CALL dbcsr_release(tempNO2)
+
+               ENDDO ! excited states
+
+               CALL dbcsr_release(tempNO1)
+
+            ENDIF ! non-zero electrons
+
+         ENDDO
+      ENDDO
+
+      ! RZK-WARNING: RZK disagrees that spins must be squared before their addition
+      IF (nspins == 1) THEN
+         !trans_dipoles_from_GS(:, :, 1) = SQRT(2.0_dp) * trans_dipoles_from_GS(:, :, 1)
+         trans_dipoles_from_GS(:, :, 1) = 2.0_dp * trans_dipoles_from_GS(:, :, 1)
+      ELSE
+         !trans_dipoles_from_GS(:, :, 1) = SQRT(trans_dipoles_from_GS(:, :, 1)**2 + trans_dipoles_from_GS(:, :, 2)**2)
+         trans_dipoles_from_GS(:, :, 1) = trans_dipoles_from_GS(:, :, 1) + trans_dipoles_from_GS(:, :, 2)
+      END IF
+
+      ! Print header
+      IF (tidft_env%restricted) THEN
+         IF (tidft_env%unpairings .EQ. 0) THEN
+            IF (tidft_env%desired_multip.EQ.1) THEN
+               lsd_str = 'R'
+            ELSE
+               lsd_str = 'RO'
+            ENDIF
+         ELSE
+            lsd_str = 'RO'
+         ENDIF
+      ELSE
+         lsd_str = 'U'
+      ENDIF
+
+      IF (unit_nr > 0) THEN
+         CALL integer_to_string(tidft_env%desired_multip, mult_str)
+
+         WRITE (unit_nr, '()')
+         WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+         WRITE (unit_nr, '(1X,A,A,A)') lsd_str, "-TIDFT states of multiplicity ", TRIM(mult_str)
+         WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+
+         WRITE (unit_nr, '(1X,6X,A5,A5,A20,A7,A27,A9)') &
+            "Exct", &
+            "SCF", &
+            "SCF energy", &
+            "Exct", &
+            "Transition dipole (a.u.)", &
+            "Oscl str"
+         WRITE (unit_nr, '(1X,6X,A5,A5,A20,A7,3A9,A9)') &
+            "no.", &
+            "no.", &
+            "(a.u.)", &
+            "(eV)", &
+            "x", "y", "z", &
+            "(a.u.)"
+         WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+      ENDIF
+
+      ! Include the GS into the print out
+      IF (unit_nr > 0) THEN
+
+         WRITE (unit_nr, '(1X,A6,I5,I5,F20.10,F7.2,3ES9.1E2,ES9.2E2)') &
+            "TIDFT|", &
+            0, &
+            indexGS, &
+            tidft_env%e_states(indexGS)%state_energy, &
+            0.0_dp, &
+            0.0_dp, 0.0_dp, 0.0_dp, &
+            0.0_dp
+
+      END IF
+
+      ! Print excited-state info state-by-state
+      DO istate = 2, nstates
+   
+         indexES = index_true(istate) ! istate - index of increasing energy, indexES - index if TIDFT arrays
+         excitationE = energies(indexES) - energies(indexGS)
+
+         IF (unit_nr > 0) THEN
+
+            osc_strength = 2.0_dp/3.0_dp * excitationE * &
+               accurate_dot_product(trans_dipoles_from_GS(indexES, :, 1), trans_dipoles_from_GS(indexES, :, 1))
+
+            WRITE (unit_nr, '(1X,A6,I5,I5,F20.10,F7.2,3ES9.1E2,ES9.2E2)') &
+               "TIDFT|", &
+               istate-1, &
+               indexES, &
+               tidft_env%e_states(indexES)%state_energy, &
+               excitationE*evolt, &
+               trans_dipoles_from_GS(indexES, 1:nderivs, 1), &
+               osc_strength
+
+         END IF
+   
+      ENDDO
+   
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+      ENDIF
+
+      CALL dbcsr_deallocate_matrix_set(dipole_ao_xyz)
+      DEALLOCATE (trans_dipoles_from_GS)
+      DEALLOCATE(energies) 
+      DEALLOCATE(energies_temp) 
+      DEALLOCATE(index_true)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_post_scf
 
 !tiidft! **************************************************************************************************
 !tiidft!> \brief store a history of matrices for later use in almo_scf_initial_guess

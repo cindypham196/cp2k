@@ -104,7 +104,7 @@ CONTAINS
 
       CHARACTER(LEN=59)                                  :: print_string
       INTEGER                                            :: unit_nr, &
-                                                            original_nstates, &
+                                                            nstates, &
                                                             current_no_of_states
       REAL(KIND=dp)                                      :: prev_determinant
       TYPE(cp_logger_type), POINTER                      :: logger
@@ -118,20 +118,41 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
+      nstates = tidft_env%nstates
+
       IF (tidft_env%state_by_state) THEN
 
-         original_nstates = tidft_env%nstates
+         DO current_no_of_states = 1, nstates
    
-         DO current_no_of_states = 1, original_nstates
-   
+            IF (unit_nr > 0) THEN
+
+               WRITE (unit_nr, '()')
+               WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+               WRITE (unit_nr, '(T2,A59,I6)') &
+                  "OPTIMIZATION OF STATE", &
+                  current_no_of_states
+               WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+               WRITE (unit_nr, '()')
+
+            ENDIF
+
             tidft_env%nstates = current_no_of_states
             CALL penalty_strength_variation(qs_env, tidft_env)
    
          ENDDO
    
-         !tidft_env%nstates = original_nstates
-
       ELSE
+
+         IF (unit_nr > 0) THEN
+
+            WRITE (unit_nr, '()')
+            WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+            WRITE (unit_nr, '(T2,A59)') &
+               "SIMULTANEOUS OPTIMIZATION OF ALL STATES"
+            WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+            WRITE (unit_nr, '()')
+
+         ENDIF
 
          CALL penalty_strength_variation(qs_env, tidft_env)
 
@@ -996,6 +1017,13 @@ CONTAINS
       ENDDO ! idet
 
       obj_energy = 0.0_dp
+      DO stateI = first_state, nstates
+         tidft_env%e_states(stateI)%state_energy = 0.0_dp
+         DO idet = 1, ndets
+            tidft_env%e_states(stateI)%slater_det(idet)%slater_energy = 0.0_dp
+         ENDDO
+      ENDDO
+
       IF (energy_component) THEN
       ! Use MOs to compute the DMs, then KS matrices and then the energy
 
@@ -1065,7 +1093,8 @@ CONTAINS
                   energy_triplet = energy
                ENDIF
                IF (idet.EQ.2) energy_triplet = energy
-   
+               tidft_env%e_states(stateI)%slater_det(idet)%slater_energy = energy
+
                DO ispin = 1, nspins
                   CALL dbcsr_release(mat_proj(ispin))
                ENDDO
@@ -1076,6 +1105,7 @@ CONTAINS
             IF (unit_nr > 0) THEN
                WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State ", stateI, state_energy
             ENDIF
+            tidft_env%e_states(stateI)%state_energy = state_energy
    
             obj_energy = obj_energy + state_energy
    
@@ -1532,20 +1562,6 @@ CONTAINS
                   ! Interstate term
                   IF (interstate_penalty_component) THEN
 
-                     ! Do NOT compute for triplet_correction and the first determinant
-                     ! This means compute for triplet_correction==.FALSE. .OR. idet.EQ.2
-                     IF ( .NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
-
-                        !! S.T - not required here, ST_J is necessary under the J-loop
-                        !not_evaluated = .NOT. intrastate_penalty_component
-                        !IF (not_evaluated) THEN
-                        !   CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                        !           tidft_env%mat_s, &
-                        !           tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                        !           0.0_dp, ST, &
-                        !           filter_eps=tidft_env%eps_filter)
-                        !ENDIF
-
                         DO stateJ = 1, nstates
 
                            nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(idet)%nelectrons_ab(ispin)
@@ -1553,7 +1569,6 @@ CONTAINS
                            IF ( nmos_stateJ .GT. 0) THEN
 
                               ! Compute ADJUGATE
-                              ! RZK-WARNING: potential analytical error: ajugate of (I,J) OR (J,I) ?
                               IF (stateJ .GE. stateI) THEN
                                  CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
                                  CALL dbcsr_copy(tempOO2, tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
@@ -1561,13 +1576,6 @@ CONTAINS
                                  CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
                                  CALL dbcsr_transposed(tempOO2, tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
                               ENDIF
-                              !IF (stateJ .GE. stateI) THEN
-                              !   CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
-                              !   CALL dbcsr_transposed(tempOO2, tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
-                              !ELSE
-                              !   CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
-                              !   CALL dbcsr_copy(tempOO2, tidft_env%mat_sigma(stateJ,stateI,idet,ispin))
-                              !ENDIF
 
                               ! RZK-WARNING time can be saved by computing ADJ only for half of the matrices
                               CALL cp_dbcsr_adjugate(matrix=tempOO2, &
@@ -1582,41 +1590,86 @@ CONTAINS
                               !CALL dbcsr_scale(temp2, 1.0_dp/determinant_spd)
                               !CALL dbcsr_print(temp2)
                               !CALL dbcsr_release(temp2)
-                              IF (ispin .EQ. 1) THEN
-                                 opposite_spin = 2
-                              ELSE
-                                 opposite_spin = 1
-                              ENDIF
-                              CALL dbcsr_scale(tempOO2, &
-                                      tidft_env%mat_phi_spin(stateJ,stateI,opposite_spin) * &
-                                      tidft_env%mat_phi_inv(stateJ,stateI) )
 
-                              ! S.T_Jindex
-                              ! RZK-WARNING: optimize N^2 re-evaluations to N
-                              CALL dbcsr_create(tempNO2, &
-                                      template=tidft_env%e_states(stateJ)%slater_det(idet)%mat_t(ispin))
-                              not_evaluated = .NOT. intrastate_penalty_component
-                              IF (stateI.NE.stateJ .OR. not_evaluated) THEN
+                              ! save ADJ matrix
+                              IF (stateJ .GE. stateI) THEN
+                                 CALL dbcsr_copy(tidft_env%mat_adj_sigma(stateI,stateJ,idet,ispin), tempOO2)
+                              ELSE
+                                 CALL dbcsr_transposed(tidft_env%mat_adj_sigma(stateJ,stateI,idet,ispin), tempOO2)
+                              ENDIF
+
+                              ! This block saves ADJ and reduces the number of ADJ evaluations
+                              ! RZK-WARNING: It does not work for some reason
+                              !IF (stateJ .GE. stateI) THEN
+                              !   CALL dbcsr_create(tempOO2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                              !   CALL dbcsr_copy(tidft_env%mat_adj_sigma(stateI,stateJ,idet,ispin), &
+                              !           tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                              !   CALL cp_dbcsr_adjugate( &
+                              !           matrix=tidft_env%mat_adj_sigma(stateI,stateJ,idet,ispin), &
+                              !           det = determinant_spd, &
+                              !           para_env = tidft_env%para_env, &
+                              !           blacs_env = tidft_env%blacs_env)
+                              !   CALL dbcsr_copy(tempOO2, tidft_env%mat_adj_sigma(stateI,stateJ,idet,ispin))
+                              !   !CALL dbcsr_create(temp2, template=tidft_env%mat_sigma(stateI,stateJ,idet,ispin))
+                              !   !CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                              !   !        tidft_env%mat_adj_sigma(stateI,stateJ,idet,ispin), &
+                              !   !        tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
+                              !   !        0.0_dp, temp2, &
+                              !   !        filter_eps=tidft_env%eps_filter)
+                              !   !CALL dbcsr_scale(temp2, 1.0_dp/determinant_spd)
+                              !   !CALL dbcsr_print(temp2)
+                              !   !CALL dbcsr_release(temp2)
+                              !ELSE
+                              !   CALL dbcsr_create(tempOO2, template=tidft_env%mat_adj_sigma(stateJ,stateI,idet,ispin))
+                              !   CALL dbcsr_transposed(tempOO2, tidft_env%mat_adj_sigma(stateJ,stateI,idet,ispin))
+                              !ENDIF
+
+                              ! Do NOT compute for triplet_correction and the first determinant
+                              ! This means compute for triplet_correction==.FALSE. .OR. idet.EQ.2
+                              IF ( .NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
+
+                                 IF (ispin .EQ. 1) THEN
+                                    opposite_spin = 2
+                                 ELSE
+                                    opposite_spin = 1
+                                 ENDIF
+                                 CALL dbcsr_scale(tempOO2, &
+                                         tidft_env%mat_phi_spin(stateJ,stateI,opposite_spin) * &
+                                         tidft_env%mat_phi_inv(stateJ,stateI) )
+
+                                 ! S.T_Jindex
+                                 ! RZK-WARNING: optimize N^2 re-evaluations to N
+                                 CALL dbcsr_create(tempNO2, &
+                                         template=tidft_env%e_states(stateJ)%slater_det(idet)%mat_t(ispin))
+                                 not_evaluated = .NOT. intrastate_penalty_component
+                                 IF (stateI.NE.stateJ .OR. not_evaluated) THEN
+                                    CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                            tidft_env%mat_s, &
+                                            tidft_env%e_states(stateJ)%slater_det(idet)%mat_t(ispin), &
+                                            0.0_dp, tempNO2, &
+                                            filter_eps=tidft_env%eps_filter)
+                                 ELSE
+                                    CALL dbcsr_copy(tempNO2,ST)
+                                 ENDIF
+
                                  CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                         tidft_env%mat_s, &
-                                         tidft_env%e_states(stateJ)%slater_det(idet)%mat_t(ispin), &
-                                         0.0_dp, tempNO2, &
+                                         tempNO2, &
+                                         tempOO2, &
+                                         1.0_dp, mat_g_inter(stateI, ispin), &
                                          filter_eps=tidft_env%eps_filter)
-                              ELSE
-                                 CALL dbcsr_copy(tempNO2,ST)
-                              ENDIF
+                                 CALL dbcsr_release(tempNO2)
 
-                              CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                      tempNO2, &
-                                      tempOO2, &
-                                      1.0_dp, mat_g_inter(stateI, ispin), &
-                                      filter_eps=tidft_env%eps_filter)
-                              CALL dbcsr_release(tempNO2)
+                              ENDIF ! only triplet determinant is used in the penalty
+
                               CALL dbcsr_release(tempOO2)
 
                            ENDIF ! zero MOs for state J
 
                         ENDDO ! stateJ loop
+
+                     ! Do NOT compute for triplet_correction and the first determinant
+                     ! This means compute for triplet_correction==.FALSE. .OR. idet.EQ.2
+                     IF ( .NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
 
                         CALL dbcsr_add(mat_g_inter(stateI, ispin), STsiginv, 1.0_dp, -1.0_dp)
                         CALL dbcsr_scale(mat_g_inter(stateI, ispin), & 
