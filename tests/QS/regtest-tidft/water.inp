@@ -43,9 +43,9 @@
       INTERSTATE_COMPONENT       TRUE
       
       &TIDFT_OPTIMIZER_PCG
-        EPS_ERROR                  1.0E-4
-        MAX_ITER                   200
-        MAX_ITER_OUTER_LOOP        2
+        EPS_ERROR                  1.0E-5
+        MAX_ITER                   100
+        MAX_ITER_OUTER_LOOP        4
         LIN_SEARCH_EPS_ERROR       0.1
         LIN_SEARCH_STEP_SIZE_GUESS 0.1
         CONJUGATOR                 FLETCHER

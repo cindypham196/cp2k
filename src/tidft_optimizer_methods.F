@@ -62,6 +62,7 @@ MODULE tidft_optimizer_methods
                                               tidft_optimizer_gradient_norm, &
                                               tidft_optimizer_mainvar_print, &
                                               tidft_optimizer_mainvar_set, &
+                                              tidft_mainvar_orthonormalize, &
                                               dbcsr_set_element, &
                                               stitch_columns, &
                                               split_columns, &
@@ -735,6 +736,13 @@ CONTAINS
          outer_iteration = outer_iteration + 1
          IF (outer_prepare_to_exit) EXIT
 
+         IF (tidft_env%state_by_state) THEN
+            CALL tidft_mainvar_orthonormalize(tidft_env, &
+                    only_state = tidft_env%nstates)
+         ELSE
+            CALL tidft_mainvar_orthonormalize(tidft_env)
+         ENDIF
+
       ENDDO ! outer loop
 
       ! clean up
@@ -766,6 +774,8 @@ CONTAINS
       TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
       REAL(KIND=dp), DIMENSION(100), INTENT(OUT)         :: loss_components_out
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: gradient_out
+      !TYPE(dbcsr_type), DIMENSION(:,:,:), OPTIONAL, &
+      !   INTENT(INOUT)                                   :: gradient_components_out
       LOGICAL, INTENT(IN), OPTIONAL                      :: silent
 
       CHARACTER(len=*), PARAMETER :: routineN = 'mainvar_to_loss_and_gradient', &
@@ -1365,6 +1375,11 @@ CONTAINS
          DO ivar = 1, 3
             IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
                CALL dbcsr_set(gradient_out(stateI, ivar), 0.0_dp)
+               !IF (gradient_components) THEN
+               !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 1), 0.0_dp)
+               !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 2), 0.0_dp)
+               !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 3), 0.0_dp)
+               !ENDIF
             ENDIF
          ENDDO ! ivar
       ENDDO ! stateI
@@ -1507,6 +1522,19 @@ CONTAINS
                              nspins=nspins, &
                              triplet_correction=tidft_env%triplet_correction, &
                              energy_term=.TRUE.)
+
+                     !! RZK-WARNING: IF components are given, do not accumulate the total gradient
+                     !! It's a waste of time
+                     !CALL gradMO_to_gradVAR_increment( &
+                     !        mat_g_out=gradient_components_out(stateI, :, 1), &
+                     !        ncols_var=tidft_env%e_states(stateI)%slater_det(1)%ncols_var, &
+                     !        mat_g_in=mat_g_energy(stateI, ispin, idet), &
+                     !        mat_s=tidft_env%mat_s, &
+                     !        idet=idet, &
+                     !        ispin=ispin, &
+                     !        nspins=nspins, &
+                     !        triplet_correction=tidft_env%triplet_correction, &
+                     !        energy_term=.TRUE.)
 
                   ENDIF ! energy_component
 
@@ -2245,6 +2273,107 @@ WRITE(*,*)
                  step, &
                  tidft_env%eps_filter, &
                  tidft_env%e_states(1)%slater_det(1)%ncols_var)
+
+!!CALL dbcsr_create(m_tmp_nn_1, &
+!!                  template=m_s, &
+!!                  matrix_type=dbcsr_type_no_symmetry)
+!!CALL dbcsr_create(m_tmp_no_3, &
+!!                  template=m_quench_t, &
+!!                  matrix_type=dbcsr_type_no_symmetry)
+!!
+!!! calculate (1-R)F(1-R) and S-SRS
+!!! RZK-warning take advantage: some elements will be removed by the quencher
+!!! RZK-warning S operations can be performed outside the spin loop to save time
+!!! IT IS REQUIRED THAT PRECONDITIONER DOES NOT BREAK THE LOCALITY!!!!
+!!! RZK-warning: further optimization is ABSOLUTELY NECESSARY
+!!
+!!! First S-SRS
+!!CALL dbcsr_multiply("N", "N", 1.0_dp, &
+!!                    m_ST, &
+!!                    m_siginv, &
+!!                    0.0_dp, m_tmp_no_3, &
+!!                    filter_eps=eps_filter)
+!!CALL dbcsr_desymmetrize(m_s, m_tmp_nn_1)
+!!! return STsiginv if necessary
+!!IF (PRESENT(m_STsiginv_out)) THEN
+!!   CALL dbcsr_copy(m_STsiginv_out, m_tmp_no_3)
+!!ENDIF
+!!IF (special_case .EQ. xalmo_case_fully_deloc) THEN
+!!   ! use S instead of S-SRS
+!!ELSE
+!!   CALL dbcsr_multiply("N", "T", -1.0_dp, &
+!!                       m_ST, &
+!!                       m_tmp_no_3, &
+!!                       1.0_dp, m_tmp_nn_1, &
+!!                       filter_eps=eps_filter)
+!!ENDIF
+!!! return S_vv = (S or S-SRS) if necessary
+!!IF (PRESENT(m_s_vv_out)) THEN
+!!   CALL dbcsr_copy(m_s_vv_out, m_tmp_nn_1)
+!!ENDIF
+!!
+!!! Second (1-R)F(1-R)
+!!! re-create matrix because desymmetrize is buggy -
+!!! it will create multiple copies of blocks
+!!CALL dbcsr_desymmetrize(m_ks, m_prec_out)
+!!CALL dbcsr_multiply("N", "T", -1.0_dp, &
+!!                    m_FTsiginv, &
+!!                    m_ST, &
+!!                    1.0_dp, m_prec_out, &
+!!                    filter_eps=eps_filter)
+!!CALL dbcsr_multiply("N", "T", -1.0_dp, &
+!!                    m_ST, &
+!!                    m_FTsiginv, &
+!!                    1.0_dp, m_prec_out, &
+!!                    filter_eps=eps_filter)
+!!CALL dbcsr_multiply("N", "N", 1.0_dp, &
+!!                    m_ST, &
+!!                    m_siginvTFTsiginv, &
+!!                    0.0_dp, m_tmp_no_3, &
+!!                    filter_eps=eps_filter)
+!!CALL dbcsr_multiply("N", "T", 1.0_dp, &
+!!                    m_tmp_no_3, &
+!!                    m_ST, &
+!!                    1.0_dp, m_prec_out, &
+!!                    filter_eps=eps_filter)
+!!! return F_vv = (I-SR)F(I-RS) if necessary
+!!IF (PRESENT(m_f_vv_out)) THEN
+!!   CALL dbcsr_copy(m_f_vv_out, m_prec_out)
+!!ENDIF
+!!
+!!! sum up the F_vv and S_vv terms
+!!CALL dbcsr_add(m_prec_out, m_tmp_nn_1, &
+!!               1.0_dp, 1.0_dp)
+!!! Scale to obtain unit step length
+!!CALL dbcsr_scale(m_prec_out, 2.0_dp*spin_factor)
+!!
+!!! add the contribution from the penalty on the occupied volume
+!!IF (penalty_occ_vol) THEN
+!!   CALL dbcsr_add(m_prec_out, m_tmp_nn_1, &
+!!                  1.0_dp, penalty_occ_vol_prefactor)
+!!ENDIF
+!!
+!!CALL dbcsr_copy(m_tmp_nn_1, m_prec_out)
+!!
+!!IF (skip_inversion) THEN
+!!   CALL dbcsr_copy(m_prec_out, m_tmp_nn_1)
+!!ELSE
+!!
+!!   ! invert using cholesky (works with S matrix, will not work with S-SRS matrix)
+!!   CALL cp_dbcsr_cholesky_decompose(m_prec_out, &
+!!                                    para_env=para_env, &
+!!                                    blacs_env=blacs_env)
+!!   CALL cp_dbcsr_cholesky_invert(m_prec_out, &
+!!                                 para_env=para_env, &
+!!                                 blacs_env=blacs_env, &
+!!                                 upper_to_full=.TRUE.)
+!!ENDIF !skip_inversion
+!!
+!!CALL dbcsr_filter(m_prec_out, eps=eps_filter)
+!!
+!!CALL dbcsr_release(m_tmp_nn_1)
+!!CALL dbcsr_release(m_tmp_no_3)
+
 !tiidft
 !tiidft      ELSE ! use second derivatives
 !tiidft
