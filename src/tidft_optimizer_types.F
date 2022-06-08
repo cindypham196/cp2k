@@ -32,6 +32,8 @@ MODULE tidft_optimizer_types
       TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: step
       TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: prev_minus_prec_grad
 
+      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: prec_inv
+
    END TYPE tidft_optimizer_storage_type
 
 END MODULE tidft_optimizer_types

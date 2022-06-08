@@ -83,7 +83,9 @@ MODULE tidft_methods
    PUBLIC stitch_columns, determinant_generalized, determinant_local, &
           cp_dbcsr_adjugate, split_columns, matrix_invert_local, &
           gradMO_to_gradVAR_increment, &
+          precMO_to_precVAR_increment, &
           tidft_optimizer_mainvar_multiply, &
+          tidft_optimizer_mainvar_multiply_diff, &
           tidft_optimizer_mainvar_dot, &
           tidft_optimizer_mainvar_add, &
           tidft_optimizer_mainvar_copy, &
@@ -94,6 +96,65 @@ MODULE tidft_methods
           tidft_mainvar_orthonormalize
 
 CONTAINS
+
+! **************************************************************************************************
+!> \brief Mutliply all mainvar matrices (index i) by different NxN matrices
+!>        C_i = beta C_i + alpha A_i**tranA . B_i**tranB
+!> \param ncols_var ...
+!> \par History
+!>       2022.06 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_optimizer_mainvar_multiply_diff(transA, transB, alpha, matA, matB, &
+      beta, matC, filter_eps, ncols_var)
+
+      CHARACTER, INTENT(IN)                              :: transA, transB
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)        :: matA
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: matB
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: matC
+      REAL(KIND=dp), INTENT(IN)                          :: alpha, beta, &
+                                                            filter_eps
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+
+      INTEGER                                            :: istate, ivar, &
+                                                            nstates, nvars, &
+                                                            nstates2, nvars2
+
+      nstates = SIZE(matB, 1)
+      nvars = SIZE(matB, 2)
+      CPASSERT(nvars.EQ.3)
+
+      nstates2 = SIZE(matC, 1)
+      CPASSERT(nstates.EQ.nstates2)
+      nvars2 = SIZE(matC, 2)
+      CPASSERT(nvars.EQ.nvars2)
+
+      nstates2 = SIZE(matB, 1)
+      CPASSERT(nstates.EQ.nstates2)
+      nvars2 = SIZE(matB, 2)
+      CPASSERT(nvars.EQ.nvars2)
+
+      DO ivar = 1, nvars
+
+         IF (ncols_var(ivar).GT.0) THEN
+
+            DO istate = 1, nstates
+
+                  CALL dbcsr_multiply(transA, transB, &
+                          alpha, &
+                          matA(istate,ivar), &
+                          matB(istate,ivar), &
+                          beta, &
+                          matC(istate,ivar), &
+                          filter_eps=filter_eps)
+
+            ENDDO ! stateI
+
+         ENDIF
+
+      ENDDO ! ivar
+
+   END SUBROUTINE tidft_optimizer_mainvar_multiply_diff
 
 ! **************************************************************************************************
 !> \brief Mutliply all mainvar matrices (index i) by the same NxN matrix
@@ -643,6 +704,73 @@ CONTAINS
       ENDIF ! nspins check
 
    END SUBROUTINE gradMO_to_gradVAR_increment
+
+! **************************************************************************************************
+!> \brief Converts MO-matrices to the corresponding matrices of independent variables
+!> \param mat_g_out ...
+!> \param ncols_var ...
+!> \param mat_g_in ...
+!> \param idet ...
+!> \param ispin ...
+!> \param nspins ...
+!> \param triplet_correction ...
+!> \param energy_term ...
+!> \par History
+!>       2022.05 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE precMO_to_precVAR_increment(mat_prec_out, ncols_var, mat_prec_in, &
+      idet, ispin)
+
+      TYPE(dbcsr_type), DIMENSION(3), INTENT(INOUT)      :: mat_prec_out
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+      TYPE(dbcsr_type), INTENT(IN)                       :: mat_prec_in
+      INTEGER, INTENT(IN)                                :: idet, ispin
+
+      INTEGER                                            :: varA, varB, &
+                                                            ncolsA, ncolsB
+
+      IF (idet .EQ. 2) THEN ! this is the "spin-flipped" determinant
+
+         varA = 1
+         ncolsA = ncols_var(varA)
+
+         IF (ncolsA .NE. 0) THEN
+            CALL dbcsr_add(mat_prec_out(varA), mat_prec_in, 1.0_dp, 1.0_dp)
+         ENDIF ! ncolsA != 0
+
+         IF (ispin .EQ. 1) THEN
+         ! Alpha matrix: contains Var1, Var2, Var3. 
+
+            CALL dbcsr_add(mat_prec_out(2), mat_prec_in, 1.0_dp, 1.0_dp)
+            CALL dbcsr_add(mat_prec_out(3), mat_prec_in, 1.0_dp, 1.0_dp)
+
+         ENDIF
+         ! Beta T-matrix: contains only Var1
+
+      ELSE ! idet check
+      ! idet.NE.2 - regular determinants
+
+         varA = 1
+         IF (ispin .EQ. 1) THEN
+            varB = 2
+         ELSE ! beta electrons
+            varB = 3
+         ENDIF
+         ncolsA = ncols_var(varA)
+         ncolsB = ncols_var(varB)
+
+         IF (ncolsA .NE. 0) THEN
+            CALL dbcsr_add(mat_prec_out(varA), mat_prec_in, 1.0_dp, 1.0_dp)
+         ENDIF
+
+         IF (ncolsB .NE. 0) THEN
+            CALL dbcsr_add(mat_prec_out(varB), mat_prec_in, 1.0_dp, 1.0_dp)
+         ENDIF
+
+      ENDIF ! idet check
+
+   END SUBROUTINE precMO_to_precVAR_increment
 
 ! **************************************************************************************************
 !> \brief Computes the determinant of a square matrix via LU-decomposition

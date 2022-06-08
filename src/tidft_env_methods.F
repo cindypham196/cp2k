@@ -437,14 +437,18 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
+      ! RZK-WARNING: It seems that making S symmetric does not break the code
+      ! but could save time in some of the operations
       suggested_blk_size = tidft_env%suggested_mo_block_size
       CALL matrix_layout( &
               matrix_ao_template = matrix_s0, &
-              matrix_new = tidft_env%mat_s , &
+              matrix_new = tidft_env%mat_s, &
               name_new = 'm_s', &
               suggested_mo_blk_size = suggested_blk_size, & ! does not affect AOxAO matrices
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
-              symmetry_new = dbcsr_type_symmetric)
+              symmetry_new = dbcsr_type_no_symmetry)
+
+      CALL dbcsr_create(tidft_env%mat_s_inv, template=tidft_env%mat_s)
 
       nstates = tidft_env%nstates
       nspins = tidft_env%nspins
@@ -483,8 +487,7 @@ CONTAINS
                           symmetry_new = dbcsr_type_no_symmetry, &
                           nmos = (/-1, nmos_stateI/) )
 
-                  CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), template=matrix_s0)
-                  !CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(ispin), template=matrix_s0)
+                  CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), template=tidft_env%mat_s)
 
                   DO stateJ = stateI, nstates
 
@@ -602,6 +605,7 @@ CONTAINS
       nspins = tidft_env%nspins
 
       CALL dbcsr_release(tidft_env%mat_s)
+      CALL dbcsr_release(tidft_env%mat_s_inv)
 
       DO idet = 1, ndets
 
