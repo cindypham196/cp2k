@@ -104,7 +104,7 @@ CONTAINS
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
    SUBROUTINE matrix_layout(matrix_ao_template, matrix_new, name_new, &
-      orbital_type_new, suggested_mo_blk_size, symmetry_new, nmos)
+      orbital_type_new, suggested_mo_blk_size, symmetry_new, nmos, verbose)
 
       TYPE(tidft_env_type)                               :: tidft_env
       TYPE(dbcsr_type), INTENT(IN)                       :: matrix_ao_template
@@ -114,20 +114,37 @@ CONTAINS
       INTEGER, INTENT(IN)                                :: suggested_mo_blk_size
       CHARACTER, INTENT(IN)                              :: symmetry_new
       INTEGER, DIMENSION(2), INTENT(IN), OPTIONAL        :: nmos
+      LOGICAL, OPTIONAL                                  :: verbose
 
       INTEGER                                            :: dimen, handle, hold, iatom, iblock_col, &
                                                             iblock_row, imol, mynode, natoms, &
                                                             nblkrows_tot, nlength, nmols, row, &
-                                                            ncores
+                                                            ncores1D, unit_nr
       INTEGER, DIMENSION(2)                              :: local_nmos
       INTEGER, DIMENSION(:), POINTER :: blk_distr, blk_sizes, block_sizes_new, col_distr_new, &
          col_sizes_new, distr_new_array, row_distr_new, row_sizes_new
       TYPE(dbcsr_distribution_type)                      :: dist_new, dist_qs
+      LOGICAL                                            :: my_verbose
+      TYPE(cp_logger_type), POINTER                      :: logger
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
 
       IF (PRESENT(nmos)) THEN
          local_nmos = nmos
       ELSE
          local_nmos = (/-1, -1/)
+      ENDIF
+
+      IF (PRESENT(verbose)) THEN
+         my_verbose = verbose
+      ELSE
+         my_verbose = .FALSE.
       ENDIF
 
       ! obtain distribution from the qs matrix - it might be useful
@@ -160,17 +177,21 @@ CONTAINS
 
                ! for MOs, sizes of blocks and their distibution is created from scratch
                IF (dimen == 1) THEN !rows
-                  CALL dbcsr_distribution_get(dist_qs, nprows=ncores)
+                  CALL dbcsr_distribution_get(dist_qs, nprows=ncores1D)
                ELSE !columns
-                  CALL dbcsr_distribution_get(dist_qs, npcols=ncores)
+                  CALL dbcsr_distribution_get(dist_qs, npcols=ncores1D)
                ENDIF
 
                CALL create_distribute_mo_blocks( &
                        norbs = local_nmos(dimen), &
-                       ncores = ncores, &
+                       ncores1D = ncores1D, &
                        suggested_blk_size = suggested_mo_blk_size, &
                        blk_sizes = block_sizes_new, &
                        blk_distr = distr_new_array)
+
+               IF (my_verbose .AND. unit_nr > 0) THEN
+                  WRITE(*,*) "NCORES(rows, then cols): ", ncores1D
+               ENDIF
 
             ELSE
 
@@ -198,14 +219,16 @@ CONTAINS
 
       ENDDO ! both rows and columns are done
 
-      !WRITE(*,*) "ROW: sizes"
-      !WRITE(*,*) row_sizes_new
-      !WRITE(*,*) "ROW: distr"
-      !WRITE(*,*) row_distr_new
-      !WRITE(*,*) "COL: sizes"
-      !WRITE(*,*) col_sizes_new
-      !WRITE(*,*) "COL: distr"
-      !WRITE(*,*) col_distr_new
+      IF (my_verbose .AND. unit_nr > 0) THEN
+         WRITE(*,*) "ROW: sizes"
+         WRITE(*,*) row_sizes_new
+         WRITE(*,*) "ROW: distr"
+         WRITE(*,*) row_distr_new
+         WRITE(*,*) "COL: sizes"
+         WRITE(*,*) col_sizes_new
+         WRITE(*,*) "COL: distr"
+         WRITE(*,*) col_distr_new
+      ENDIF
 
       ! Create the distribution
       CALL dbcsr_distribution_new(dist_new, template=dist_qs, &
@@ -230,7 +253,7 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief Distribute matrix blocks
 !> \param norbs ...
-!> \param ncores ...
+!> \param ncores1D ...
 !> \param suggested_block_size: -1 means no suggestion
 !> \param blk_sizes ...
 !> \param blk_distr ...
@@ -238,10 +261,10 @@ CONTAINS
 !>       2021.09 created [Cindy Pham]
 !> \author Cindy Pham
 ! **************************************************************************************************
-   SUBROUTINE create_distribute_mo_blocks(norbs, ncores, suggested_blk_size, blk_sizes, blk_distr)
+   SUBROUTINE create_distribute_mo_blocks(norbs, ncores1D, suggested_blk_size, blk_sizes, blk_distr)
 
 
-      INTEGER, INTENT(IN)                                :: norbs, ncores, suggested_blk_size
+      INTEGER, INTENT(IN)                                :: norbs, ncores1D, suggested_blk_size
 
       INTEGER, DIMENSION(:), POINTER, INTENT(INOUT)      :: blk_sizes, blk_distr
 
@@ -250,84 +273,146 @@ CONTAINS
       INTEGER                                            :: norbs_per_block, ndelta, &
                                                             igroup, best_diff, &
                                                             remainder, I, J, nblocks, &
-                                                            ngroups, diff, best_nblocks
+                                                            ngroups, diff, best_nblocks, &
+                                                            nblocks_suggested, &
+                                                            nblocks_delta
       REAL                                               :: istd2, best_std2
 
 
-      ! Case 1: the number of orbitals is less than the number of cores
-      !IF (norbs .LT. ncores) THEN
+      !! Case 1: the number of orbitals is less than the number of cores
+      !!IF (norbs .LT. ncores1D) THEN
 
-      !   ALLOCATE(blk_sizes(norbs), blk_distr(norbs))
+      !!   ALLOCATE(blk_sizes(norbs), blk_distr(norbs))
 
-      !   blk_sizes(:) = 1
-      !   blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
+      !!   blk_sizes(:) = 1
+      !!   blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
 
-      !! Case 2: given a suggested_blk_size, the number of distributed blks = ncores*ngroups
-      !ELSE
-         ngroups = NINT(1.0_dp*norbs/suggested_blk_size/ncores)
-         IF (ngroups .EQ. 0) ngroups = 1
+      !!! Case 2: given a suggested_blk_size, the number of distributed blks = ncores1D*ngroups
+      !!ELSE
+      !   ngroups = NINT(1.0_dp*norbs/suggested_blk_size/ncores1D)
+      !   IF (ngroups .EQ. 0) ngroups = 1
 
-         ! Vary ngroups within 10%
-         ndelta = CEILING(1.0_dp*ngroups/10)
-         ! assign a random large value
-         best_std2 = 1.0_dp*(norbs**2+1)
-         best_diff = norbs
+      !   ! Vary ngroups within 10%
+      !   ndelta = CEILING(1.0_dp*ngroups/10)
+      !   ! assign a random large value
+      !   best_std2 = 1.0_dp*(norbs**2+1)
+      !   best_diff = norbs
 
-         ! Choose the best ngroups
-         DO igroup = ngroups-ndelta, ngroups+ndelta ! group_size
+      !   ! Choose the best ngroups
+      !   DO igroup = ngroups-ndelta, ngroups+ndelta ! group_size
 
-            IF (igroup .EQ. 0) CYCLE
-            nblocks = ncores*igroup
-            norbs_per_block = FLOOR((1.0_dp*norbs)/nblocks)
+      !      IF (igroup .LE. 0) CYCLE
+      !      nblocks = ncores1D*igroup
+      !      norbs_per_block = FLOOR((1.0_dp*norbs)/nblocks)
 
-            ALLOCATE(trial_blk_sizes(nblocks))
-            trial_blk_sizes(:) = norbs_per_block
-            remainder = MOD(norbs, nblocks)
-            IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1
-            !diff = ABS(norbs_per_block - suggested_blk_size)
+      !      ALLOCATE(trial_blk_sizes(nblocks))
+      !      trial_blk_sizes(:) = norbs_per_block
+      !      remainder = MOD(norbs, nblocks)
+      !      IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1
+      !      !diff = ABS(norbs_per_block - suggested_blk_size)
 
-            ! Compute standard deviation square across all trial_blk_sizes
-            istd2 = 0.0_dp
-            DO I = 1, nblocks
-               istd2 = istd2 + trial_blk_sizes(I)**2
-            ENDDO
-            istd2 = istd2 - (1.0_dp*norbs/nblocks)**2
+      !      ! Compute standard deviation square across all trial_blk_sizes
+      !      istd2 = 0.0_dp
+      !      DO I = 1, nblocks
+      !         istd2 = istd2 + trial_blk_sizes(I)**2
+      !      ENDDO
+      !      istd2 = istd2 - (1.0_dp*norbs/nblocks)**2
 
-            ! Choose ngroups with better distribution
-            !IF (istd2 .LT. best_std2 .OR. ABS(istd2 - best_std2) .LT. 1E-9) THEN
-            IF (istd2 .LT. best_std2) THEN
+      !      ! Choose ngroups with better distribution
+      !      !IF (istd2 .LT. best_std2 .OR. ABS(istd2 - best_std2) .LT. 1E-9) THEN
+      !      IF (istd2 .LT. best_std2) THEN
 
-               best_std2 = istd2
-               best_nblocks = nblocks
-               IF (ASSOCIATED(blk_sizes)) DEALLOCATE(blk_sizes) 
-               ALLOCATE(blk_sizes(nblocks))
-               blk_sizes(:) = trial_blk_sizes(:)
-               !IF (istd2 .LE. best_std2 .OR. diff .LE. best_diff) THEN
-               !   best_diff = diff
-               !   best_nblock = nblocks
-               !   ALLOCATE(blk_sizes(best_nblock))
-               !   blk_sizes = trial_blk_sizes ! best option whose value is the closest to suggested_blk_size
-               !ENDIF
-            ENDIF
+      !         best_std2 = istd2
+      !         best_nblocks = nblocks
+      !         IF (ASSOCIATED(blk_sizes)) DEALLOCATE(blk_sizes) 
+      !         ALLOCATE(blk_sizes(nblocks))
+      !         blk_sizes(:) = trial_blk_sizes(:)
+      !         !IF (istd2 .LE. best_std2 .OR. diff .LE. best_diff) THEN
+      !         !   best_diff = diff
+      !         !   best_nblock = nblocks
+      !         !   ALLOCATE(blk_sizes(best_nblock))
+      !         !   blk_sizes = trial_blk_sizes ! best option whose value is the closest to suggested_blk_size
+      !         !ENDIF
+      !      ENDIF
 
-            DEALLOCATE(trial_blk_sizes)
+      !      DEALLOCATE(trial_blk_sizes)
 
-         END DO
+      !   END DO
 
-         ! Find blk_distr()
-         ALLOCATE(blk_distr(best_nblocks))
-         I = 0
-         DO J=1, best_nblocks
-            IF (I .LT. ncores) THEN
-               blk_distr(J) = I
-               I = I + 1
-            ELSE
-               blk_distr(J) = 0
-               I = 1
-            ENDIF
-         END DO
+      !   ! Find blk_distr()
+      !   ALLOCATE(blk_distr(best_nblocks))
+      !   I = 0
+      !   DO J=1, best_nblocks
+      !      IF (I .LT. ncores1D) THEN
+      !         blk_distr(J) = I
+      !         I = I + 1
+      !      ELSE
+      !         blk_distr(J) = 0
+      !         I = 1
+      !      ENDIF
+      !   END DO
 
-      !ENDIF
+      !!ENDIF
+
+      nblocks_suggested = CEILING(1.0_dp*norbs/suggested_blk_size)
+      IF (nblocks_suggested .LE. 0) nblocks_suggested = 1
+
+      ! Vary the number of blocks within 10%
+      nblocks_delta = CEILING(1.0_dp*nblocks_suggested/10)
+
+      ! assign a random large value
+      best_std2 = 1.0_dp*(norbs**2+1)
+      best_diff = norbs
+
+      ! Choose the best nblocks
+      ! RZK-WARNING: Unlike the previous scheme,
+      ! This loop is over nblocks, not over ngroups
+      ! This might lead to worse load-balancing but does not introduce errors
+      ! In the future an even better load-balancing scheme can be designed
+      ! One idea is to loop over blocks but to make sure the interval includes nearby groups
+      ! An important check should be added: no blocks containing zero orbitals
+      DO nblocks = nblocks_suggested-nblocks_delta, nblocks_suggested+nblocks_delta
+
+         IF (nblocks .LE. 0) CYCLE
+         norbs_per_block = FLOOR((1.0_dp*norbs)/nblocks)
+
+         ALLOCATE(trial_blk_sizes(nblocks))
+         trial_blk_sizes(:) = norbs_per_block
+         remainder = MOD(norbs, nblocks)
+         IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1
+
+         ! Compute standard deviation square across all trial_blk_sizes
+         istd2 = 0.0_dp
+         DO I = 1, nblocks
+            istd2 = istd2 + trial_blk_sizes(I)**2
+         ENDDO
+         istd2 = istd2 - (1.0_dp*norbs/nblocks)**2
+
+         ! Choose nblocks with better distribution
+         IF (istd2 .LT. best_std2) THEN
+            best_std2 = istd2
+            best_nblocks = nblocks
+            IF (ASSOCIATED(blk_sizes)) DEALLOCATE(blk_sizes) 
+            ALLOCATE(blk_sizes(nblocks))
+            blk_sizes(:) = trial_blk_sizes(:)
+         ENDIF
+
+         DEALLOCATE(trial_blk_sizes)
+
+      END DO
+
+      ! Find blk_distr()
+      ALLOCATE(blk_distr(best_nblocks))
+      I = 0
+      DO J=1, best_nblocks
+         IF (I .LT. ncores1D) THEN
+            blk_distr(J) = I
+            I = I + 1
+         ELSE
+            blk_distr(J) = 0
+            I = 1
+         ENDIF
+      END DO
 
    END SUBROUTINE create_distribute_mo_blocks
 

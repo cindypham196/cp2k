@@ -1035,10 +1035,12 @@ CONTAINS
 
       INTEGER                                            :: handle, iblock_col, iblock_row, &
                                                             nblocks_offset, n_left, &
-                                                            n_right, n_combined
+                                                            n_right, n_combined, hold, &
+                                                            mynode
       REAL(kind=dp), DIMENSION(:, :), POINTER            :: data_p, p_new_block
       TYPE(dbcsr_iterator_type)                          :: iter, iter_right
       TYPE(dbcsr_type)                                   :: matrix_intermediate
+      TYPE(dbcsr_distribution_type)                      :: dist
 
       CALL timeset(routineN, handle)
 
@@ -1062,6 +1064,8 @@ CONTAINS
       CALL dbcsr_get_info(matrix_left, nblkcols_total=nblocks_offset)
 
       CALL create_matrix_column_stitched(matrix_left, matrix_right, matrix_intermediate)
+      CALL dbcsr_get_info(matrix_intermediate, distribution=dist)
+      CALL dbcsr_distribution_get(dist, mynode=mynode)
       CALL dbcsr_work_create(matrix_intermediate, work_mutable=.TRUE.)
 
       CALL dbcsr_iterator_start(iter, matrix_left)
@@ -1070,10 +1074,16 @@ CONTAINS
 
          CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)
 
-         NULLIFY (p_new_block)
-         CALL dbcsr_reserve_block2d(matrix_intermediate, iblock_row, iblock_col, p_new_block)
-         CPASSERT(ASSOCIATED(p_new_block))
-         p_new_block = data_p
+         CALL dbcsr_get_stored_coordinates(matrix_intermediate, iblock_row, iblock_col, hold)
+
+         IF (hold .EQ. mynode) THEN
+            NULLIFY (p_new_block)
+            CALL dbcsr_reserve_block2d(matrix_intermediate, iblock_row, iblock_col, p_new_block)
+            CPASSERT(ASSOCIATED(p_new_block))
+            p_new_block = data_p
+         ELSE
+            CPABORT("Left part of the intermediate matrix is incorrect")
+         ENDIF ! mynode
 
       ENDDO
       CALL dbcsr_iterator_stop(iter)
@@ -1084,11 +1094,17 @@ CONTAINS
 
          CALL dbcsr_iterator_next_block(iter_right, iblock_row, iblock_col, data_p)
 
-         NULLIFY (p_new_block)
-         CALL dbcsr_reserve_block2d(matrix_intermediate, iblock_row, &
-                 iblock_col + nblocks_offset, p_new_block)
-         CPASSERT(ASSOCIATED(p_new_block))
-         p_new_block = data_p
+         CALL dbcsr_get_stored_coordinates(matrix_intermediate, iblock_row, iblock_col, hold)
+
+         IF (hold .EQ. mynode) THEN
+            NULLIFY (p_new_block)
+            CALL dbcsr_reserve_block2d(matrix_intermediate, iblock_row, &
+                    iblock_col + nblocks_offset, p_new_block)
+            CPASSERT(ASSOCIATED(p_new_block))
+            p_new_block = data_p
+         ELSE
+            CPABORT("Right part of the intermediate matrix is incorrect")
+         ENDIF ! mynode
 
       ENDDO
       CALL dbcsr_iterator_stop(iter_right)
@@ -1098,6 +1114,7 @@ CONTAINS
 
       !CALL dbcsr_print(matrix_intermediate)
       CALL dbcsr_set(matrix_stitched, 0.0_dp)
+      CALL dbcsr_filter(matrix_stitched,HUGE(1.0_dp))
       CALL dbcsr_complete_redistribute(matrix_intermediate, matrix_stitched, &
               keep_sparsity=.FALSE.)
 
@@ -1156,8 +1173,8 @@ CONTAINS
       CALL dbcsr_get_info(matrix_left, nblkcols_total=nblocks_offset)
       CALL dbcsr_set(matrix_left, 0.0_dp)
       CALL dbcsr_set(matrix_right, 0.0_dp)
-      CALL dbcsr_filter(matrix_left,1.0_dp)
-      CALL dbcsr_filter(matrix_right,1.0_dp)
+      CALL dbcsr_filter(matrix_left,HUGE(1.0_dp))
+      CALL dbcsr_filter(matrix_right,HUGE(1.0_dp))
       CALL dbcsr_work_create(matrix_left, work_mutable=.TRUE.)
       CALL dbcsr_work_create(matrix_right, work_mutable=.TRUE.)
 

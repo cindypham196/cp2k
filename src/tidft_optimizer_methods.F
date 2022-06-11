@@ -112,6 +112,8 @@ CONTAINS
       REAL(KIND=dp)                                      :: prev_determinant
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
+      REAL(KIND=dp)                                      :: save_initial_intra
+      REAL(KIND=dp)                                      :: save_initial_inter
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
@@ -124,6 +126,9 @@ CONTAINS
       nstates = tidft_env%nstates
 
       IF (tidft_env%state_by_state) THEN
+
+         save_initial_intra = tidft_env%intrastate_nonorthogonality_penalty_coeff
+         save_initial_inter = tidft_env%interstate_nonorthogonality_penalty_coeff
 
          DO current_no_of_states = 1, nstates
    
@@ -142,6 +147,11 @@ CONTAINS
             tidft_env%nstates = current_no_of_states
             CALL penalty_strength_variation(qs_env, tidft_env)
    
+            tidft_env%intrastate_nonorthogonality_penalty_coeff = &
+               save_initial_intra
+            tidft_env%interstate_nonorthogonality_penalty_coeff = &
+               save_initial_inter
+
          ENDDO
    
       ELSE
@@ -219,9 +229,11 @@ CONTAINS
 
          !SELECT CASE (almo_scf_env%construct_nlmos)
          !CASE (almo_scf_pcg)
-         WRITE (unit_nr, '(T2,A13,A6,A23,A14,A14,A9)') "Method", "Iter", &
-            "Objective Function", "Change", "Convergence", "Time"
-         WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, '(T2,A13,A6,A23,A14,A14,A9)') "Method", "Iter", &
+               "Objective Function", "Change", "Convergence", "Time"
+            WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
+         ENDIF
          CALL tidft_optimize_pcg( &
                  qs_env=qs_env, &
                  tidft_env=tidft_env, &
@@ -573,7 +585,7 @@ CONTAINS
 
                   ENDIF
 
-                  ! RZK-WARNING: Do we need to reset the conjugator?
+                  ! Do we need to reset the conjugator?
                   ! One test shows that resetting is absolutely necessary with Fletcher
                   ! and is also slightly better than the zero conjugator
                   IF (reset_conjugator) THEN
@@ -1329,7 +1341,7 @@ CONTAINS
             WRITE (unit_nr, *)
             WRITE (unit_nr, *) "Phi matrix"
             DO ivar = 1, nstates
-               WRITE (unit_nr,*) tidft_env%mat_phi(ivar, 1:nstates)
+               WRITE (unit_nr,'(T2,15ES9.1E2)') tidft_env%mat_phi(ivar, 1:nstates)
             ENDDO
          ENDIF
 

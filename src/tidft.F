@@ -376,6 +376,7 @@ CONTAINS
                                                             scaling_factor, &
                                                             excitationE
       REAL(kind=dp), ALLOCATABLE, DIMENSION(:, :, :)     :: trans_dipoles_from_GS
+      REAL(kind=dp), ALLOCATABLE, DIMENSION(:, :)        :: excitation_number
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: index_true
       REAL(kind=dp), ALLOCATABLE, DIMENSION(:)           :: energies, energies_temp
       TYPE(cp_logger_type), POINTER                      :: logger
@@ -438,6 +439,10 @@ CONTAINS
       ! transition dipole moment
       ALLOCATE (trans_dipoles_from_GS(nstates, nderivs, nspins))
       trans_dipoles_from_GS(:, :, :) = 0.0_dp
+
+      ! excitation numbers
+      ALLOCATE (excitation_number(nstates, 2)) ! second dim is spin
+      excitation_number(: , :) = 0.0_dp
 
       idet = 1
       IF (tidft_env%triplet_correction) THEN
@@ -513,6 +518,72 @@ CONTAINS
          trans_dipoles_from_GS(:, :, 1) = trans_dipoles_from_GS(:, :, 1) + trans_dipoles_from_GS(:, :, 2)
       END IF
 
+      ! Compute the number of excited electrons
+      DO ispin = 1, nspins
+
+         ! Check if there are electrons of this spin
+         IF (tidft_env%e_states(indexGS)%slater_det(idet)%nelectrons_ab(ispin) .GT. 0) THEN
+
+            DO istate = 2, nstates
+
+               indexES = index_true(istate)
+
+               ! tempNO1 = D.T_GS
+               CALL dbcsr_create(tempNO1, &
+                       template=tidft_env%mat_sigma(indexGS, indexGS, idet, ispin))
+               CALL dbcsr_create(tempNO2, &
+                       template=tidft_env%mat_sigma(indexGS, indexGS, idet, ispin))
+
+               ! tempNO1 = sigma_(0I) . siginv_(II)
+               IF (indexGS .LE. indexES) THEN
+                  CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                          tidft_env%mat_sigma_inv(indexGS, idet, ispin), &
+                          tidft_env%mat_sigma(indexGS, indexES, idet, ispin), &
+                          0.0_dp, tempNO1, &
+                          filter_eps=tidft_env%eps_filter)
+                  CALL dbcsr_multiply("T", "N", 1.0_dp, &
+                          tidft_env%mat_sigma(indexGS, indexES, idet, ispin), &
+                          tempNO1, &
+                          0.0_dp, tempNO2, &
+                          filter_eps=tidft_env%eps_filter)
+               ELSE
+                  ! Note the transpose
+                  CALL dbcsr_multiply("N", "T", 1.0_dp, &
+                          tidft_env%mat_sigma_inv(indexGS, idet, ispin), &
+                          tidft_env%mat_sigma(indexES, indexGS, idet, ispin), &
+                          0.0_dp, tempNO1, &
+                          filter_eps=tidft_env%eps_filter)
+                  CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                          tidft_env%mat_sigma(indexES, indexGS, idet, ispin), &
+                          tempNO1, &
+                          0.0_dp, tempNO2, &
+                          filter_eps=tidft_env%eps_filter)
+               ENDIF
+
+               ! exc_no(ES,ispin) = Trace [ siginv_II . sigma_I0 . siginv_00 . sigma_0I] =
+               !                  = Trace [ Rho_I . Rho_0 ]
+               CALL dbcsr_dot( &
+                       tidft_env%mat_sigma_inv(indexES, idet, ispin), &
+                       tempNO2, &
+                       excitation_number(indexES, ispin))
+
+               excitation_number(indexES, ispin) = &
+                  tidft_env%e_states(indexGS)%slater_det(idet)%nelectrons_ab(ispin) - &
+                  excitation_number(indexES, ispin)
+
+               CALL dbcsr_release(tempNO2)
+               CALL dbcsr_release(tempNO1)
+
+            ENDDO ! excited states
+
+         ENDIF ! non-zero electrons
+
+      ENDDO
+
+      IF (nspins == 1) THEN
+         excitation_number(:, 2) = excitation_number(:, 1)
+      END IF
+
       ! Print header
       IF (tidft_env%restricted) THEN
          IF (tidft_env%unpairings .EQ. 0) THEN
@@ -571,9 +642,10 @@ CONTAINS
       DO istate = 2, nstates
    
          indexES = index_true(istate) ! istate - index of increasing energy, indexES - index if TIDFT arrays
-         excitationE = energies(indexES) - energies(indexGS)
 
          IF (unit_nr > 0) THEN
+
+            excitationE = energies(indexES) - energies(indexGS)
 
             osc_strength = 2.0_dp/3.0_dp * excitationE * &
                accurate_dot_product(trans_dipoles_from_GS(indexES, :, 1), trans_dipoles_from_GS(indexES, :, 1))
@@ -595,8 +667,63 @@ CONTAINS
          WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
       ENDIF
 
+      ! Second table
+      IF (unit_nr > 0) THEN
+         CALL integer_to_string(tidft_env%desired_multip, mult_str)
+
+         WRITE (unit_nr, '()')
+         WRITE (unit_nr, '(1X,6X,A5,A5,A42)') &
+            "Exct", &
+            "SCF", &
+            "No. of excited electrons"
+         WRITE (unit_nr, '(1X,6X,A5,A5,3A14)') &
+            "no.", &
+            "no.", &
+            "Alpha", &
+            "Beta", &
+            "Total"
+         WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+      ENDIF
+
+      ! Include the GS into the print out
+      IF (unit_nr > 0) THEN
+
+         WRITE (unit_nr, '(1X,A6,I5,I5,3F14.10)') &
+            "TIDFT|", &
+            istate-1, &
+            indexES, &
+            0.0_dp, &
+            0.0_dp, &
+            0.0_dp
+
+      END IF
+
+      ! Print excited-state info state-by-state
+      DO istate = 2, nstates
+   
+         indexES = index_true(istate) ! istate - index of increasing energy, indexES - index if TIDFT arrays
+
+         IF (unit_nr > 0) THEN
+
+            WRITE (unit_nr, '(1X,A6,I5,I5,3F14.10)') &
+               "TIDFT|", &
+               istate-1, &
+               indexES, &
+               excitation_number(indexES, 1), &
+               excitation_number(indexES, 2), &
+               SUM(excitation_number(indexES,:))
+
+         END IF
+   
+      ENDDO
+   
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+      ENDIF
+
       CALL dbcsr_deallocate_matrix_set(dipole_ao_xyz)
-      DEALLOCATE (trans_dipoles_from_GS)
+      DEALLOCATE(excitation_number)
+      DEALLOCATE(trans_dipoles_from_GS)
       DEALLOCATE(energies) 
       DEALLOCATE(energies_temp) 
       DEALLOCATE(index_true)
