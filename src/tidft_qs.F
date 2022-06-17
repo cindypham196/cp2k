@@ -171,7 +171,8 @@ CONTAINS
 
          ELSE ! this dimension is not AO
 
-            IF (orbital_type_new(dimen) == almo_mat_dim_occ) THEN
+            IF (orbital_type_new(dimen) == almo_mat_dim_occ .OR. &
+                orbital_type_new(dimen) == almo_mat_dim_virt) THEN
 
                IF (.NOT.PRESENT(nmos)) CPABORT("Implementation error: supply nmos")
 

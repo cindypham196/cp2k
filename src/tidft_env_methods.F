@@ -13,7 +13,8 @@ MODULE tidft_env_methods
 
    USE cp_units,                        ONLY: cp_unit_to_cp2k
    USE almo_scf_types,                  ONLY: almo_mat_dim_aobasis,&
-                                              almo_mat_dim_occ
+                                              almo_mat_dim_occ, &
+                                              almo_mat_dim_virt
    USE tidft_types,                     ONLY: tidft_env_type
    USE tidft_qs,                        ONLY: matrix_layout,&
                                               tidft_init_ks_matrices
@@ -427,7 +428,7 @@ CONTAINS
 
       INTEGER                                            :: handle, ispin, &
                                                             nstates, suggested_blk_size, &
-                                                            idet, &
+                                                            idet, naos, &
                                                             nspins, ivar, &
                                                             stateI, ndets, &
                                                             nmos_stateI, &
@@ -447,6 +448,7 @@ CONTAINS
               suggested_mo_blk_size = suggested_blk_size, & ! does not affect AOxAO matrices
               orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_aobasis/), &
               symmetry_new = dbcsr_type_no_symmetry)
+      CALL dbcsr_get_info(tidft_env%mat_s, nfullrows_total=naos)
 
       CALL dbcsr_create(tidft_env%mat_s_inv, template=tidft_env%mat_s)
 
@@ -458,10 +460,13 @@ CONTAINS
       ALLOCATE(tidft_env%mat_adj_sigma(nstates,nstates,ndets,nspins))
       ALLOCATE(tidft_env%mat_sigma_inv(nstates,ndets,nspins))
       ALLOCATE(tidft_env%mat_var_sigma(3))
+      ALLOCATE(tidft_env%mat_sigma_vv(nstates,ndets,nspins))
       DO idet = 1, ndets
          DO stateI = 1, nstates
             ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(nspins))
             ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(nspins))
+            ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_v(nspins))
+            ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_vo(nspins))
             !ALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj(nspins))
             ! It is not necessary to allocate mat_var for the other determinant(s)
             IF (idet.EQ.1) ALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
@@ -480,12 +485,39 @@ CONTAINS
 
                   CALL matrix_layout( &
                           matrix_ao_template = matrix_s0, &
-                          matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) , &
+                          matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                           name_new = 'm_T_Ia', &
                           orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
                           suggested_mo_blk_size = suggested_blk_size, &
                           symmetry_new = dbcsr_type_no_symmetry, &
                           nmos = (/-1, nmos_stateI/) )
+
+                  CALL matrix_layout( &
+                          matrix_ao_template = matrix_s0, &
+                          matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_v(ispin), &
+                          name_new = 'm_V_Ia', &
+                          orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_virt/), &
+                          suggested_mo_blk_size = suggested_blk_size, &
+                          symmetry_new = dbcsr_type_no_symmetry, &
+                          nmos = (/-1, naos - nmos_stateI/) )
+
+                  CALL matrix_layout( &
+                          matrix_ao_template = matrix_s0, &
+                          matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_vo(ispin), &
+                          name_new = 'm_VO_Ia', &
+                          orbital_type_new = (/almo_mat_dim_virt, almo_mat_dim_occ/), &
+                          suggested_mo_blk_size = suggested_blk_size, &
+                          symmetry_new = dbcsr_type_no_symmetry, &
+                          nmos = (/naos - nmos_stateI, nmos_stateI/) )
+
+                  CALL matrix_layout( &
+                          matrix_ao_template = matrix_s0, &
+                          matrix_new = tidft_env%mat_sigma_vv(stateI,idet,ispin), &
+                          name_new = 'm_VV_Ia', &
+                          orbital_type_new = (/almo_mat_dim_virt, almo_mat_dim_virt/), &
+                          suggested_mo_blk_size = suggested_blk_size, &
+                          symmetry_new = dbcsr_type_no_symmetry, &
+                          nmos = (/naos - nmos_stateI, naos - nmos_stateI/) )
 
                   CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), template=tidft_env%mat_s)
 
@@ -668,10 +700,13 @@ CONTAINS
       DEALLOCATE(tidft_env%mat_adj_sigma)
       DEALLOCATE(tidft_env%mat_sigma_inv)
       DEALLOCATE(tidft_env%mat_var_sigma)
+      DEALLOCATE(tidft_env%mat_sigma_vv)
       DO idet = 1, ndets
          DO stateI = 1, nstates
             DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t)
             DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_v)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_vo)
             !DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_proj)
             IF (idet.EQ.1) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
          ENDDO

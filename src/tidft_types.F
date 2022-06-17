@@ -88,6 +88,10 @@ MODULE tidft_types
       ! Occupied MO coefficients NxOCC(spin)
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_t
 
+      ! Virtual MO coefficients NxOCC(spin)
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_v
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_vo
+
       ! Projector onto occupied subspace NxN - for each spin
       ! Do not store - it is easy to compute from MOs
       !TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_proj
@@ -180,6 +184,7 @@ MODULE tidft_types
       TYPE(dbcsr_type), DIMENSION(:,:,:,:), ALLOCATABLE  :: mat_adj_sigma
       ! inverse MO overlap OxO - for each state (stateI, spinS)
       TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_inv
+      TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_vv
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_var_sigma
 
       ! Overlap of electronic states (stateI, stateJ)

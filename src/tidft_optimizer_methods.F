@@ -18,6 +18,7 @@ MODULE tidft_optimizer_methods
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
+   USE tidft_guess_methods,             ONLY: construct_canonical_orbitals
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_dot, dbcsr_filter, dbcsr_multiply, dbcsr_norm, &
         dbcsr_norm_maxabsnorm, dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, &
@@ -144,9 +145,16 @@ CONTAINS
 
             ENDIF
 
+            ! Done with the ground state, 
+            ! generate a better guess for excited states
+            IF (current_no_of_states .EQ. 2) THEN
+               ! Argument 1 indicates that the GS WF is used to generate the guess
+               CALL construct_canonical_orbitals(tidft_env, 1)
+            ENDIF
+
             tidft_env%nstates = current_no_of_states
             CALL penalty_strength_variation(qs_env, tidft_env)
-   
+
             tidft_env%intrastate_nonorthogonality_penalty_coeff = &
                save_initial_intra
             tidft_env%interstate_nonorthogonality_penalty_coeff = &
