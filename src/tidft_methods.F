@@ -1019,6 +1019,273 @@ CONTAINS
    END SUBROUTINE dbcsr_set_element
 
 ! **************************************************************************************************
+!> \brief Swap columns of two dbcsr matrices
+!>        The row blocks and distribution of the the matrices has to be the same.
+!> \par History
+!>       2022.06 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE swap_columns(matrix_A, matrix_B, blk_cols_A, blk_indx_A, &
+      blk_cols_B, blk_indx_B, AtoB, BtoA)
+
+      TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix_A, matrix_B
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: blk_cols_A, blk_indx_A, &
+                                                            blk_cols_B, blk_indx_B
+      LOGICAL, INTENT(IN), OPTIONAL                      :: AtoB, BtoA
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'swap_columns'
+
+      INTEGER                                            :: handle, n_A, n_B, nmos, I, &
+                                                            imo, iblock_row, iblock_col, &
+                                                            unit_nr
+      TYPE(cp_logger_type), POINTER                      :: logger
+      LOGICAL                                            :: AtoB_local, BtoA_local, &
+                                                            found
+      TYPE(dbcsr_distribution_type)                      :: dist_new, dist_qs
+      INTEGER, DIMENSION(:), POINTER                     :: blk_distr, blk_sizes, &
+                                                            col_distr_new, col_sizes_new, &
+                                                            row_distr_new, row_sizes_new
+      TYPE(dbcsr_type)                                   :: matrix_A_selected_cols
+      TYPE(dbcsr_type)                                   :: matrix_B_selected_cols
+      TYPE(dbcsr_type)                                   :: matrix_B_selected_cols_copy
+      TYPE(dbcsr_iterator_type)                          :: iter
+      REAL(kind=dp), DIMENSION(:, :), POINTER            :: data_p, p_new_block, p_block
+
+      CALL timeset(routineN, handle)
+
+      ! RZK-WARNING: the code of this subroutine is redundant
+      ! It would be better to split it into several subroutines:
+      !  A. selected_columns_matrix_create
+      !  B. copy_data_to_selected_columns_matrix
+      !  C. copy_data_from_selected_columns_matrix
+
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      AtoB_local = .TRUE.
+      IF (PRESENT(AtoB)) AtoB_local = AtoB
+
+      BtoA_local = .TRUE.
+      IF (PRESENT(BtoA)) BtoA_local = BtoA
+
+      CALL dbcsr_get_info(matrix_A, nblkrows_total=n_A)
+      CALL dbcsr_get_info(matrix_B, nblkrows_total=n_B)
+      CPASSERT(n_B.EQ.n_A)
+
+      CALL dbcsr_get_info(matrix_A, nfullrows_total=n_A)
+      CALL dbcsr_get_info(matrix_B, nfullrows_total=n_B)
+      CPASSERT(n_B.EQ.n_A)
+
+      CPASSERT(SIZE(blk_cols_A).EQ.SIZE(blk_cols_B))
+      CPASSERT(SIZE(blk_cols_A).EQ.SIZE(blk_indx_A))
+      CPASSERT(SIZE(blk_cols_A).EQ.SIZE(blk_indx_B))
+
+      nmos = SIZE(blk_cols_A)
+
+      CALL dbcsr_get_info(matrix_A, distribution=dist_qs)
+      
+      ! structure of the AO dimension can be copied from one of the matrices
+      CALL dbcsr_distribution_get(dist_qs, row_dist=blk_distr)
+      CALL dbcsr_get_info(matrix_A, row_blk_size=blk_sizes)
+      ALLOCATE (row_sizes_new(SIZE(blk_sizes)))
+      ALLOCATE (row_distr_new(SIZE(blk_distr)))
+      row_sizes_new(:) = blk_sizes(:)
+      row_distr_new(:) = blk_distr(:)
+
+      ! structure for the MO dimension is created from scratch for each matrix
+      ALLOCATE (col_sizes_new(nmos))
+      ALLOCATE (col_distr_new(nmos))
+      col_sizes_new = (/ (1, I = 1, nmos) /) ! array of 1s, length nmos
+
+      ! now, data specific to matrix_A
+      !col_distr_new = (cores1D of all swapped columns) - use get_stored_coordinates for each MO block
+      DO imo = 1, nmos
+         CALL dbcsr_get_stored_coordinates(matrix_A, 1, blk_cols_A(imo), col_distr_new(imo))
+      ENDDO
+
+      ! Create the distribution and then the matrix of selected columns
+      CALL dbcsr_distribution_new(dist_new, template=dist_qs, &
+                                  row_dist=row_distr_new, col_dist=col_distr_new, &
+                                  reuse_arrays=.TRUE.)
+      CALL dbcsr_create(matrix_A_selected_cols, "A_cols", &
+                        dist_new, dbcsr_type_no_symmetry, &
+                        row_sizes_new, col_sizes_new, reuse_arrays=.TRUE.)
+      CALL dbcsr_finalize(matrix_A_selected_cols)
+      CALL dbcsr_distribution_release(dist_new)
+
+      ! now, data specific to matrix_B
+      DO imo = 1, nmos
+         CALL dbcsr_get_stored_coordinates(matrix_B, 1, blk_cols_B(imo), col_distr_new(imo))
+      ENDDO
+
+      ! Create the distribution and then the matrix of selected columns
+      CALL dbcsr_distribution_new(dist_new, template=dist_qs, &
+                                  row_dist=row_distr_new, col_dist=col_distr_new, &
+                                  reuse_arrays=.TRUE.)
+      CALL dbcsr_create(matrix_B_selected_cols, "B_cols", &
+                        dist_new, dbcsr_type_no_symmetry, &
+                        row_sizes_new, col_sizes_new, reuse_arrays=.TRUE.)
+      CALL dbcsr_finalize(matrix_B_selected_cols)
+      CALL dbcsr_distribution_release(dist_new)
+
+      DEALLOCATE(row_sizes_new)
+      DEALLOCATE(row_distr_new)
+      DEALLOCATE(col_sizes_new)
+      DEALLOCATE(col_distr_new)
+
+      ! copy data into the newly created matrix of selected columns (same dist as the source)
+      ! then redistribute into the other matrix of selected columns (same dist as the destination)
+      ! copy data from the other matrix into the destination
+      IF (AtoB_local) THEN
+
+         CALL dbcsr_work_create(matrix_A_selected_cols, work_mutable=.TRUE.)
+         CALL dbcsr_iterator_start(iter, matrix_A)
+         DO WHILE (dbcsr_iterator_blocks_left(iter))
+
+            CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)
+
+            DO imo = 1, nmos
+
+               IF (blk_cols_A(imo) .EQ. iblock_col) THEN
+               ! this block contains needed info
+
+                  NULLIFY (p_new_block)
+                  CALL dbcsr_reserve_block2d(matrix_A_selected_cols, iblock_row, imo, p_new_block)
+                  CPASSERT(ASSOCIATED(p_new_block))
+                  p_new_block(:,1) = data_p(:,blk_indx_A(imo))
+
+               ENDIF ! mynode
+
+            ENDDO
+
+         ENDDO
+         CALL dbcsr_iterator_stop(iter)
+         CALL dbcsr_finalize(matrix_A_selected_cols)
+
+      ENDIF ! AtoB
+
+      IF (BtoA_local) THEN
+
+         CALL dbcsr_work_create(matrix_B_selected_cols, work_mutable=.TRUE.)
+         CALL dbcsr_iterator_start(iter, matrix_B)
+         DO WHILE (dbcsr_iterator_blocks_left(iter))
+
+            CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)
+
+            DO imo = 1, nmos
+
+               IF (blk_cols_B(imo) .EQ. iblock_col) THEN
+               ! this block contains needed info
+
+                  NULLIFY (p_new_block)
+                  CALL dbcsr_reserve_block2d(matrix_B_selected_cols, iblock_row, imo, p_new_block)
+                  CPASSERT(ASSOCIATED(p_new_block))
+                  p_new_block(:,1) = data_p(:,blk_indx_B(imo))
+
+               ENDIF ! mynode
+
+            ENDDO
+
+         ENDDO
+         CALL dbcsr_iterator_stop(iter)
+         CALL dbcsr_finalize(matrix_B_selected_cols)
+
+         CALL dbcsr_create(matrix_B_selected_cols_copy, &
+                 template = matrix_B_selected_cols)
+         CALL dbcsr_copy(matrix_B_selected_cols_copy, matrix_B_selected_cols)
+
+      ENDIF ! BtoA
+
+      ! REturn to the next step of the AtoB process
+      IF (AtoB_local) THEN
+
+         ! redistribute data so it can be copied into matrix_B
+         CALL dbcsr_set(matrix_B_selected_cols, 0.0_dp)
+         CALL dbcsr_filter(matrix_B_selected_cols,HUGE(1.0_dp))
+         CALL dbcsr_complete_redistribute( &
+                 matrix_A_selected_cols, &
+                 matrix_B_selected_cols, &
+                 keep_sparsity=.FALSE.)
+
+         ! now the data can be copied to matrix_B
+         CALL dbcsr_work_create(matrix_B, work_mutable=.TRUE.)
+         CALL dbcsr_iterator_start(iter, matrix_B_selected_cols)
+         DO WHILE (dbcsr_iterator_blocks_left(iter))
+
+            CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)
+
+            CALL dbcsr_get_block_p(matrix_B, iblock_row, blk_cols_B(iblock_col), p_block, found)
+
+            IF (found) THEN
+               p_block(:, blk_indx_B(iblock_col)) = data_p(:, 1)
+            ELSE
+               ! block does not exist
+               !CALL dbcsr_work_create(mat, work_mutable=.TRUE.)
+               NULLIFY (p_new_block)
+               CALL dbcsr_reserve_block2d(matrix_B, iblock_row, blk_cols_B(iblock_col), p_new_block)
+               CPASSERT(ASSOCIATED(p_new_block))
+               p_new_block(:,:) = 0.0_dp
+               p_new_block(:, blk_indx_B(iblock_col)) = data_p(:, 1)
+               !CALL dbcsr_finalize(mat)
+            ENDIF
+   
+         ENDDO
+         CALL dbcsr_iterator_stop(iter)
+         CALL dbcsr_finalize(matrix_B)
+
+      ENDIF ! AtoB
+
+      ! Copy B to A if necessary
+      IF (BtoA_local) THEN
+
+         ! redistribute data so it can be copied into matrix_A
+         CALL dbcsr_set(matrix_A_selected_cols, 0.0_dp)
+         CALL dbcsr_filter(matrix_A_selected_cols,HUGE(1.0_dp))
+         CALL dbcsr_complete_redistribute( &
+                 matrix_B_selected_cols_copy, &
+                 matrix_A_selected_cols, &
+                 keep_sparsity=.FALSE.)
+
+         ! now the data can be copied to matrix_A
+         CALL dbcsr_work_create(matrix_A, work_mutable=.TRUE.)
+         CALL dbcsr_iterator_start(iter, matrix_A_selected_cols)
+         DO WHILE (dbcsr_iterator_blocks_left(iter))
+
+            CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)
+
+            CALL dbcsr_get_block_p(matrix_A, iblock_row, blk_cols_A(iblock_col), p_block, found)
+
+            IF (found) THEN
+               p_block(:, blk_indx_A(iblock_col)) = data_p(:, 1)
+            ELSE
+               ! block does not exist
+               !CALL dbcsr_work_create(mat, work_mutable=.TRUE.)
+               NULLIFY (p_new_block)
+               CALL dbcsr_reserve_block2d(matrix_A, iblock_row, blk_cols_A(iblock_col), p_new_block)
+               CPASSERT(ASSOCIATED(p_new_block))
+               p_new_block(:,:) = 0.0_dp
+               p_new_block(:, blk_indx_A(iblock_col)) = data_p(:, 1)
+               !CALL dbcsr_finalize(mat)
+            ENDIF
+   
+         ENDDO
+         CALL dbcsr_iterator_stop(iter)
+         CALL dbcsr_finalize(matrix_A)
+
+      ENDIF ! BtoA
+
+      CALL dbcsr_release(matrix_A_selected_cols)
+      CALL dbcsr_release(matrix_B_selected_cols)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE swap_columns
+
+! **************************************************************************************************
 !> \brief Join columns of two matrices to produce a new matrix.
 !>        The row blocks and distribution of the the three matrices has
 !>        to be the same.

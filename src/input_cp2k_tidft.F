@@ -114,9 +114,26 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="INITIAL_GUESS_RANDOM_FRAC", &
+      CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS_RANDOM_FRAC", &
                           description="Fraction of random MOs in the excited states.", &
                           usage="INITIAL_GUESS_RANDOM_FRAC 0.4", default_r_val=0.1_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS_MAX_EXC_ORDER", &
+                          description="If ground-state MOs are used to generate initial "// &
+                          "excited-state MOs, this keyword specifies the maximum number of "// &
+                          "excitations from occupied ground-state orbitals to unoccupied orbitals.", &
+                          usage="MO_GUESS_MAX_EXC_ORDER 2", default_i_val=1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS_MIN_EXC_ENERGY", &
+                          description="If ground-state MOs are used to generate initial "// &
+                          "excited-state MOs, this keyword specifies the minimum energy of "// &
+                          "excitations from occupied ground-state orbitals to unoccupied orbitals. "// &
+                          "Set to positive non-zero value to eliminate low-energy excitations.", &
+                          usage="MO_GUESS_MIN_EXC_ENERGY 5.0", default_r_val=0.0_dp, unit_str='eV')
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

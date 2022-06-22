@@ -149,7 +149,7 @@ CONTAINS
             ! generate a better guess for excited states
             IF (current_no_of_states .EQ. 2) THEN
                ! Argument 1 indicates that the GS WF is used to generate the guess
-               CALL construct_canonical_orbitals(tidft_env, 1)
+               !CALL construct_canonical_orbitals(tidft_env, 1)
             ENDIF
 
             tidft_env%nstates = current_no_of_states

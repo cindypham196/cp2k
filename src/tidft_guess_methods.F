@@ -104,15 +104,30 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE guess_excited_states_orbitals(tidft_env)
 
-      TYPE(tidft_env_type), INTENT(INOUT)             :: tidft_env
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
 
       CHARACTER(len=*), PARAMETER :: routineN = 'guess_excited_states_orbitals', &
          routineP = moduleN//':'//routineN
 
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(tidft_excitation_list_type)                   :: excitation_list
-      INTEGER                                            :: unit_nr, ispin, n
-      TYPE(orbital_set_type)           :: orbital_set
+      INTEGER                                            :: unit_nr, nspins, &
+                                                            ispin, n, ivirtual, &
+                                                            idet, norbs, iorb, &
+                                                            count_unpairings, &
+                                                            nalpha, nbeta
+      INTEGER                                            :: nexcitations, &
+                                                            iexcitation, &
+                                                            generated_nstates, &
+                                                            istate, state_index
+      INTEGER                                            :: max_order
+      INTEGER, DIMENSION(:,:), ALLOCATABLE               :: start_orbital_indices
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: index_true
+      LOGICAL                                            :: check_unpairings
+      REAL(KIND=dp)                                      :: eps_diff_orb_energy
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: delta, energies_temp
+      TYPE(orbital_set_type)                             :: orbital_set
+      TYPE(tidft_excitation_type)                        :: current_excitation
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
@@ -121,10 +136,6 @@ CONTAINS
       ELSE
          unit_nr = -1
       ENDIF
-
-         ALLOCATABLE                                     :: excitations
-      INTEGER                                            :: max_order
-      INTEGER                                            :: nexcitations
 
       ! MAJOR STEP: Obtain canonical orbital energies and info on orbital location in matrices
       ! RZK-WARNING: make mainvar consistent with canonical orbitals - alternatively: 
@@ -138,9 +149,9 @@ CONTAINS
          DO ivirtual = 1, 2
       
             IF (ivirtual .EQ. 1) THEN
-               CALL dbcsr_get_info(tidft_env%mat_sigma_inv(estate,idet,ispin), nfullrows_total=norbs)
+               CALL dbcsr_get_info(tidft_env%mat_sigma_inv(1,idet,ispin), nfullrows_total=norbs)
             ELSE
-               CALL dbcsr_get_info(tidft_env%mat_sigma_vv(estate,idet,ispin), nfullrows_total=norbs)
+               CALL dbcsr_get_info(tidft_env%mat_sigma_vv(1,idet,ispin), nfullrows_total=norbs)
             ENDIF
       
             orbital_set%orbital_list(ispin, ivirtual)%norbs = norbs
@@ -175,7 +186,7 @@ CONTAINS
       ! the correct number of unpairings is not required.
       ! Perform only for the case of ROKS
       count_unpairings = -1
-      check_unparings = tidft_env%restricted .AND. tidft_env%unpairings.GT.0
+      check_unpairings = tidft_env%restricted .AND. tidft_env%unpairings.GT.0
       IF (check_unpairings) THEN
       
          eps_diff_orb_energy = SQRT(tidft_env%eps_filter)
@@ -185,7 +196,7 @@ CONTAINS
 
             nalpha = orbital_set%orbital_list(1, ivirtual)%norbs
             nbeta = orbital_set%orbital_list(2, ivirtual)%norbs
-            ! Implement cases with unequal number of electrons later
+            ! RZK-WARNING: Implement cases with unequal number of electrons later
             CPASSERT(nalpha.EQ.nbeta)
 
             ALLOCATE(delta(nalpha))
@@ -193,17 +204,19 @@ CONTAINS
                        orbital_set%orbital_list(2, ivirtual)%orb_energy(:))
             DO iorb = 1, nalpha
                IF ( delta(iorb) .LT. eps_diff_orb_energy ) THEN
-                  orbital_set%orbital_list(:, ivirtual)%orb_has_spin_double(iorb) = .TRUE.
+                  orbital_set%orbital_list(1, ivirtual)%orb_has_spin_double(iorb) = .TRUE.
+                  orbital_set%orbital_list(2, ivirtual)%orb_has_spin_double(iorb) = .TRUE.
                ELSE
-                  orbital_set%orbital_list(:, ivirtual)%orb_has_spin_double(iorb) = .FALSE.
-                  IF (ivirtual .EQ. 1) count_unparings = count_unpairings + 1
+                  orbital_set%orbital_list(1, ivirtual)%orb_has_spin_double(iorb) = .FALSE.
+                  orbital_set%orbital_list(2, ivirtual)%orb_has_spin_double(iorb) = .FALSE.
+                  IF (ivirtual .EQ. 1) count_unpairings = count_unpairings + 1
                ENDIF
             ENDDO ! iorb
             DEALLOCATE(delta)
 
          ENDDO ! ivirtual
 
-         IF (count_unparings .GT. tidft_env%unpairings) THEN
+         IF (count_unpairings .GT. tidft_env%unpairings) THEN
             CPABORT("WF analysis found too many unpaired electrons")
          ENDIF
 
@@ -216,6 +229,7 @@ CONTAINS
       ! RZK-WARNING: NYI
 
       ! MAJOR STEP: Loop over select occupied and virtual orbitals, keep desired in the list
+      ALLOCATE(start_orbital_indices(nspins, 2))
       DO ispin = 1, nspins
          ! occupied are looped from top to bottom
          start_orbital_indices(ispin, 1) = &
@@ -287,13 +301,13 @@ CONTAINS
       !indexGS = index_true(1)
 
       ! MAJOR STEP: Swap mainvar matrix columns
-      Change tidft_env%nstates
+!Change tidft_env%nstates
       DO istate = 1, generated_nstates
 
          state_index = index_true(istate)
-         Process data from excitation_list%excitations(state_index) to swap columns
-         Convert orbital numbers to mainvar column numbers
-         Swap
+         !Process data from excitation_list%excitations(state_index) to swap columns
+         !Convert orbital numbers to mainvar column numbers
+         !Swap
 
       ENDDO
 
@@ -330,6 +344,7 @@ CONTAINS
          ENDDO
       
       ENDDO
+      DEALLOCATE(start_orbital_indices)
       DEALLOCATE(orbital_set%orbital_list)
 
    END SUBROUTINE guess_excited_states_orbitals
@@ -347,8 +362,20 @@ CONTAINS
       LOGICAL, INTENT(IN)                                :: check_unpairings
       INTEGER, INTENT(IN)                                :: max_allowed_unpairings
 
+      INTEGER                                            :: nspins, max_order, iocc, &
+                                                            ispin, opposite_spin, &
+                                                            nvirtuals, avirt, &
+                                                            incr_unpairings, &
+                                                            iexcitation, &
+                                                            insertion_index
       INTEGER, DIMENSION(:,:), ALLOCATABLE               :: next_level_start_indices
       TYPE(tidft_excitation_type)                        :: next_level_excitation
+      REAL(KIND=dp)                                      :: spin_factor, max_energy
+      LOGICAL                                            :: add_to_excitation_list, found, &
+                                                            originates_from_doubly_occupied, &
+                                                            goes_to_doubly_occupied_virtual, &
+                                                            max_order_condition, &
+                                                            deeper_level
 
       nspins = SIZE(orbital_set%orbital_list, 1)
       max_order = excitation_list%max_order 
@@ -403,7 +430,7 @@ CONTAINS
                   orbital_set%orbital_list(ispin, 2)%orb_energy(avirt) - &
                   orbital_set%orbital_list(ispin, 1)%orb_energy(iocc) )
                next_level_excitation%excitation_energy = &
-                  next_level_excitation%excitation_energy + 
+                  next_level_excitation%excitation_energy + &
                   next_level_excitation%delta_epsilon(current_order)
 
                ! copy the newly created excitation to the list if it satisfies:
@@ -527,30 +554,6 @@ CONTAINS
       DEALLOCATE(next_level_start_indices)
 
    END SUBROUTINE generate_single_excitations
-!
-!   TYPE tidft_excitation_list_type
-!      TYPE(tidft_excitation_type), DIMENSION(:), &
-!         ALLOCATABLE                                     :: excitations
-!      INTEGER                                            :: max_order
-!      INTEGER                                            :: nexcitations
-!   TYPE tidft_excitation_type
-!      INTEGER                                            :: order
-!      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: delta_epsilon
-!      INTEGER, DIMENSION(:), ALLOCATABLE                 :: occupied
-!      INTEGER, DIMENSION(:), ALLOCATABLE                 :: virtual
-!      INTEGER, DIMENSION(:), ALLOCATABLE                 :: spin
-!   TYPE orbital_list_type
-!      INTEGER                                            :: norbs
-!      INTEGER                                            :: ispin
-!      INTEGER                                            :: ivirtual ! 0 - occ, 1 - virtual
-!      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: orb_energy
-!      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: index_within_matrix ! position within matrix
-!      INTEGER, DIMENSION(:), ALLOCATABLE                 :: block_within_matrix
-!      INTEGER, DIMENSION(:), ALLOCATABLE                 :: index_within_block ! position witihn block
-!   TYPE orbital_set_type
-!      TYPE(orbital_list_type), DIMENSION(:,:), &
-!         ALLOCATABLE                                     :: orbital_list
-
 
 ! **************************************************************************************************
 !> \brief Constructs canonical orbitals. They are stored in mat_t of the environment
@@ -650,6 +653,11 @@ CONTAINS
 
             ! RZK-WARNING: this makes T inconsistent with mainvar
             CALL dbcsr_copy(tidft_env%e_states(estate)%slater_det(idet)%mat_t(ispin), tempNO1)
+
+            ! Obtain info on the position of orbitals within the matrix
+            CALL get_orbital_indices(tempNO1, &
+                    orbital_set%orbital_list(ispin, 1)%block_within_matrix, &
+                    orbital_set%orbital_list(ispin, 1)%index_within_block)
 
             CALL dbcsr_release(tempNO1)
             CALL dbcsr_release(tempOO1)
@@ -755,6 +763,11 @@ CONTAINS
 
             CALL dbcsr_copy(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1)
 
+            ! Obtain info on the position of orbitals within the matrix
+            CALL get_orbital_indices(tempNV1, &
+                    orbital_set%orbital_list(ispin, 2)%block_within_matrix, &
+                    orbital_set%orbital_list(ispin, 2)%index_within_block)
+
             CALL dbcsr_release(tempNV1)
             CALL dbcsr_release(tempVOcc1)
             CALL dbcsr_release(tempVOcc2)
@@ -768,6 +781,25 @@ CONTAINS
       DEALLOCATE(fake_e_per_block)
 
    END SUBROUTINE construct_canonical_orbitals
+
+   SUBROUTINE get_orbital_indices(matrix, block_within_matrix, index_within_block)
+
+      TYPE(dbcsr_type), INTENT(IN)                       :: matrix 
+      INTEGER, DIMENSION(:), INTENT(OUT)                 :: block_within_matrix, &
+                                                            index_within_block
+
+      INTEGER, DIMENSION(:), POINTER                     :: blk_sizes
+      INTEGER                                            :: mo_start, iblock, imo
+      
+      CALL dbcsr_get_info(matrix, row_blk_size=blk_sizes)
+      mo_start = 1
+      DO iblock = 1, SIZE(blk_sizes)
+         block_within_matrix(mo_start:mo_start+blk_sizes(iblock)-1) = iblock
+         index_within_block(mo_start:mo_start+blk_sizes(iblock)-1) = (/ (imo, imo = 1, blk_sizes(iblock)) /)
+         mo_start = mo_start + blk_sizes(iblock)
+      ENDDO
+
+   END SUBROUTINE get_orbital_indices
 
    SUBROUTINE copy_excitation(dest, source)
 

@@ -141,8 +141,16 @@ CONTAINS
               "SUGGESTED_MO_BLOCK_SIZE", &
               i_val=tidft_env%suggested_mo_block_size)
       CALL section_vals_val_get(tidft_section, &
-              "INITIAL_GUESS_RANDOM_FRAC", &
+              "MO_GUESS_RANDOM_FRAC", &
               r_val=tidft_env%initial_guess_random_fraction)
+      CALL section_vals_val_get(tidft_section, &
+              "MO_GUESS_MAX_EXC_ORDER", &
+              r_val=tidft_env%guess_max_excitation_order)
+      CALL section_vals_val_get(tidft_section, &
+              "MO_GUESS_MIN_EXC_ENERGY", &
+              r_val=tidft_env%guess_min_excitation_energy)
+      tidft_env%guess_min_excitation_energy = cp_unit_to_cp2k( &
+         tidft_env%guess_min_excitation_energy, "eV")
       CALL section_vals_val_get(tidft_section, &
               "ENERGY_COMPONENT", &
               l_val=tidft_env%loss_function_components(1))

@@ -145,10 +145,13 @@ MODULE tidft_types
       ! Descriptors of electronic states
       TYPE(e_state_type), DIMENSION(:), ALLOCATABLE      :: e_states
 
+      ! TIDFT control
       LOGICAL, DIMENSION(100)                            :: loss_function_components
       LOGICAL                                            :: state_by_state
       LOGICAL                                            :: numerical_gradient
       REAL(KIND=dp)                                      :: numerical_gradient_dx
+      REAL(KIND=dp)                                      :: guess_max_excitation_order
+      REAL(KIND=dp)                                      :: guess_min_excitation_energy
 
       ! penalty related variables
       REAL(KIND=dp)                                      :: intrastate_nonorthogonality_penalty_coeff
