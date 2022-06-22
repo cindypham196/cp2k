@@ -969,11 +969,11 @@ CONTAINS
       !   ENDDO ! ivar
       !ENDDO ! stateI
 
-      IF (unit_nr > 0) THEN
-         WRITE (unit_nr, *) "NStates", nstates
-         WRITE (unit_nr, *) "NSpins", nspins
-         WRITE (unit_nr, *) "NDets", ndets
-      ENDIF
+      !IF (unit_nr > 0) THEN
+      !   WRITE (unit_nr, *) "NStates", nstates
+      !   WRITE (unit_nr, *) "NSpins", nspins
+      !   WRITE (unit_nr, *) "NDets", ndets
+      !ENDIF
 
       ! This code converts independent variables into MO matrices
       ! Should work for unrestricted case

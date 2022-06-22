@@ -10,6 +10,9 @@
 !> \author Cindy Pham, Rustam Z. Khaliullin
 ! **************************************************************************************************
 MODULE tidft
+   USE population_analyses,             ONLY: lowdin_population_analysis,&
+                                              mulliken_population_analysis
+   USE tidft_qs,                        ONLY: tidft_dm_to_qs_env
    USE almo_scf_methods,                ONLY: almo_scf_p_blk_to_t_blk,&
                                               almo_scf_t_rescaling,&
                                               almo_scf_t_to_proj,&
@@ -377,10 +380,12 @@ CONTAINS
                                                             excitationE
       REAL(kind=dp), ALLOCATABLE, DIMENSION(:, :, :)     :: trans_dipoles_from_GS
       REAL(kind=dp), ALLOCATABLE, DIMENSION(:, :)        :: excitation_number
-      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: index_true
+      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: index_true, &
+                                                            fake_e_per_block
       REAL(kind=dp), ALLOCATABLE, DIMENSION(:)           :: energies, energies_temp
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_type)                                   :: tempNO1, tempNO2
+      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_proj
 
       CALL timeset(routineN, handle)
 
@@ -690,8 +695,8 @@ CONTAINS
 
          WRITE (unit_nr, '(1X,A6,I5,I5,3F14.10)') &
             "TIDFT|", &
-            istate-1, &
-            indexES, &
+            0, &
+            indexGS, &
             0.0_dp, &
             0.0_dp, &
             0.0_dp
@@ -721,6 +726,75 @@ CONTAINS
          WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
       ENDIF
 
+      ! ==================================
+      ! Print population analysis
+      ALLOCATE(mat_proj(nspins))
+      ALLOCATE(fake_e_per_block(1))
+      fake_e_per_block(:) = -1
+
+      !idet = 1
+
+      DO istate = 1, nstates
+   
+         indexES = index_true(istate) ! istate - index of increasing energy, indexES - index if TIDFT arrays
+
+         DO ispin = 1, nspins
+   
+            CALL dbcsr_create(mat_proj(ispin), template=tidft_env%mat_s)
+   
+            ! Create projectors only if there are electrons of this spin
+            IF (tidft_env%e_states(indexES)%slater_det(idet)%nelectrons_ab(ispin).GT.0) THEN
+   
+               ! compute projectors from electronic states
+               CALL almo_scf_t_to_proj(t=tidft_env%e_states(indexES)%slater_det(idet)%mat_t(ispin), &
+                                       p=mat_proj(ispin), &
+                                       eps_filter=tidft_env%eps_filter, &
+                                       orthog_orbs=.FALSE., &
+                                       nocc_of_domain=fake_e_per_block, &
+                                       s=tidft_env%mat_s, &
+                                       ! RZK-WARNING: sigma and sigma_inv will be overwritten
+                                       sigma=tidft_env%mat_sigma(indexES,indexES,idet,ispin), &
+                                       sigma_inv=tidft_env%mat_sigma_inv(indexES,idet,ispin), &
+                                       use_guess=.FALSE., &
+                                       smear=tidft_env%smear, &
+                                       algorithm=tidft_env%sigma_inv_algorithm, &
+                                       !eps_lanczos=tidft_env%eps_lanczos, &
+                                       !max_iter_lanczos=tidft_env%max_iter_lanczos, &
+                                       !inv_eps_factor=tidft_env%matrix_iter_eps_error_factor, &
+                                       para_env=tidft_env%para_env, &
+                                       blacs_env=tidft_env%blacs_env)
+   
+            ENDIF
+   
+         ENDDO ! ispin
+   
+         ! compute dm from the projector(s)
+         IF (nspins == 1) THEN
+            CALL dbcsr_scale(mat_proj(1), 2.0_dp)
+         ENDIF
+   
+         ! copy DM/projector into qs_env
+         CALL tidft_dm_to_qs_env(qs_env, mat_proj)
+         ! perform population analysis
+         CALL mulliken_population_analysis(qs_env, &
+                 output_unit = unit_nr, &
+                 print_level = 0)
+
+         ! re-compute projector from the dm
+         IF (nspins == 1) THEN
+            CALL dbcsr_scale(mat_proj(1), 0.5_dp)
+         ENDIF
+   
+         DO ispin = 1, nspins
+            CALL dbcsr_release(mat_proj(ispin))
+         ENDDO
+   
+      ENDDO ! istate
+   
+      DEALLOCATE(mat_proj)
+      DEALLOCATE(fake_e_per_block)
+      ! ==================================
+
       CALL dbcsr_deallocate_matrix_set(dipole_ao_xyz)
       DEALLOCATE(excitation_number)
       DEALLOCATE(trans_dipoles_from_GS)
@@ -732,5 +806,6 @@ CONTAINS
 
    END SUBROUTINE tidft_post_scf
 
+   
 END MODULE tidft
 

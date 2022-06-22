@@ -85,7 +85,8 @@ MODULE tidft_qs
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_qs'
 
-   PUBLIC :: matrix_layout, tidft_init_ks_matrices, tidft_dm_to_tidft_ks
+   PUBLIC :: matrix_layout, tidft_init_ks_matrices, tidft_dm_to_tidft_ks, &
+             tidft_dm_to_qs_env
 
 CONTAINS
 
