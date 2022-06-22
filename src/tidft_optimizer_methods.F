@@ -757,19 +757,19 @@ CONTAINS
 
          ENDDO ! inner loop
 
-         IF (converged .OR. (outer_iteration .GE. outer_max_iter)) THEN
-            outer_prepare_to_exit = .TRUE.
-         ENDIF
-
-         outer_iteration = outer_iteration + 1
-         IF (outer_prepare_to_exit) EXIT
-
          IF (tidft_env%state_by_state) THEN
             CALL tidft_mainvar_orthonormalize(tidft_env, &
                     only_state = tidft_env%nstates)
          ELSE
             CALL tidft_mainvar_orthonormalize(tidft_env)
          ENDIF
+
+         IF (converged .OR. (outer_iteration .GE. outer_max_iter)) THEN
+            outer_prepare_to_exit = .TRUE.
+         ENDIF
+
+         outer_iteration = outer_iteration + 1
+         IF (outer_prepare_to_exit) EXIT
 
       ENDDO ! outer loop
 
