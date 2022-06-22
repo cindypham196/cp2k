@@ -150,7 +150,7 @@ MODULE tidft_types
       LOGICAL                                            :: state_by_state
       LOGICAL                                            :: numerical_gradient
       REAL(KIND=dp)                                      :: numerical_gradient_dx
-      REAL(KIND=dp)                                      :: guess_max_excitation_order
+      INTEGER                                            :: guess_max_excitation_order
       REAL(KIND=dp)                                      :: guess_min_excitation_energy
 
       ! penalty related variables

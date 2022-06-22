@@ -24,16 +24,6 @@ MODULE tidft_guess_types
              tidft_excitation_type, &
              orbital_set_type
 
-   TYPE tidft_excitation_list_type
-
-      TYPE(tidft_excitation_type), DIMENSION(:), &
-         ALLOCATABLE                                     :: excitations
-      INTEGER                                            :: max_order
-      INTEGER                                            :: max_nexcitations
-      INTEGER                                            :: cur_nexcitations
-
-   END TYPE tidft_excitation_list_type
-
    TYPE tidft_excitation_type
 
       INTEGER                                            :: order
@@ -45,6 +35,16 @@ MODULE tidft_guess_types
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: spin
 
    END TYPE tidft_excitation_type
+
+   TYPE tidft_excitation_list_type
+
+      TYPE(tidft_excitation_type), DIMENSION(:), &
+         ALLOCATABLE                                     :: excitations
+      INTEGER                                            :: max_order
+      INTEGER                                            :: max_nexcitations
+      INTEGER                                            :: cur_nexcitations
+
+   END TYPE tidft_excitation_list_type
 
    TYPE orbital_list_type
 

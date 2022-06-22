@@ -145,7 +145,7 @@ CONTAINS
               r_val=tidft_env%initial_guess_random_fraction)
       CALL section_vals_val_get(tidft_section, &
               "MO_GUESS_MAX_EXC_ORDER", &
-              r_val=tidft_env%guess_max_excitation_order)
+              i_val=tidft_env%guess_max_excitation_order)
       CALL section_vals_val_get(tidft_section, &
               "MO_GUESS_MIN_EXC_ENERGY", &
               r_val=tidft_env%guess_min_excitation_energy)
@@ -319,6 +319,7 @@ CONTAINS
          tidft_env%nspins = 2
       ENDIF
 
+      tidft_env%triplet_correction = .FALSE.
       IF (tidft_env%spin_pure) THEN
          IF ( tidft_env%desired_multip.EQ.1 .AND. tidft_env%unpairings.EQ.1 ) THEN
             tidft_env%triplet_correction = .TRUE.
@@ -363,6 +364,7 @@ CONTAINS
          ! Na = (Ne + Mult - 1)/2
          ! Nb = (Ne - Mult + 1)/2
          DO slaterI = 1, nslater
+            ! set the number of alpha/beta electrons
             tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1) = &
                ( tidft_env%nelectrons + tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip - 1 ) / 2
             tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2) = &

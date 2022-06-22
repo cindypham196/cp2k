@@ -969,13 +969,13 @@ CONTAINS
       !   ENDDO ! ivar
       !ENDDO ! stateI
 
-      !IF (unit_nr > 0) THEN
-      !   WRITE (unit_nr, *) "NStates", nstates
-      !   WRITE (unit_nr, *) "NSpins", nspins
-      !   WRITE (unit_nr, *) "NDets", ndets
-      !ENDIF
+      IF (unit_nr > 0) THEN
+         WRITE (unit_nr, *) "NStates", nstates
+         WRITE (unit_nr, *) "NSpins", nspins
+         WRITE (unit_nr, *) "NDets", ndets
+      ENDIF
 
-      ! This RZK code converts independent variables into MO matrices
+      ! This code converts independent variables into MO matrices
       ! Should work for unrestricted case
       ! Reverse order of determinants allows to use empty singlet determinants
       ! to temporarily store the triplet determinant
@@ -990,7 +990,6 @@ CONTAINS
                !      tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1), &
                !      tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
                !ENDIF
-! RZK-WARNING: idet=2 is used to get ncols_var - this should not exist
 
                IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1) .EQ. 0) THEN
                   IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
@@ -1042,6 +1041,11 @@ CONTAINS
                              )
                      ELSE
                         ! combine paired and unpared
+                        !WRITE(*,*) "STITCH 4: ispin, istate, idet: ", ispin, stateI, idet
+                        !WRITE(*,*) "L,R,C: ", &
+                        ! tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1), &
+                        ! tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1), &
+                        ! tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
                         CALL stitch_columns( &
                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
