@@ -189,19 +189,19 @@ CONTAINS
                ! Argument 1 indicates that the GS WF is used to generate the guess
             ENDIF
 
-            !IF (current_no_of_states .EQ. 1) THEN
-            !! For the ground state, turn off the interstate penalty for faster optimization
+            IF (current_no_of_states .EQ. 1) THEN
+            ! For the ground state, turn off the interstate penalty for faster optimization
 
-            !   save_component_flags(:)=tidft_env%loss_function_components(:)
-            !   tidft_env%loss_function_components(3) = .FALSE.
+               save_component_flags(:)=tidft_env%loss_function_components(:)
+               tidft_env%loss_function_components(3) = .FALSE.
 
-            !ENDIF
+            ENDIF
 
             CALL penalty_strength_variation(qs_env, tidft_env)
 
-            !IF (current_no_of_states .EQ. 1) THEN
-            !   tidft_env%loss_function_components(:)=save_component_flags(:)
-            !ENDIF
+            IF (current_no_of_states .EQ. 1) THEN
+               tidft_env%loss_function_components(:)=save_component_flags(:)
+            ENDIF
 
             tidft_env%intrastate_nonorthogonality_penalty_coeff = &
                save_initial_intra

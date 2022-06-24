@@ -41,7 +41,7 @@
       NUMERICAL_GRADIENT_DX      1E-6
       ENERGY_COMPONENT           TRUE
       INTRASTATE_COMPONENT       TRUE
-      INTERSTATE_COMPONENT       FALSE
+      INTERSTATE_COMPONENT       TRUE
       
       &TIDFT_OPTIMIZER_PCG
         EPS_ERROR                  1.0E-4
