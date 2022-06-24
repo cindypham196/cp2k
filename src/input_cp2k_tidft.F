@@ -165,6 +165,13 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="PRE_ORTHOGONALIZE_STATES", &
+                          description="Pre-orthogonalize electronic states before the energy minimization.", &
+                          usage="PRE_ORTHOGONALIZE_STATES .TRUE.", default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL keyword_create(keyword, __LOCATION__, name="NUMERICAL_GRADIENT", &
                           description="Debugging option. Use numerical, not analytical, gradients in WF optimization.", &
                           usage="NUMERICAL_GRADIENT .FALSE.", default_l_val=.FALSE., &

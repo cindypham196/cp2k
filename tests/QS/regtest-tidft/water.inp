@@ -36,11 +36,12 @@
       MAX_UNPAIR                 1
       MO_GUESS_RANDOM_FRAC       0.001
       STATE_BY_STATE             TRUE
+      PRE_ORTHOGONALIZE_STATES   FALSE
       NUMERICAL_GRADIENT         FALSE
       NUMERICAL_GRADIENT_DX      1E-6
       ENERGY_COMPONENT           TRUE
       INTRASTATE_COMPONENT       TRUE
-      INTERSTATE_COMPONENT       TRUE
+      INTERSTATE_COMPONENT       FALSE
       
       &TIDFT_OPTIMIZER_PCG
         EPS_ERROR                  1.0E-4

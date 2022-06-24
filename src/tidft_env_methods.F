@@ -164,6 +164,9 @@ CONTAINS
               "STATE_BY_STATE", &
               l_val=tidft_env%state_by_state)
       CALL section_vals_val_get(tidft_section, &
+              "PRE_ORTHOGONALIZE_STATES", &
+              l_val=tidft_env%pre_orthogonalize_states)
+      CALL section_vals_val_get(tidft_section, &
               "NUMERICAL_GRADIENT", &
               l_val=tidft_env%numerical_gradient)
       CALL section_vals_val_get(tidft_section, &

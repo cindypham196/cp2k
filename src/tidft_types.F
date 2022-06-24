@@ -148,6 +148,7 @@ MODULE tidft_types
       ! TIDFT control
       LOGICAL, DIMENSION(100)                            :: loss_function_components
       LOGICAL                                            :: state_by_state
+      LOGICAL                                            :: pre_orthogonalize_states
       LOGICAL                                            :: numerical_gradient
       REAL(KIND=dp)                                      :: numerical_gradient_dx
       INTEGER                                            :: guess_max_excitation_order

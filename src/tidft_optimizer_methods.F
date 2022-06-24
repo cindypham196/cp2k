@@ -115,6 +115,7 @@ CONTAINS
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp)                                      :: save_initial_intra
       REAL(KIND=dp)                                      :: save_initial_inter
+      LOGICAL, DIMENSION(:), ALLOCATABLE                 :: save_component_flags
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
@@ -123,6 +124,8 @@ CONTAINS
       ELSE
          unit_nr = -1
       ENDIF
+
+      ALLOCATE(save_component_flags(SIZE(tidft_env%loss_function_components)))
 
       nstates = tidft_env%nstates
 
@@ -133,6 +136,40 @@ CONTAINS
 
          DO current_no_of_states = 1, nstates
    
+            tidft_env%nstates = current_no_of_states
+
+            IF (current_no_of_states .GE. 2 .AND. tidft_env%pre_orthogonalize_states) THEN
+            ! For excited states, first inter-orthogonalize the current state to 
+            ! those that are already converged
+
+               IF (unit_nr > 0) THEN
+
+                  WRITE (unit_nr, '()')
+                  WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+                  WRITE (unit_nr, '(T2,A59,I6)') &
+                     "INTER-ORTHOGONALIZATION OF STATE", &
+                     !"OPTIMIZATION OF STATE", &
+                     current_no_of_states
+                  WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+                  WRITE (unit_nr, '()')
+
+               ENDIF
+
+               save_component_flags(:)=tidft_env%loss_function_components(:)
+               tidft_env%loss_function_components(1) = .FALSE. ! energy is off
+               tidft_env%loss_function_components(2:3) = .TRUE. ! nonorthogonality penalty is on
+
+               CALL penalty_strength_variation(qs_env, tidft_env)
+
+               tidft_env%loss_function_components(:)=save_component_flags(:)
+
+               tidft_env%intrastate_nonorthogonality_penalty_coeff = &
+                  save_initial_intra
+               tidft_env%interstate_nonorthogonality_penalty_coeff = &
+                  save_initial_inter
+
+            ENDIF
+
             IF (unit_nr > 0) THEN
 
                WRITE (unit_nr, '()')
@@ -145,15 +182,26 @@ CONTAINS
 
             ENDIF
 
+            IF (current_no_of_states .EQ. 2) THEN
             ! Done with the ground state, 
             ! generate a better guess for excited states
-            IF (current_no_of_states .EQ. 2) THEN
-               ! Argument 1 indicates that the GS WF is used to generate the guess
                !CALL construct_canonical_orbitals(tidft_env, 1)
+               ! Argument 1 indicates that the GS WF is used to generate the guess
             ENDIF
 
-            tidft_env%nstates = current_no_of_states
+            !IF (current_no_of_states .EQ. 1) THEN
+            !! For the ground state, turn off the interstate penalty for faster optimization
+
+            !   save_component_flags(:)=tidft_env%loss_function_components(:)
+            !   tidft_env%loss_function_components(3) = .FALSE.
+
+            !ENDIF
+
             CALL penalty_strength_variation(qs_env, tidft_env)
+
+            !IF (current_no_of_states .EQ. 1) THEN
+            !   tidft_env%loss_function_components(:)=save_component_flags(:)
+            !ENDIF
 
             tidft_env%intrastate_nonorthogonality_penalty_coeff = &
                save_initial_intra
@@ -178,6 +226,8 @@ CONTAINS
          CALL penalty_strength_variation(qs_env, tidft_env)
 
       ENDIF
+
+      DEALLOCATE(save_component_flags)
 
    END SUBROUTINE tidft_variational_optimization
 
@@ -1449,7 +1499,7 @@ CONTAINS
          ENDDO ! stateI
       ENDDO ! ispin
 
-      IF (interstate_penalty_component .OR. intrastate_penalty_component) THEN
+      IF (interstate_penalty_component) THEN
          tidft_env%mat_phi_inv(:,:)=tidft_env%mat_phi(:,:)
          CALL matrix_invert_local(tidft_env%mat_phi_inv, nstates)
          ! Print inverted phi
