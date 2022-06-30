@@ -1051,6 +1051,11 @@ MODULE input_constants
                                    virt_occ_size = 3, &
                                    virt_number = 4
 
+   ! TIDFT parameters
+   INTEGER, PARAMETER, PUBLIC   :: tidft_prec_zero = 0, &
+                                   tidft_prec_ks = 1, &
+                                   tidft_prec_s = 2
+
    ! spd matrix inversion algorithm
    INTEGER, PARAMETER, PUBLIC   :: spd_inversion_ls_hotelling = 0, &
                                    spd_inversion_dense_cholesky = 1, &

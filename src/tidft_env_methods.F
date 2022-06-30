@@ -101,9 +101,9 @@ CONTAINS
    END SUBROUTINE tidft_env_create
 
 ! **************************************************************************************************
-!> \brief Parses the ALMO input section
+!> \brief Parses the TIDFT input section
 !> \param input ...
-!> \param almo_scf_env ...
+!> \param tidft_env ...
 !> \par History
 !>       2021.09 created [Rustam Z Khaliullin]
 !> \author Rustam Z Khaliullin
@@ -143,6 +143,9 @@ CONTAINS
       CALL section_vals_val_get(tidft_section, &
               "MO_GUESS_RANDOM_FRAC", &
               r_val=tidft_env%initial_guess_random_fraction)
+      CALL section_vals_val_get(tidft_section, &
+              "MO_GUESS_RANDOM_SEED", &
+              i_val=tidft_env%initial_guess_random_seed)
       CALL section_vals_val_get(tidft_section, &
               "MO_GUESS_MAX_EXC_ORDER", &
               i_val=tidft_env%guess_max_excitation_order)
@@ -216,6 +219,8 @@ CONTAINS
                                 r_val=tidft_env%tidft_optimizer_pcg%lin_search_step_size_guess)
       CALL section_vals_val_get(tidft_pcg_optimizer_section, "CONJUGATOR", &
                                 i_val=tidft_env%tidft_optimizer_pcg%conjugator)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "PRECONDITIONER", &
+                                i_val=tidft_env%tidft_optimizer_pcg%preconditioner)
 
       penalty_section => section_vals_get_subs_vals(tidft_section, "PENALTY")
 

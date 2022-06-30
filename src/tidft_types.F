@@ -160,6 +160,7 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: penalty_strength_inc_factor
       REAL(KIND=dp)                                      :: allowed_determinant_deviaion
       REAL(KIND=dp)                                      :: initial_guess_random_fraction
+      INTEGER                                            :: initial_guess_random_seed
 
       ! dipole evaluation
       INTEGER                                            :: dipole_reference_type

@@ -10,6 +10,8 @@
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
 MODULE tidft_optimizer_methods
+   USE population_analyses,             ONLY: lowdin_population_analysis,&
+                                              mulliken_population_analysis
    USE almo_scf_methods,                ONLY: almo_scf_t_to_proj,&
                                               get_overlap
    USE almo_scf_types,                  ONLY: optimizer_options_type
@@ -35,7 +37,8 @@ MODULE tidft_optimizer_methods
    !     dbcsr_print, dbcsr_get_diag, dbcsr_set_diag, dbcsr_transposed
    USE input_constants,                 ONLY: &
         cg_dai_yuan, cg_fletcher, cg_fletcher_reeves, &
-        cg_hager_zhang, cg_hestenes_stiefel, cg_liu_storey, cg_polak_ribiere, cg_zero
+        cg_hager_zhang, cg_hestenes_stiefel, cg_liu_storey, cg_polak_ribiere, cg_zero, &
+        tidft_prec_zero, tidft_prec_ks, tidft_prec_s
    !USE input_constants,                 ONLY: &
    !     almo_deloc_none, almo_deloc_scf, almo_deloc_x, almo_deloc_x_then_scf, &
    !     almo_deloc_xalmo_1diag, almo_deloc_xalmo_scf, almo_deloc_xalmo_x, almo_deloc_xk, &
@@ -599,6 +602,7 @@ CONTAINS
                   ! compute the new step
                   CALL tidft_optimizer_grad_to_step( &
                           tidft_env = tidft_env, &
+                          precond = optimizer%preconditioner, &
                           grad = optimizer_storage%grad, &
                           step = optimizer_storage%step, &
                           prec_inv = optimizer_storage%prec_inv, &
@@ -1171,6 +1175,11 @@ CONTAINS
                                          smear=tidft_env%smear, &
                                          kTS_sum=kTS_sum)
    
+! perform population analysis
+CALL mulliken_population_analysis(qs_env, &
+        output_unit = unit_nr, &
+        print_level = 2)
+
                ! re-compute projector from the dm
                IF (nspins == 1) THEN
                   CALL dbcsr_scale(mat_proj(1), 0.5_dp)
@@ -2319,10 +2328,11 @@ WRITE(*,*)
 !>       2020.02 created [Rustam Z Khaliullin]
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE tidft_optimizer_grad_to_step(tidft_env, grad, step, prec_inv, &
+   SUBROUTINE tidft_optimizer_grad_to_step(tidft_env, precond, grad, step, prec_inv, &
       prev_grad, prev_theta, iteration)
 
       TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+      INTEGER, INTENT(IN)                                :: precond
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: grad
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: step
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: prec_inv
@@ -2351,7 +2361,7 @@ WRITE(*,*)
       ! check wether the KS-based state-specific preconditioner is available
       energy_component=tidft_env%loss_function_components(1)
       !energy_component=.FALSE.
-      IF (energy_component) THEN
+      IF (energy_component .AND. precond.EQ.tidft_prec_ks) THEN
 
          IF (iteration .EQ. 0) THEN
             CALL tidft_compute_invert_preconditioner(tidft_env, prec_inv)
@@ -2367,8 +2377,20 @@ WRITE(*,*)
                  tidft_env%eps_filter, &
                  tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
-      ELSE
-      ! use S_inv as a preconditioner
+      ELSE IF (precond.EQ.tidft_prec_zero) THEN
+      ! Do not use any preconditioners
+
+         !CALL tidft_optimizer_mainvar_set( &
+         !        step, 0.0_dp, &
+         !        tidft_env%e_states(1)%slater_det(1)%ncols_var)
+         CALL tidft_optimizer_mainvar_add( &
+                 step, &
+                 grad, &
+                 0.0_dp, -1.0_dp, &
+                 ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
+
+      ELSE !IF (optimizer%preconditioner.EQ.tidft_prec_s)
+      ! use S_inv as a default preconditioner
 
          CALL tidft_optimizer_mainvar_multiply( &
                  "N", "N", &

@@ -50,7 +50,8 @@ MODULE tidft
                                               determinant_generalized, &
                                               gradMO_to_gradVAR_increment, &
                                               tidft_mainvar_orthonormalize, &
-                                              cp_dbcsr_adjugate
+                                              cp_dbcsr_adjugate, &
+                                              dbcsr_set_element
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks,&
@@ -291,7 +292,7 @@ CONTAINS
 
                   ! Generate random matrix
                   CALL dbcsr_init_random(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-                          mini_seed=stateI+ivar*2)
+                          mini_seed=stateI+ivar*2+tidft_env%initial_guess_random_seed)
 
                   IF (stateI .EQ. 1) THEN ! ground state is treated differently
 
@@ -320,6 +321,17 @@ CONTAINS
                      CALL dbcsr_release(tempNO1)
 
                   ELSE ! excited states
+!CALL dbcsr_set(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), 0.0_dp)
+!IF (ivar.EQ.2) THEN
+! CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!         1.0_dp, &
+!         1, stateI, 1, 1)
+!ELSE
+! CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!         tidft_env%e_states(1)%slater_det(1)%mat_var(ivar))
+!ENDIF
+!CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+!CALL dbcsr_print(tidft_env%mat_s)
                      ! the percent of the random component in the guess
                      random_percentile = tidft_env%initial_guess_random_fraction
                      ! Obtain ES by slightly perturbing generated GS orbitals
@@ -778,7 +790,7 @@ CONTAINS
          ! perform population analysis
          CALL mulliken_population_analysis(qs_env, &
                  output_unit = unit_nr, &
-                 print_level = 0)
+                 print_level = 2)
 
          ! re-compute projector from the dm
          IF (nspins == 1) THEN

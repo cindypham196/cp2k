@@ -23,8 +23,8 @@ MODULE input_cp2k_tidft
         cg_liu_storey, cg_polak_ribiere, cg_zero, molecular_guess, op_loc_berry, op_loc_pipek, &
         optimizer_diis, optimizer_lin_eq_pcg, optimizer_pcg, optimizer_trustr, &
         spd_inversion_dense_cholesky, spd_inversion_ls_hotelling, spd_inversion_ls_taylor, &
-        trustr_cauchy, trustr_dogleg, trustr_steihaug, xalmo_prec_domain, xalmo_prec_full, &
-        xalmo_prec_zero, xalmo_trial_r0_out, xalmo_trial_simplex
+        trustr_cauchy, trustr_dogleg, trustr_steihaug, tidft_prec_zero, tidft_prec_ks, &
+        tidft_prec_s, xalmo_trial_r0_out, xalmo_trial_simplex
    USE input_val_types,                 ONLY: char_t,&
                                               integer_t,&
                                               lchar_t,&
@@ -114,9 +114,15 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS_RANDOM_SEED", &
+                          description="Seed for generating random MOs for the excited states.", &
+                          usage="MO_GUESS_RANDOM_SEED 10302", default_i_val=1000)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS_RANDOM_FRAC", &
                           description="Fraction of random MOs in the excited states.", &
-                          usage="INITIAL_GUESS_RANDOM_FRAC 0.4", default_r_val=0.1_dp)
+                          usage="MO_GUESS_RANDOM_FRAC 0.4", default_r_val=0.1_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -286,20 +292,18 @@ CONTAINS
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
 
-         !CALL keyword_create(keyword, __LOCATION__, name="PRECONDITIONER", &
-         !                    description="Select a preconditioner for the conjugate gradient optimization", &
-         !                    usage="PRECONDITIONER DOMAIN", &
-         !                    default_i_val=xalmo_prec_domain, &
-         !                    enum_c_vals=s2a("NONE", "DEFAULT", "DOMAIN", "FULL"), &
-         !                    enum_desc=s2a("Do not use preconditioner", &
-         !                                  "Same as DOMAIN preconditioner", &
-         !                                  "Invert preconditioner domain-by-domain."// &
-         !                                  " The main component of the linear scaling algorithm", &
-         !                                  "Solve linear equations step=-H.grad on the entire space"), &
-         !                    enum_i_vals=(/xalmo_prec_zero, xalmo_prec_domain, &
-         !                                  xalmo_prec_domain, xalmo_prec_full/))
-         !CALL section_add_keyword(section, keyword)
-         !CALL keyword_release(keyword)
+         CALL keyword_create(keyword, __LOCATION__, name="PRECONDITIONER", &
+                             description="Select a preconditioner for the conjugate gradient optimization", &
+                             usage="PRECONDITIONER OVERLAP", &
+                             default_i_val=tidft_prec_ks, &
+                             enum_c_vals=s2a("NONE", "QHQ_S", "OVERLAP"), &
+                             enum_desc=s2a("Do not use preconditioner", &
+                                           "Virtual-virtual block of the Kohn-Sham Hamiltonian plus overlap", &
+                                           "Overlap matrix"), &
+                             enum_i_vals=(/tidft_prec_zero, tidft_prec_ks, &
+                                           tidft_prec_s/))
+         CALL section_add_keyword(section, keyword)
+         CALL keyword_release(keyword)
 
       ENDIF
 
