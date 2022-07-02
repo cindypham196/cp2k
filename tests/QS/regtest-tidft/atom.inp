@@ -1,30 +1,57 @@
 &GLOBAL
-  PROJECT H2O
-  RUN_TYPE ENERGY
-  PRINT_LEVEL LOW
+  PROJECT                           ATOM
+  RUN_TYPE                          ENERGY
+  PRINT_LEVEL                       MEDIUM
 &END GLOBAL
 &FORCE_EVAL
   METHOD QS
   &DFT
-    POTENTIAL_FILE_NAME GTH_POTENTIALS
-    BASIS_SET_FILE_NAME GTH_BASIS_SETS
-    MULTIPLICITY        1
-    ROKS                TRUE
+    POTENTIAL_FILE_NAME             GTH_POTENTIALS
+    BASIS_SET_FILE_NAME             GTH_BASIS_SETS
+    MULTIPLICITY                    1
+    ROKS                            TRUE
     &QS
-      TIDFT T
-      EPS_DEFAULT 1.0E-12
+      TIDFT                         TRUE
+      EPS_DEFAULT                   1.0E-12
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES           2
-      SUGGESTED_MO_BLOCK_SIZE    34
-      EPS_FILTER                 1.0E-8
-      SPIN_PURE                  TRUE
-      MAX_UNPAIR                 1
+      N_EXCITED_STATES              20
+      SUGGESTED_MO_BLOCK_SIZE       1
+      EPS_FILTER                    1.0E-11
+      SPIN_PURE                     FALSE
+      MAX_UNPAIR                    1
+      MO_GUESS_RANDOM_FRAC          1.0
+      MO_GUESS_RANDOM_SEED          301
+      STATE_BY_STATE                TRUE
+      PRE_ORTHOGONALIZE_STATES      FALSE
+      NUMERICAL_GRADIENT            FALSE
+      NUMERICAL_GRADIENT_DX         1E-6
+      ENERGY_COMPONENT              TRUE
+      INTRASTATE_COMPONENT          TRUE
+      INTERSTATE_COMPONENT          TRUE
+      
+      &TIDFT_OPTIMIZER_PCG
+        PRECONDITIONER              QHQ_S
+        EPS_ERROR                   1.0E-4
+        MAX_ITER                    100
+        MAX_ITER_OUTER_LOOP         20
+        LIN_SEARCH_EPS_ERROR        0.1
+        LIN_SEARCH_STEP_SIZE_GUESS  0.01
+        CONJUGATOR                  FLETCHER
+      &END TIDFT_OPTIMIZER_PCG
+
+      &PENALTY
+        INTRASTATE_NON_PENALTY_STRENGTH    0.25
+        INTERSTATE_NON_PENALTY_STRENGTH    0.25
+        PENALTY_STRENGTH_INCREASE_FACTOR   1.414213562373095
+        ALLOWED_DETERMINANT_DEVIATION      1E-4
+      &END PENALTY
+
     &END TIDFT
 
     &MGRID
-      CUTOFF 200 ! 320
+      CUTOFF 300
       NGRIDS 5
     &END MGRID
     &XC
@@ -34,7 +61,7 @@
   &END DFT
   &SUBSYS
     &CELL
-      ABC 4. 4. 4.
+      ABC 10. 10. 10.
       MULTIPLE_UNIT_CELL 1 1 1
     &END CELL
     &TOPOLOGY
@@ -45,11 +72,11 @@
     !  H       0.0 0.0 0.0
     &END COORD
     &KIND H
-      BASIS_SET SZV-GTH
+      BASIS_SET TZVP-GTH
       POTENTIAL GTH-BLYP-q1
     &END KIND
     &KIND He
-      BASIS_SET SZV-GTH
+      BASIS_SET TZVP-GTH
       POTENTIAL GTH-BLYP-q2
     &END KIND
   &END SUBSYS
