@@ -321,17 +321,30 @@ CONTAINS
                      CALL dbcsr_release(tempNO1)
 
                   ELSE ! excited states
+! RZK-Warning: This is a hack to excite He atom electrons
 !CALL dbcsr_set(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), 0.0_dp)
-!IF (ivar.EQ.2) THEN
-! CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!         1.0_dp, &
-!         1, stateI, 1, 1)
-!ELSE
-! CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!         tidft_env%e_states(1)%slater_det(1)%mat_var(ivar))
+!IF (stateI.LT.7) THEN
+!   IF (ivar.EQ.2) THEN
+!    CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!            1.0_dp, &
+!            1, stateI, 1, 1)
+!   ELSE
+!    CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!            tidft_env%e_states(1)%slater_det(1)%mat_var(ivar))
+!   ENDIF
+!ELSE IF (stateI.LT.12) THEN
+!   IF (ivar.EQ.2) THEN
+!    CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!            tidft_env%e_states(1)%slater_det(1)%mat_var(ivar))
+!   ELSE
+!    CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!            1.0_dp, &
+!            1, stateI-5, 1, 1)
+!   ENDIF
 !ENDIF
+!WRITE(*,*) "STATE: ", stateI
 !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
-!CALL dbcsr_print(tidft_env%mat_s)
+!!CALL dbcsr_print(tidft_env%mat_s)
                      ! the percent of the random component in the guess
                      random_percentile = tidft_env%initial_guess_random_fraction
                      ! Obtain ES by slightly perturbing generated GS orbitals
@@ -339,7 +352,7 @@ CONTAINS
                         tidft_env%e_states(1)%slater_det(1)%mat_var(ivar), &
                         random_percentile, 1.0_dp - random_percentile)
                   ENDIF
-   
+
                ENDIF ! non-zero columns
 
             ENDDO ! end ivar
