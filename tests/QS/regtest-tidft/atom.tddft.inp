@@ -4,14 +4,27 @@
   PRINT_LEVEL                       MEDIUM
 &END GLOBAL
 &FORCE_EVAL
+
   METHOD QS
+
+  &PROPERTIES
+    &TDDFPT
+       NSTATES     20             # number of excited states
+       MAX_ITER    50             # maximum number of Davidson iterations
+       CONVERGENCE [eV] 1.0e-6    # convergence on maximum energy change between iterations
+       &MGRID
+          CUTOFF 300              # separate cutoff for TDDFPT calc
+       &END
+    &END TDDFPT
+  &END PROPERTIES
+
   &DFT
     POTENTIAL_FILE_NAME             GTH_POTENTIALS
     BASIS_SET_FILE_NAME             GTH_BASIS_SETS
     MULTIPLICITY                    1
     ROKS                            TRUE
     &QS
-      TIDFT                         TRUE
+      TIDFT                         FALSE
       EPS_DEFAULT                   1.0E-12
     &END QS
 
