@@ -16,7 +16,7 @@
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              5
+      N_EXCITED_STATES              1
       SUGGESTED_MO_BLOCK_SIZE       1
       EPS_FILTER                    1.0E-11
       SPIN_PURE                     FALSE
@@ -57,6 +57,9 @@
     &XC
       &XC_FUNCTIONAL BLYP
       &END XC_FUNCTIONAL
+      &XC_GRID
+        XC_DERIV SPLINE2_SMOOTH      # this is needed for the 2nd derivatives of the XC functional
+      &END XC_GRID
     &END XC
   &END DFT
   &SUBSYS

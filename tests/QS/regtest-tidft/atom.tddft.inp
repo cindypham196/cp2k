@@ -9,7 +9,7 @@
 
   &PROPERTIES
     &TDDFPT
-       NSTATES     20             # number of excited states
+       NSTATES     10             # number of excited states
        MAX_ITER    50             # maximum number of Davidson iterations
        CONVERGENCE [eV] 1.0e-6    # convergence on maximum energy change between iterations
        &MGRID
@@ -70,6 +70,9 @@
     &XC
       &XC_FUNCTIONAL BLYP
       &END XC_FUNCTIONAL
+      &XC_GRID
+        XC_DERIV SPLINE2_SMOOTH      # this is needed for the 2nd derivatives of the XC functional
+      &END XC_GRID
     &END XC
   &END DFT
   &SUBSYS
