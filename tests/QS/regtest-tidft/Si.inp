@@ -1,0 +1,105 @@
+&GLOBAL
+  PROJECT Si
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD QS
+  &DFT
+    BASIS_SET_FILE_NAME GTH_BASIS_SETS
+    POTENTIAL_FILE_NAME POTENTIAL
+    &MGRID
+      CUTOFF 300
+      NGRIDS 4
+    &END MGRID
+    UKS                  F
+    !ROKS                T
+    &QS
+      TIDFT T
+      EPS_DEFAULT 1.0E-12
+    &END QS
+
+    &TIDFT
+      N_EXCITED_STATES           0
+      SUGGESTED_MO_BLOCK_SIZE    34
+      EPS_FILTER                 1.0E-11
+      SPIN_PURE                  FALSE
+      MAX_UNPAIR                 0
+      MO_GUESS_RANDOM_FRAC       0.05
+      MO_GUESS_RANDOM_SEED       30304
+      STATE_BY_STATE             TRUE
+      PRE_ORTHOGONALIZE_STATES   FALSE
+      NUMERICAL_GRADIENT         FALSE
+      NUMERICAL_GRADIENT_DX      1E-6
+      ENERGY_COMPONENT           TRUE
+      INTRASTATE_COMPONENT       TRUE
+      INTERSTATE_COMPONENT       TRUE
+
+      &TIDFT_OPTIMIZER_PCG
+        PRECONDITIONER             QHQ_S
+        EPS_ERROR                  1.0E-8
+        MAX_ITER                   100
+        MAX_ITER_OUTER_LOOP        100
+        LIN_SEARCH_EPS_ERROR       0.2
+        LIN_SEARCH_STEP_SIZE_GUESS 0.05
+        CONJUGATOR                 FLETCHER
+      &END TIDFT_OPTIMIZER_PCG
+
+      &PENALTY
+        INTRASTATE_NON_PENALTY_STRENGTH    0.
+        INTERSTATE_NON_PENALTY_STRENGTH    0.
+        PENALTY_STRENGTH_INCREASE_FACTOR   2.0
+        ALLOWED_DETERMINANT_DEVIATION      1E-4
+      &END PENALTY
+
+    &END TIDFT
+
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 30
+      &OT ON
+        !ALGORITHM IRAC
+        !MINIMIZER DIIS
+        PRECONDITIONER FULL_ALL
+      &END OT
+      &OUTER_SCF
+         EPS_SCF 1.0E-7
+         MAX_SCF 5
+      &END
+      &PRINT
+        &RESTART OFF
+        &END
+      &END
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 5.430710 5.430710 5.430710
+      MULTIPLE_UNIT_CELL 1 1 1
+    &END CELL
+    &TOPOLOGY
+      MULTIPLE_UNIT_CELL 1 1 1
+    &END
+    &COORD
+      SCALED T
+      Si         0.000000      0.000000      0.000000
+      Si         0.000000      0.500000      0.500000
+      Si         0.500000      0.000000      0.500000
+      Si         0.500000      0.500000      0.000000
+      Si         0.250000      0.250000      0.250000
+      Si         0.250000      0.750000      0.750000
+      Si         0.750000      0.250000      0.750000
+      Si         0.750000      0.750000      0.250000
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-GTH
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+
