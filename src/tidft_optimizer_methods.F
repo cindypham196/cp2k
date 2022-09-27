@@ -94,7 +94,7 @@ MODULE tidft_optimizer_methods
 CONTAINS
 
 ! **************************************************************************************************
-!> \brief Optimizes penalty strenght and calls fixed-strength TIDFT optimization
+!> \brief Decides on whether we do state-by-state optimization or optimize all states simultaneously
 !> \param qs_env ...
 !> \param tidft_env ...
 !> \par History
@@ -235,7 +235,7 @@ CONTAINS
    END SUBROUTINE tidft_variational_optimization
 
 ! **************************************************************************************************
-!> \brief Optimizes penalty strenght and calls fixed-strength TIDFT optimization
+!> \brief Optimizes the penalty strenght and calls fixed-strength TIDFT optimization
 !> \param qs_env ...
 !> \param tidft_env ...
 !> \par History
@@ -2358,10 +2358,8 @@ WRITE(*,*)
 !tiidft      IF (nlmo_env%hessian_type .EQ. xalmo_prec_identity) THEN ! no second derivatives
 !tiidft
 
-      ! check wether the KS-based state-specific preconditioner is available
-      energy_component=tidft_env%loss_function_components(1)
-      !energy_component=.FALSE.
-      IF (energy_component .AND. precond.EQ.tidft_prec_ks) THEN
+      SELECT CASE (precond)
+      CASE (tidft_prec_ks)
 
          IF (iteration .EQ. 0) THEN
             CALL tidft_compute_invert_preconditioner(tidft_env, prec_inv)
@@ -2377,20 +2375,7 @@ WRITE(*,*)
                  tidft_env%eps_filter, &
                  tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
-      ELSE IF (precond.EQ.tidft_prec_zero) THEN
-      ! Do not use any preconditioners
-
-         !CALL tidft_optimizer_mainvar_set( &
-         !        step, 0.0_dp, &
-         !        tidft_env%e_states(1)%slater_det(1)%ncols_var)
-         CALL tidft_optimizer_mainvar_add( &
-                 step, &
-                 grad, &
-                 0.0_dp, -1.0_dp, &
-                 ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
-
-      ELSE !IF (optimizer%preconditioner.EQ.tidft_prec_s)
-      ! use S_inv as a default preconditioner
+      CASE (tidft_prec_s)
 
          CALL tidft_optimizer_mainvar_multiply( &
                  "N", "N", &
@@ -2402,7 +2387,18 @@ WRITE(*,*)
                  tidft_env%eps_filter, &
                  tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
-      ENDIF
+      CASE (tidft_prec_zero)
+      ! Do not use any preconditioners: use negative gradient
+
+         CALL tidft_optimizer_mainvar_add( &
+                 step, &
+                 grad, &
+                 0.0_dp, -1.0_dp, &
+                 ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
+
+      CASE DEFAULT
+         CPABORT("Illegal preconditioner")
+      END SELECT
 
 !tiidft
 !tiidft      ELSE ! use second derivatives
@@ -2889,6 +2885,10 @@ WRITE(*,*)
             ENDIF ! cholesky or not
 
          ENDDO ! stateI
+
+      ELSE  ! energy_component
+
+         CPABORT("This preconditioner needs the energy component")
 
       ENDIF ! energy_component
 

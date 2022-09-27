@@ -88,7 +88,7 @@ MODULE tidft
         dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_nblkcols_total, &
         dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, dbcsr_reserve_block2d, dbcsr_scale, &
         dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create, &
-        dbcsr_print, dbcsr_get_diag, dbcsr_set_diag, dbcsr_transposed
+        dbcsr_print, dbcsr_get_diag, dbcsr_set_diag, dbcsr_transposed, dbcsr_binary_write
    USE domain_submatrix_methods,        ONLY: init_submatrices,&
                                               release_submatrices
    USE input_constants,                 ONLY: &
@@ -224,7 +224,6 @@ CONTAINS
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(dbcsr_type)                                   :: tempNO1, mat_proj_var1
       TYPE(dbcsr_type)                                   :: temp2, mat_var23, mat_var23_sigma
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: fake_e_per_block
       INTEGER                                            :: group, nsize
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: diagonal
       TYPE(qs_energy_type), POINTER                      :: qs_energy
@@ -261,8 +260,8 @@ CONTAINS
       IF (tidft_env%triplet_correction) ndets = 2
 
       ! create an initial guess
-      !SELECT CASE (tidft_env%tidft_guess)
-      !CASE (atomic_guess, ionic_guess)
+      SELECT CASE (tidft_env%initial_guess_type)
+      CASE (atomic_guess)
 
          ! use isolated atoms to generate approximate DM for the GS
          IF (dft_control%qs_control%dftb .OR. dft_control%qs_control%semi_empirical .OR. &
@@ -360,22 +359,113 @@ CONTAINS
 
          ENDDO  ! end stateI
 
-      !CASE (restart_guess)
+      CASE (restart_guess)
       ! Read from file
 
-      !DEFAULT
+         project_name = logger%iter_info%project_name
 
-      !   CPABORT("Illegal initial guess")
+         DO stateI = 1, nstates
 
-      !END SELECT
+            DO ivar = 1, 3
 
-      !DEALLOCATE(fake_e_per_block)
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
 
+               IF ( nmos_stateI .GT. 0 ) THEN
+
+                  !WRITE (file_name, '(A,I0,A)') TRIM(project_name)//"_LS_DM_SPIN_", ispin, "_RESTART.dm"
+                  WRITE (file_name, '(A,I0,A,I0,A)') TRIM(project_name)//"_TIDFT_STATE_", stateI, "_VAR_", ivar, "_RESTART.mo"
+                  CALL dbcsr_get_info(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), distribution=dist)
+                  CALL dbcsr_binary_read(file_name, distribution=dist, &
+                          matrix_new=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+                  cs_pos = dbcsr_checksum(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), pos=.TRUE.)
+                  IF (unit_nr > 0) THEN
+                     WRITE (unit_nr, '(T2,A,E20.8)') "Read restart MOs "//TRIM(file_name)//" with checksum: ", cs_pos
+                  ENDIF
+
+               ENDIF ! non-zero columns
+
+            ENDDO ! end ivar
+
+         ENDDO  ! end stateI
+
+      CASE DEFAULT
+
+         CPABORT("Illegal initial guess")
+
+      END SELECT
+
+CALL tidft_mainvar_write(tidft_env)
       CALL tidft_mainvar_orthonormalize(tidft_env)
 
       CALL timestop(handle)
 
    END SUBROUTINE tidft_mainvar_initial_guess
+
+! **************************************************************************************************
+!> \brief write main variables (MOs essentially) to disk
+!> \param tidft_env ...
+!> \par History
+!>       2022.09 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE tidft_mainvar_write(tidft_env)
+      TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_mainvar_write', &
+         routineP = moduleN//':'//routineN
+
+      CHARACTER(LEN=default_path_length)                 :: file_name, project_name
+      INTEGER                                            :: handle, &
+                                                            unit_nr, nmos_stateI, &
+                                                            stateI, ivar, nstates
+      REAL(KIND=dp)                                      :: cs_pos
+      TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(dbcsr_distribution_type)                      :: dist
+      LOGICAL                                            :: write_mos
+
+      CALL timeset(routineN, handle)
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      nstates = tidft_env%nstates
+
+      write_mos = .TRUE.
+      IF (write_mos) THEN
+
+         project_name = logger%iter_info%project_name
+
+         DO stateI = 1, nstates
+
+            DO ivar = 1, 3
+
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+
+               IF ( nmos_stateI .GT. 0 ) THEN
+
+                  WRITE (file_name, '(A,I0,A,I0,A)') TRIM(project_name)//"_TIDFT_STATE_", stateI, "_VAR_", ivar, "_RESTART.mo"
+                  cs_pos = dbcsr_checksum(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), pos=.TRUE.)
+                  IF (unit_nr > 0) THEN
+                     WRITE (unit_nr, '(T2,A,E20.8)') "Writing restart MOs "//TRIM(file_name)//" with checksum: ", cs_pos
+                  ENDIF
+                  CALL dbcsr_binary_write(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), file_name)
+
+               ENDIF ! non-zero columns
+
+            ENDDO ! end ivar
+
+         ENDDO  ! end stateI
+
+      ENDIF ! write mos
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_mainvar_write
 
 ! **************************************************************************************************
 !> \brief Print the final TIDFT excitation energies and oscillator strengths.

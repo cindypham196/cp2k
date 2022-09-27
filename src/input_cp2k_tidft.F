@@ -20,7 +20,7 @@ MODULE input_cp2k_tidft
         almo_deloc_xalmo_1diag, almo_deloc_xalmo_scf, almo_deloc_xalmo_x, almo_frz_crystal, &
         almo_frz_none, almo_scf_diag, almo_scf_pcg, almo_scf_skip, almo_scf_trustr, atomic_guess, &
         cg_dai_yuan, cg_fletcher, cg_fletcher_reeves, cg_hager_zhang, cg_hestenes_stiefel, &
-        cg_liu_storey, cg_polak_ribiere, cg_zero, molecular_guess, op_loc_berry, op_loc_pipek, &
+        cg_liu_storey, cg_polak_ribiere, cg_zero, restart_guess, op_loc_berry, op_loc_pipek, &
         optimizer_diis, optimizer_lin_eq_pcg, optimizer_pcg, optimizer_trustr, &
         spd_inversion_dense_cholesky, spd_inversion_ls_hotelling, spd_inversion_ls_taylor, &
         trustr_cauchy, trustr_dogleg, trustr_steihaug, tidft_prec_zero, tidft_prec_ks, &
@@ -111,6 +111,17 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="SUGGESTED_MO_BLOCK_SIZE", &
                           description="User suggested block size for molecular orbital DBCSR matrices", &
                           usage="SUGGESTED_MO_BLOCK_SIZE 50", default_i_val=20)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS", &
+                          description="Method that generates initial MOs.", &
+                          usage="MO_GUESS RESTART", &
+                          default_i_val=atomic_guess, &
+                          enum_c_vals=s2a("RESTART", "ATOMIC"), &
+                          enum_desc=s2a("Read from file.", &
+                                        "Superposition of atomic densities."), &
+                          enum_i_vals=(/restart_guess, atomic_guess/))
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
