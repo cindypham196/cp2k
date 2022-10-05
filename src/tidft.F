@@ -222,7 +222,7 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_rho_type), POINTER                         :: rho
-      TYPE(dbcsr_type)                                   :: tempNO1, mat_proj_var1
+      TYPE(dbcsr_type)                                   :: tempNO1, mat_proj_var1, temp_var
       TYPE(dbcsr_type)                                   :: temp2, mat_var23, mat_var23_sigma
       INTEGER                                            :: group, nsize
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: diagonal
@@ -374,13 +374,16 @@ CONTAINS
 
                   !WRITE (file_name, '(A,I0,A)') TRIM(project_name)//"_LS_DM_SPIN_", ispin, "_RESTART.dm"
                   WRITE (file_name, '(A,I0,A,I0,A)') TRIM(project_name)//"_TIDFT_STATE_", stateI, "_VAR_", ivar, "_RESTART.mo"
-                  CALL dbcsr_get_info(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), distribution=dist)
+                  CALL dbcsr_create(temp_var, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+                  !CALL dbcsr_get_info(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), distribution=dist)
+                  CALL dbcsr_get_info(temp_var, distribution=dist)
                   CALL dbcsr_binary_read(file_name, distribution=dist, &
                           matrix_new=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
                   cs_pos = dbcsr_checksum(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), pos=.TRUE.)
                   IF (unit_nr > 0) THEN
                      WRITE (unit_nr, '(T2,A,E20.8)') "Read restart MOs "//TRIM(file_name)//" with checksum: ", cs_pos
                   ENDIF
+                  CALL dbcsr_release(temp_var)
 
                ENDIF ! non-zero columns
 
