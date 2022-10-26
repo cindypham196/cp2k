@@ -25,7 +25,7 @@
 
     &ALMO_SCF
 
-      EPS_FILTER                 1.0E-12
+      EPS_FILTER                 1.0E-16 !1.0E-12
       ALMO_ALGORITHM             SKIP
       ALMO_SCF_GUESS             ATOMIC
       MO_OVERLAP_INV_ALG         DENSE_CHOLESKY

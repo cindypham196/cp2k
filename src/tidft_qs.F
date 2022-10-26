@@ -281,80 +281,82 @@ CONTAINS
       REAL                                               :: istd2, best_std2
 
 
-      !! Case 1: the number of orbitals is less than the number of cores
-      !!IF (norbs .LT. ncores1D) THEN
-
-      !!   ALLOCATE(blk_sizes(norbs), blk_distr(norbs))
-
-      !!   blk_sizes(:) = 1
-      !!   blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
-
-      !!! Case 2: given a suggested_blk_size, the number of distributed blks = ncores1D*ngroups
-      !!ELSE
-      !   ngroups = NINT(1.0_dp*norbs/suggested_blk_size/ncores1D)
-      !   IF (ngroups .EQ. 0) ngroups = 1
-
-      !   ! Vary ngroups within 10%
-      !   ndelta = CEILING(1.0_dp*ngroups/10)
-      !   ! assign a random large value
-      !   best_std2 = 1.0_dp*(norbs**2+1)
-      !   best_diff = norbs
-
-      !   ! Choose the best ngroups
-      !   DO igroup = ngroups-ndelta, ngroups+ndelta ! group_size
-
-      !      IF (igroup .LE. 0) CYCLE
-      !      nblocks = ncores1D*igroup
-      !      norbs_per_block = FLOOR((1.0_dp*norbs)/nblocks)
-
-      !      ALLOCATE(trial_blk_sizes(nblocks))
-      !      trial_blk_sizes(:) = norbs_per_block
-      !      remainder = MOD(norbs, nblocks)
-      !      IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1
-      !      !diff = ABS(norbs_per_block - suggested_blk_size)
-
-      !      ! Compute standard deviation square across all trial_blk_sizes
-      !      istd2 = 0.0_dp
-      !      DO I = 1, nblocks
-      !         istd2 = istd2 + trial_blk_sizes(I)**2
-      !      ENDDO
-      !      istd2 = istd2 - (1.0_dp*norbs/nblocks)**2
-
-      !      ! Choose ngroups with better distribution
-      !      !IF (istd2 .LT. best_std2 .OR. ABS(istd2 - best_std2) .LT. 1E-9) THEN
-      !      IF (istd2 .LT. best_std2) THEN
-
-      !         best_std2 = istd2
-      !         best_nblocks = nblocks
-      !         IF (ASSOCIATED(blk_sizes)) DEALLOCATE(blk_sizes) 
-      !         ALLOCATE(blk_sizes(nblocks))
-      !         blk_sizes(:) = trial_blk_sizes(:)
-      !         !IF (istd2 .LE. best_std2 .OR. diff .LE. best_diff) THEN
-      !         !   best_diff = diff
-      !         !   best_nblock = nblocks
-      !         !   ALLOCATE(blk_sizes(best_nblock))
-      !         !   blk_sizes = trial_blk_sizes ! best option whose value is the closest to suggested_blk_size
-      !         !ENDIF
-      !      ENDIF
-
-      !      DEALLOCATE(trial_blk_sizes)
-
-      !   END DO
-
-      !   ! Find blk_distr()
-      !   ALLOCATE(blk_distr(best_nblocks))
-      !   I = 0
-      !   DO J=1, best_nblocks
-      !      IF (I .LT. ncores1D) THEN
-      !         blk_distr(J) = I
-      !         I = I + 1
-      !      ELSE
-      !         blk_distr(J) = 0
-      !         I = 1
-      !      ENDIF
-      !   END DO
-
-      !!ENDIF
+!     ! Case 1: the number of orbitals is less than the number of cores
+!      IF (norbs .LT. ncores1D) THEN
+!
+!      ALLOCATE(blk_sizes(norbs), blk_distr(norbs))
+!      blk_sizes(:) = 1
+!      blk_distr(:) = (/ ( I, I = 0, norbs-1, 1) /)
+!     !! Case 2: given a suggested_blk_size, the number of distributed blks = ncores1D*ngroups
+!     ELSE
+!        ngroups = NINT(1.0_dp*norbs/suggested_blk_size/ncores1D)
+!        IF (ngroups .EQ. 0) ngroups = 1
+!        ! Vary ngroups within 10%
+!        ndelta = CEILING(1.0_dp*ngroups/10)
+!        ! assign a random large value
+!        best_std2 = 1.0_dp*(norbs**2+1)
+!        best_diff = norbs
+!        ! Choose the best ngroups
+!        DO igroup = ngroups-ndelta, ngroups+ndelta ! group_size
+!           IF (igroup .EQ. 0) CYCLE
+!           nblocks = ncores1D*igroup
+!           norbs_per_block = FLOOR((1.0_dp*norbs)/nblocks)
+!           ALLOCATE(trial_blk_sizes(nblocks))
+!           trial_blk_sizes(:) = norbs_per_block
+!           remainder = MOD(norbs, nblocks)
+!           IF (remainder.GT.0) trial_blk_sizes(1:remainder) = trial_blk_sizes(1:remainder) + 1
+!           diff = ABS(norbs_per_block - suggested_blk_size)
+           ! Compute standard deviation square across all trial_blk_sizes
+           !istd2 = 0.0_dp
+           !DO I = 1, nblocks
+            !  istd2 = istd2 + trial_blk_sizes(I)**2
+           !ENDDO
+           !istd2 = istd2 - (1.0_dp*norbs/nblocks)**2
+           ! Compute standard deviation across all trial blk_sizes
+!           istd2 = ABS(SUM(trial_blk_sizes(:)**2)/nblocks - (1.0_dp*norbs/nblocks)**2)
+           ! Choose ngroups with better distribution
+           !IF (istd2 .LT. best_std2 .OR. ABS(istd2 - best_std2) .LT. 1E-8) THEN
+           !IF (istd2 .LT. best_std2) THEN
+              !best_std2 = istd2
+              !best_nblocks = nblocks
+              !IF (ASSOCIATED(blk_sizes)) DEALLOCATE(blk_sizes)
+              !ALLOCATE(blk_sizes(nblocks))
+              !blk_sizes(:) = trial_blk_sizes(:)
+              !IF (istd2 .LE. best_std2 .OR. diff .LE. best_diff) THEN
+              !   best_diff = diff
+              !   best_nblocks = nblocks
+              !   ALLOCATE(blk_sizes(best_nblock))
+              !   blk_sizes = trial_blk_sizes ! best option whose value is the closest to suggested_blk_size
+              !ENDIF
+           !ENDIF
+            ! Choose ngroups with better distribution
+!            IF (istd2 .LT. best_std2 .OR. ABS(istd2 - best_std2) .LT. 1E-8) THEN
+!               best_std2 = istd2
+!               IF (istd2 .LE. best_std2 .OR. diff .LE. best_diff) THEN
+!                  best_diff = diff
+!                  best_nblocks = nblocks
+!                  ngroups = igroup !for checking purpose
+!                  ALLOCATE(blk_sizes(best_nblocks))
+!                  blk_sizes = trial_blk_sizes!copy ! best copy whose value is the closest to suggested_blk_size
+!               ENDIF
+!            ENDIF
+!         END DO
+!         DEALLOCATE(trial_blk_sizes)
+        !END DO
+        ! Find blk_distr()
+!        ALLOCATE(blk_distr(best_nblocks))
+!        I = 0
+!        DO J=1, best_nblocks
+!           IF (I .LT. ncores1D) THEN
+!              blk_distr(J) = I
+!              I = I + 1
+!           ELSE
+!              blk_distr(J) = 0
+!              I = 1
+!           ENDIF
+!        END DO
+!
+!ENDIF
 
       nblocks_suggested = CEILING(1.0_dp*norbs/suggested_blk_size)
       IF (nblocks_suggested .LE. 0) nblocks_suggested = 1
@@ -388,7 +390,7 @@ CONTAINS
          DO I = 1, nblocks
             istd2 = istd2 + trial_blk_sizes(I)**2
          ENDDO
-         istd2 = istd2 - (1.0_dp*norbs/nblocks)**2
+         istd2 = istd2/nblocks - (1.0_dp*norbs/nblocks)**2
 
          ! Choose nblocks with better distribution
          IF (istd2 .LT. best_std2) THEN

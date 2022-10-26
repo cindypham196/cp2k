@@ -463,6 +463,7 @@ CONTAINS
                        ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
             ENDIF
 
+
 ! STEP 3: MAJOR Theta to MOs
 ! STEP 4: Obj function
 ! STEP 5: Gradient
@@ -598,6 +599,7 @@ CONTAINS
                           optimizer_storage%step, &
                           ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
+
 ! STEP 8: Grad to step
                   ! compute the new step
                   CALL tidft_optimizer_grad_to_step( &
@@ -609,6 +611,8 @@ CONTAINS
                           prev_grad = optimizer_storage%prev_grad, &
                           prev_theta = optimizer_storage%prev_theta, &
                           iteration = iteration)
+
+
 !tiidft                  CALL nlmo_env_loss_curvature_grad_to_step(nlmo_env=nlmo_env, &
 !tiidft                                                            grad=nlmo_env%grad, &
 !tiidft                                                            step=step, &
@@ -640,10 +644,12 @@ CONTAINS
                              conjugator = optimizer%conjugator, &
                              grad = optimizer_storage%grad, &
                              prev_grad = optimizer_storage%prev_grad, &
-                             step = optimizer_storage%prev_grad, &
+                             ! CINDY MAJOR BUG FOUND FOR CONVERGENCE PROBLEM: typo on step matrix
+                             !step = optimizer_storage%prev_grad, &
+                             step = optimizer_storage%step, &
                              prev_step = optimizer_storage%prev_step, &
                              prev_minus_prec_grad = optimizer_storage%prev_minus_prec_grad, &
-                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
+                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)                
 
                   ENDIF
 
@@ -709,8 +715,10 @@ CONTAINS
                            step_size = optimizer%lin_search_step_size_guess
                         ELSE
                            ! take the last value
-                           step_size = optimizer%lin_search_step_size_guess
+                           ! CINDY modification : trust previous step, confident to make more aggressive step
                            !step_size = next_step_size_guess*1.05_dp
+                           ! CHANGE BACK TO PREVIOUS SETTING BELOW AFTER THE O3 TEST
+                           step_size = optimizer%lin_search_step_size_guess  
                         ENDIF
                      ENDIF
                   ELSE IF (linear_search_type .EQ. 2) THEN ! this is cautious LS
@@ -779,6 +787,7 @@ CONTAINS
                           optimizer_storage%prev_theta, &
                           tidft_env)
                ENDIF
+
                CALL tidft_optimizer_mainvar_add_to_tidft_env( &
                        tidft_env, &
                        optimizer_storage%step, &
@@ -901,8 +910,7 @@ CONTAINS
                                                             mat_g_inter
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:,:)    :: mat_g_energy
       INTEGER                                            :: opposite_spin
-
-
+      
       CALL timeset(routineN, handle)
 
       my_silent=.FALSE.
@@ -1539,6 +1547,7 @@ CALL mulliken_population_analysis(qs_env, &
                           template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
                   CALL dbcsr_create(tempOO1, &
                           template=tidft_env%mat_sigma_inv(stateI,idet,ispin))
+
                   CALL dbcsr_create(ST, &
                           template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
                   CALL dbcsr_create(STsiginv, &
@@ -1570,6 +1579,7 @@ CALL mulliken_population_analysis(qs_env, &
                              tidft_env%mat_sigma_inv(stateI,idet,ispin), &
                              0.0_dp, tempNO1, &
                              filter_eps=tidft_env%eps_filter)
+
                      ! S.Tsiginv
                      CALL dbcsr_multiply("N", "N", 1.0_dp, &
                              tidft_env%mat_s, &
@@ -1588,12 +1598,14 @@ CALL mulliken_population_analysis(qs_env, &
                              tempNO1, &
                              0.0_dp, mat_g_energy(stateI, ispin, idet), &
                              filter_eps=tidft_env%eps_filter)
+
                      ! Tt.FTsiginv
                      CALL dbcsr_multiply("T", "N", 1.0_dp, &
                              tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                              mat_g_energy(stateI, ispin, idet), &
                              0.0_dp, tempOO1, &
                              filter_eps=tidft_env%eps_filter)
+
                      ! FTsiginv - STsiginv.TtFTsiginv
                      CALL dbcsr_multiply("N", "N", -1.0_dp, &
                              STsiginv, &
@@ -1602,6 +1614,8 @@ CALL mulliken_population_analysis(qs_env, &
                              filter_eps=tidft_env%eps_filter)
                      ! Scale by 2.0
                      CALL dbcsr_scale(mat_g_energy(stateI, ispin, idet), 2.0_dp)
+               
+
 
                      CALL gradMO_to_gradVAR_increment( &
                              mat_g_out=gradient_out(stateI, :), &
@@ -1613,6 +1627,7 @@ CALL mulliken_population_analysis(qs_env, &
                              nspins=nspins, &
                              triplet_correction=tidft_env%triplet_correction, &
                              energy_term=.TRUE.)
+
 
                      !! RZK-WARNING: IF components are given, do not accumulate the total gradient
                      !! It's a waste of time

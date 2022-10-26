@@ -22,16 +22,16 @@
     &TIDFT
       N_EXCITED_STATES           0
       SUGGESTED_MO_BLOCK_SIZE    3
-      EPS_FILTER                 1.0E-12
+      EPS_FILTER                 1.0E-16 !1.0E-12
       SPIN_PURE                  FALSE
       MAX_UNPAIR                 0
-      MO_GUESS                   ATOMIC !RESTART
+      MO_GUESS                   RESTART !ATOMIC !
       MO_GUESS_RANDOM_FRAC       0.05
       MO_GUESS_RANDOM_SEED       30304
       STATE_BY_STATE             TRUE
       PRE_ORTHOGONALIZE_STATES   FALSE
       NUMERICAL_GRADIENT         FALSE
-      NUMERICAL_GRADIENT_DX      1E-6
+      NUMERICAL_GRADIENT_DX      1E-6 ! run w diff vals 10e-4 to -7
       ENERGY_COMPONENT           TRUE
       INTRASTATE_COMPONENT       TRUE
       INTERSTATE_COMPONENT       TRUE
