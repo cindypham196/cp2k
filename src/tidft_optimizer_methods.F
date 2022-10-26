@@ -463,7 +463,6 @@ CONTAINS
                        ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
             ENDIF
 
-
 ! STEP 3: MAJOR Theta to MOs
 ! STEP 4: Obj function
 ! STEP 5: Gradient
@@ -599,7 +598,6 @@ CONTAINS
                           optimizer_storage%step, &
                           ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
-
 ! STEP 8: Grad to step
                   ! compute the new step
                   CALL tidft_optimizer_grad_to_step( &
@@ -611,7 +609,6 @@ CONTAINS
                           prev_grad = optimizer_storage%prev_grad, &
                           prev_theta = optimizer_storage%prev_theta, &
                           iteration = iteration)
-
 
 !tiidft                  CALL nlmo_env_loss_curvature_grad_to_step(nlmo_env=nlmo_env, &
 !tiidft                                                            grad=nlmo_env%grad, &
@@ -644,12 +641,10 @@ CONTAINS
                              conjugator = optimizer%conjugator, &
                              grad = optimizer_storage%grad, &
                              prev_grad = optimizer_storage%prev_grad, &
-                             ! CINDY MAJOR BUG FOUND FOR CONVERGENCE PROBLEM: typo on step matrix
-                             !step = optimizer_storage%prev_grad, &
                              step = optimizer_storage%step, &
                              prev_step = optimizer_storage%prev_step, &
                              prev_minus_prec_grad = optimizer_storage%prev_minus_prec_grad, &
-                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)                
+                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
                   ENDIF
 

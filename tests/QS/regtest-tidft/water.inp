@@ -50,7 +50,7 @@
         PRECONDITIONER             QHQ_S
         EPS_ERROR                  1.0E-8
         MAX_ITER                   100
-        MAX_ITER_OUTER_LOOP        2000
+        MAX_ITER_OUTER_LOOP        20
         LIN_SEARCH_EPS_ERROR       0.2
         LIN_SEARCH_STEP_SIZE_GUESS 0.05
         CONJUGATOR                 FLETCHER
@@ -71,11 +71,11 @@
     &END MGRID
     &SCF
       EPS_SCF 1.0E-7
-      MAX_SCF 30
+      MAX_SCF 100
       SCF_GUESS ATOMIC
       &OUTER_SCF
         EPS_SCF 1.0E-7
-        MAX_SCF 5
+        MAX_SCF 20
       &END OUTER_SCF
       &OT ON
         PRECONDITIONER FULL_SINGLE

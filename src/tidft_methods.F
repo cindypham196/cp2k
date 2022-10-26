@@ -1689,7 +1689,6 @@ CONTAINS
                              tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
                              tidft_env%e_states(stateI)%slater_det(1)%mat_var(3) &
                           )
-   
                      CALL dbcsr_release(mat_var23)
                      CALL dbcsr_release(mat_var23_sigma)
 
@@ -1697,17 +1696,17 @@ CONTAINS
 
                ELSE ! not triplet_correction
 
-                 CALL orthogonalize_mos(ket=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-                                        overlap=tidft_env%mat_var_sigma(ivar), &
-                                        metric=tidft_env%mat_s, &
-                                        retain_locality=.FALSE., &
-                                        only_normalize=.FALSE., &
-                                        nocc_of_domain=fake_e_per_block, &
-                                        eps_filter=tidft_env%eps_filter, &
-                                        order_lanczos=tidft_env%order_lanczos, &
-                                        eps_lanczos=tidft_env%eps_lanczos, &
-                                        max_iter_lanczos=tidft_env%max_iter_lanczos, &
-                                        smear=tidft_env%smear)
+                  CALL orthogonalize_mos(ket=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+                                         overlap=tidft_env%mat_var_sigma(ivar), &
+                                         metric=tidft_env%mat_s, &
+                                         retain_locality=.FALSE., &
+                                         only_normalize=.FALSE., &
+                                         nocc_of_domain=fake_e_per_block, &
+                                         eps_filter=tidft_env%eps_filter, &
+                                         order_lanczos=tidft_env%order_lanczos, &
+                                         eps_lanczos=tidft_env%eps_lanczos, &
+                                         max_iter_lanczos=tidft_env%max_iter_lanczos, &
+                                         smear=tidft_env%smear)
                ENDIF ! triplet correction
 
                IF (ivar .EQ. 1) THEN
