@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --time=02:00:00
+#SBATCH --nodes=3
+#SBATCH --tasks-per-node=40
+#SBATCH --account=ctb-rzk
+#SBATCH --job-name=cd-001
+#SBATCH --error=_cd-001.stde
+#SBATCH --output=_cd-001.stdo
+
+EXE=/home/rzk/projects/ctb-rzk/rzk/cp2k-dev/cp2k-tidft/exe/Beluga-Linux-x86-64-gfortran-openmpi/cp2k.psmp
+workd=${SLURM_SUBMIT_DIR}
+cd $workd
+if [ -f "action-pre-001.sh" ]; then
+ bash action-pre-001.sh
+fi
+srun $EXE CubicDiamond.inp > $workd/CubicDiamond.TIDFT.out-001
+if [ -f "action-post-001.sh" ]; then
+ bash action-post-001.sh
+fi

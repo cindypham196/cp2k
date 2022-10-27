@@ -1,0 +1,138 @@
+&GLOBAL
+  PROJECT CARBON-DIAMOND
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+
+&FORCE_EVAL
+
+  METHOD QS
+
+  &DFT
+
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME POTENTIAL
+
+    MULTIPLICITY        1
+    UKS                 F
+    !ROKS                T
+
+    &QS
+      TIDFT                      T       ! RZK: main switch between TIDFT code and OT
+      EPS_DEFAULT                1.0E-11
+    &END QS
+
+    &TIDFT
+      N_EXCITED_STATES           0
+      SUGGESTED_MO_BLOCK_SIZE    16           ! RZK: Optimize for speed
+      EPS_FILTER                 1.0E-10     ! RZK: Optimize for speed
+      SPIN_PURE                  FALSE
+      MAX_UNPAIR                 0
+      MO_GUESS                   ATOMIC
+      MO_GUESS_RANDOM_FRAC       0.05
+      MO_GUESS_RANDOM_SEED       30304
+      STATE_BY_STATE             TRUE
+      PRE_ORTHOGONALIZE_STATES   FALSE
+      NUMERICAL_GRADIENT         FALSE
+      NUMERICAL_GRADIENT_DX      1E-6
+      ENERGY_COMPONENT           TRUE
+      INTRASTATE_COMPONENT       TRUE
+      INTERSTATE_COMPONENT       FALSE
+
+      &TIDFT_OPTIMIZER_PCG
+        PRECONDITIONER             QHQ_S
+        EPS_ERROR                  1.0E-8
+        MAX_ITER                   50
+        MAX_ITER_OUTER_LOOP        20
+        LIN_SEARCH_EPS_ERROR       0.2
+        LIN_SEARCH_STEP_SIZE_GUESS 0.05
+        CONJUGATOR                 FLETCHER
+      &END TIDFT_OPTIMIZER_PCG
+
+      &PENALTY
+        INTRASTATE_NON_PENALTY_STRENGTH    0.     ! RZK: establish optimal value
+        INTERSTATE_NON_PENALTY_STRENGTH    0.
+        PENALTY_STRENGTH_INCREASE_FACTOR   2.0
+        ALLOWED_DETERMINANT_DEVIATION      1E-4
+      &END PENALTY
+
+    &END TIDFT
+
+    &SCF
+      EPS_SCF 1.0E-7     ! RZK: OT code must use absolute max norm, not rms norm
+      MAX_SCF 50
+      SCF_GUESS ATOMIC
+      &OUTER_SCF
+        EPS_SCF 1.0E-7
+        MAX_SCF 20
+      &END OUTER_SCF
+      &OT ON
+        !ALGORITHM IRAC
+        PRECONDITIONER FULL_SINGLE
+        ENERGY_GAP   -1.0
+        MINIMIZER CG ! DIIS
+      &END OT
+      &PRINT
+        &RESTART OFF
+        &END
+      &END
+    &END SCF
+
+    &MGRID
+      CUTOFF 300
+      NGRIDS 5
+    &END MGRID
+
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+         DISPERSION_FUNCTIONAL PAIR_POTENTIAL
+         &PAIR_POTENTIAL
+            TYPE DFTD3
+            CALCULATE_C9_TERM .TRUE.
+            REFERENCE_C9_TERM .TRUE.
+            LONG_RANGE_CORRECTION .FALSE.
+            PARAMETER_FILE_NAME dftd3.dat
+            VERBOSE_OUTPUT .TRUE.
+            REFERENCE_FUNCTIONAL PBE
+            R_CUTOFF [angstrom] 10.0
+            EPS_CN 1.0E-6
+         &END PAIR_POTENTIAL
+      &END VDW_POTENTIAL
+    &END XC
+
+  &END DFT
+
+  &SUBSYS
+
+    &CELL
+      ABC 3.569 3.569 3.569
+      MULTIPLE_UNIT_CELL 4 4 4  ! RZK: In the final calculation, proper values must be set. Cubic diamond: 4
+    &END CELL
+
+    &TOPOLOGY
+      MULTIPLE_UNIT_CELL 4 4 4  ! RZK: In the final calculation, proper values must be set.
+    &END
+
+    &COORD
+      SCALED T
+      C         0.000000      0.000000      0.000000
+      C         0.000000      0.500000      0.500000
+      C         0.500000      0.000000      0.500000
+      C         0.500000      0.500000      0.000000
+      C         0.250000      0.250000      0.250000
+      C         0.250000      0.750000      0.750000
+      C         0.750000      0.250000      0.750000
+      C         0.750000      0.750000      0.250000
+    &END COORD
+
+    &KIND C
+      BASIS_SET DZVP-MOLOPT-SR-GTH-q4   ! RZK: For large-basis calculations use: TZV2PX-MOLOPT-GTH-q4
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+
+  &END SUBSYS
+
+&END FORCE_EVAL
+

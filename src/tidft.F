@@ -397,7 +397,8 @@ CONTAINS
 
       END SELECT
 
-CALL tidft_mainvar_write(tidft_env)
+      ! RZK-WARNING: uncomment MO write subroutine if appropriate conditions
+      !CALL tidft_mainvar_write(tidft_env)
       CALL tidft_mainvar_orthonormalize(tidft_env)
 
       CALL timestop(handle)
@@ -902,7 +903,7 @@ CALL tidft_mainvar_write(tidft_env)
          IF (nspins == 1) THEN
             CALL dbcsr_scale(mat_proj(1), 0.5_dp)
          ENDIF
-   
+
          DO ispin = 1, nspins
             CALL dbcsr_release(mat_proj(ispin))
          ENDDO

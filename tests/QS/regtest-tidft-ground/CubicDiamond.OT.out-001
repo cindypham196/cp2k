@@ -1,0 +1,705 @@
+ DBCSR| CPU Multiplication driver                                           XSMM
+ DBCSR| Multrec recursion limit                                              512
+ DBCSR| Multiplication stack size                                           1000
+ DBCSR| Maximum elements for images                                    UNLIMITED
+ DBCSR| Multiplicative factor virtual images                                   1
+ DBCSR| Use multiplication densification                                       T
+ DBCSR| Multiplication size stacks                                             3
+ DBCSR| Use memory pool for CPU allocation                                     F
+ DBCSR| Number of 3D layers                                               SINGLE
+ DBCSR| Use MPI memory allocation                                              F
+ DBCSR| Use RMA algorithm                                                      F
+ DBCSR| Use Communication thread                                               T
+ DBCSR| Communication thread load                                             87
+ DBCSR| MPI: My node id                                                        0
+ DBCSR| MPI: Number of nodes                                                 120
+ DBCSR| OMP: Current number of threads                                         1
+ DBCSR| OMP: Max number of threads                                             1
+ DBCSR| Split modifier for TAS multiplication algorithm                  1.0E+00
+
+
+  **** **** ******  **  PROGRAM STARTED AT               2022-10-26 16:30:05.535
+ ***** ** ***  *** **   PROGRAM STARTED ON        bc12111.int.ets1.calculquebec.
+ **    ****   ******    PROGRAM STARTED BY                                   rzk
+ ***** **    ** ** **   PROGRAM PROCESS ID                                119355
+  **** **  *******  **  PROGRAM STARTED IN /lustre03/project/6037349/rzk/cp2k-de
+                                           v/cp2k-tidft/tests/QS/regtest-tidft-g
+                                           round
+
+ CP2K| version string:                    CP2K version 9.0 (Development Version)
+ CP2K| source code revision number:                                  git:bfd7b48
+ CP2K| cp2kflags: omp fftw3 parallel mpi3 scalapack xsmm mkl                    
+ CP2K| is freely available from                            https://www.cp2k.org/
+ CP2K| Program compiled at                          Wed Oct 26 14:54:40 EDT 2022
+ CP2K| Program compiled on                      beluga1.int.ets1.calculquebec.ca
+ CP2K| Program compiled for                 Beluga-Linux-x86-64-gfortran-openmpi
+ CP2K| Data directory path    /lustre03/project/6037349/rzk/cp2k-dev/cp2k-tidft/
+ CP2K| Input file name                                          CubicDiamond.inp
+
+ GLOBAL| Force Environment number                                              1
+ GLOBAL| Basis set file name                                        BASIS_MOLOPT
+ GLOBAL| Potential file name                                           POTENTIAL
+ GLOBAL| MM Potential file name                                     MM_POTENTIAL
+ GLOBAL| Coordinate file name                                      __STD_INPUT__
+ GLOBAL| Method name                                                        CP2K
+ GLOBAL| Project name                                             CARBON-DIAMOND
+ GLOBAL| Run type                                                         ENERGY
+ GLOBAL| FFT library                                                       FFTW3
+ GLOBAL| Diagonalization library                                       ScaLAPACK
+ GLOBAL| Orthonormality check for eigenvectors                          DISABLED
+ GLOBAL| Matrix multiplication library                                 ScaLAPACK
+ GLOBAL| All-to-all communication in single precision                          F
+ GLOBAL| FFTs using library dependent lengths                                  F
+ GLOBAL| Grid backend                                                       AUTO
+ GLOBAL| Global print level                                                  LOW
+ GLOBAL| MPI I/O enabled                                                       T
+ GLOBAL| Total number of message passing processes                           120
+ GLOBAL| Number of threads for this process                                    1
+ GLOBAL| This output is from process                                           0
+ GLOBAL| CPU model name                 Intel(R) Xeon(R) Gold 6148 CPU @ 2.40GHz
+ GLOBAL| CPUID                                                              1003
+ GLOBAL| Compiled for CPUID                                                    0
+
+ *** HINT in environment.F:869 :: The compiler target flags (generic) used ***
+ *** to build this binary cannot exploit all extensions of this CPU model  ***
+ *** (x86_avx512). Consider compiler target flags as part of FCFLAGS and   ***
+ *** CFLAGS (ARCH file).                                                   ***
+
+
+ MEMORY| system memory details [Kb]
+ MEMORY|                        rank 0           min           max       average
+ MEMORY| MemTotal            196638416     196638200     196638416     196638286
+ MEMORY| MemFree             173175880     173175880     175748340     174765620
+ MEMORY| Buffers                    76             0            76            25
+ MEMORY| Cached                4178720       3573516       4178720       3837478
+ MEMORY| Slab                  3771640       1383660       3771640       2203402
+ MEMORY| SReclaimable           915992        148776        915992        422160
+ MEMORY| MemLikelyFree       178270668     178270668     179657316     179025284
+
+
+ GENERATE|  Preliminary Number of Bonds generated:                             0
+ GENERATE|  Achieved consistency in connectivity generation.
+
+ *******************************************************************************
+ *******************************************************************************
+ **                                                                           **
+ **     #####                         ##              ##                      **
+ **    ##   ##            ##          ##              ##                      **
+ **   ##     ##                       ##            ######                    **
+ **   ##     ##  ##   ##  ##   #####  ##  ##   ####   ##    #####    #####    **
+ **   ##     ##  ##   ##  ##  ##      ## ##   ##      ##   ##   ##  ##   ##   **
+ **   ##  ## ##  ##   ##  ##  ##      ####     ###    ##   ######   ######    **
+ **    ##  ###   ##   ##  ##  ##      ## ##      ##   ##   ##       ##        **
+ **     #######   #####   ##   #####  ##  ##  ####    ##    #####   ##        **
+ **           ##                                                    ##        **
+ **                                                                           **
+ **                                                ... make the atoms dance   **
+ **                                                                           **
+ **            Copyright (C) by CP2K developers group (2000-2021)             **
+ **                      J. Chem. Phys. 152, 194103 (2020)                    **
+ **                                                                           **
+ *******************************************************************************
+
+
+ TOTAL NUMBERS AND MAXIMUM NUMBERS
+
+  Total number of            - Atomic kinds:                                   1
+                             - Atoms:                                        512
+                             - Shell sets:                                   512
+                             - Shells:                                      2560
+                             - Primitive Cartesian functions:               2560
+                             - Cartesian basis functions:                   7168
+                             - Spherical basis functions:                   6656
+
+  Maximum angular momentum of- Orbital basis functions:                        2
+                             - Local part of the GTH pseudopotential:          2
+                             - Non-local part of the GTH pseudopotential:      0
+
+
+ SCF PARAMETERS         Density guess:                                    ATOMIC
+                        --------------------------------------------------------
+                        max_scf:                                              50
+                        max_scf_history:                                       0
+                        max_diis:                                              4
+                        --------------------------------------------------------
+                        eps_scf:                                        1.00E-07
+                        eps_scf_history:                                0.00E+00
+                        eps_diis:                                       1.00E-01
+                        eps_eigval:                                     1.00E-05
+                        --------------------------------------------------------
+                        level_shift [a.u.]:                                 0.00
+                        --------------------------------------------------------
+                        Outer loop SCF in use 
+                        No variables optimised in outer loop
+                        eps_scf                                         1.00E-07
+                        max_scf                                               20
+                        No outer loop optimization
+                        step_size                                       5.00E-01
+
+ Number of electrons:                                                       2048
+ Number of occupied orbitals:                                               1024
+ Number of molecular orbitals:                                              1024
+
+ Number of orbital functions:                                               6656
+ Number of independent orbital functions:                                   6656
+
+ Extrapolation method: initial_guess
+
+
+ SCF WAVEFUNCTION OPTIMIZATION
+
+  ----------------------------------- OT ---------------------------------------
+  Minimizer      : CG                  : conjugate gradient
+  Preconditioner : FULL_SINGLE         : diagonalization based
+  Precond_solver : DEFAULT
+  Line search    : 2PNT                : 2 energies, one gradient
+  stepsize       :    0.15000000                  energy_gap     :    0.20000000
+  eps_taylor     :   0.10000E-15                  max_taylor     :             4
+  ----------------------------------- OT ---------------------------------------
+
+  Step     Update method      Time    Convergence         Total energy    Change
+  ------------------------------------------------------------------------------
+     1 OT CG       0.15E+00    9.6     0.01790277     -2721.2751818382 -2.72E+03
+     2 OT LS       0.11E+00    3.0                    -2821.1654296382
+     3 OT CG       0.11E+00    6.3     0.01946716     -2840.2866038477 -1.19E+02
+     4 OT LS       0.32E-01    3.4                    -2647.1254471682
+     5 OT CG       0.32E-01    6.5     0.03215814     -2827.0213182181  1.33E+01
+     6 OT LS       0.15E-01    3.1                    -2814.7360932755
+     7 OT CG       0.15E-01    6.5     0.01423672     -2866.9297311136 -3.99E+01
+     8 OT LS       0.49E-01    3.0                    -2880.0672901271
+     9 OT CG       0.49E-01    6.2     0.00740647     -2892.0069395211 -2.51E+01
+    10 OT LS       0.34E-01    3.4                    -2897.1605200933
+    11 OT CG       0.34E-01    6.3     0.00551148     -2898.2320280280 -6.23E+00
+    12 OT LS       0.73E-01    3.0                    -2903.6821416701
+    13 OT CG       0.73E-01    6.5     0.00359427     -2905.7168055125 -7.48E+00
+    14 OT LS       0.62E-01    3.1                    -2908.3460904985
+    15 OT CG       0.62E-01    6.6     0.00359543     -2908.4209718619 -2.70E+00
+    16 OT LS       0.53E-01    3.4                    -2910.6867015325
+    17 OT CG       0.53E-01    6.5     0.00238820     -2910.7650169756 -2.34E+00
+    18 OT LS       0.81E-01    3.0                    -2912.1435480717
+    19 OT CG       0.81E-01    6.5     0.00223315     -2912.3091361685 -1.54E+00
+    20 OT LS       0.59E-01    3.1                    -2913.1549651850
+    21 OT CG       0.59E-01    6.2     0.00161579     -2913.2925216403 -9.83E-01
+    22 OT LS       0.84E-01    3.1                    -2913.9722837860
+    23 OT CG       0.84E-01    6.7     0.00140333     -2914.0300957001 -7.38E-01
+    24 OT LS       0.67E-01    3.1                    -2914.4453325962
+    25 OT CG       0.67E-01    6.5     0.00103110     -2914.4738051514 -4.44E-01
+    26 OT LS       0.86E-01    3.0                    -2914.7687116992
+    27 OT CG       0.86E-01    6.2     0.00088793     -2914.7825370660 -3.09E-01
+    28 OT LS       0.77E-01    3.0                    -2914.9868091105
+    29 OT CG       0.77E-01    6.5     0.00079575     -2914.9895333997 -2.07E-01
+    30 OT LS       0.80E-01    3.0                    -2915.1603119608
+    31 OT CG       0.80E-01    6.2     0.00067619     -2915.1603312406 -1.71E-01
+    32 OT LS       0.99E-01    3.4                    -2915.3066866810
+    33 OT CG       0.99E-01    6.3     0.00067980     -2915.3106192099 -1.50E-01
+    34 OT LS       0.70E-01    3.4                    -2915.3976706785
+    35 OT CG       0.70E-01    6.9     0.00059064     -2915.4178354561 -1.07E-01
+    36 OT LS       0.11E+00    4.0                    -2915.5308215122
+    37 OT CG       0.11E+00    6.3     0.00058998     -2915.5464713192 -1.29E-01
+    38 OT LS       0.81E-01    3.3                    -2915.6265841946
+    39 OT CG       0.81E-01    6.3     0.00051275     -2915.6400669243 -9.36E-02
+    40 OT LS       0.90E-01    3.1                    -2915.7192536647
+    41 OT CG       0.90E-01    6.8     0.00047313     -2915.7198812935 -7.98E-02
+    42 OT LS       0.83E-01    3.2                    -2915.7818639162
+    43 OT CG       0.83E-01    6.4     0.00038589     -2915.7823463104 -6.25E-02
+    44 OT LS       0.87E-01    3.4                    -2915.8262733546
+    45 OT CG       0.87E-01    6.2     0.00035954     -2915.8263712710 -4.40E-02
+    46 OT LS       0.79E-01    3.1                    -2915.8606855974
+    47 OT CG       0.79E-01    6.5     0.00028101     -2915.8610662125 -3.47E-02
+    48 OT LS       0.89E-01    3.0                    -2915.8847999871
+    49 OT CG       0.89E-01    6.2     0.00025602     -2915.8851252384 -2.41E-02
+    50 OT LS       0.83E-01    3.1                    -2915.9034431308
+
+  Leaving inner SCF loop after reaching    50 steps.
+
+
+  Electronic density on regular grids:      -2047.9999999998        0.0000000002
+  Core density on regular grids:             2047.9999999810       -0.0000000190
+  Total charge density on r-space grids:       -0.0000000188
+  Total charge density g-space grids:          -0.0000000188
+
+  Overlap energy of the core charge distribution:               0.00000590918687
+  Self energy of the core charge distribution:              -6827.52405850378818
+  Core Hamiltonian energy:                                   2157.74225094665871
+  Hartree energy:                                            2666.34887423109012
+  Exchange-correlation energy:                               -910.70180975300559
+  Dispersion energy:                                           -1.76870596093400
+
+  Total energy:                                             -2915.90344313079140
+
+  outer SCF iter =    1 RMS gradient =   0.26E-03 energy =      -2915.9034431308
+
+  ----------------------------------- OT ---------------------------------------
+  Minimizer      : CG                  : conjugate gradient
+  Preconditioner : FULL_SINGLE         : diagonalization based
+  Precond_solver : DEFAULT
+  Line search    : 2PNT                : 2 energies, one gradient
+  stepsize       :    0.15000000                  energy_gap     :    0.20000000
+  eps_taylor     :   0.10000E-15                  max_taylor     :             4
+  ----------------------------------- OT ---------------------------------------
+
+  Step     Update method      Time    Convergence         Total energy    Change
+  ------------------------------------------------------------------------------
+     1 OT CG       0.15E+00   16.0     0.00038379     -2915.9035742298 -1.84E-02
+     2 OT LS       0.13E+00    3.4                    -2915.9675003487
+     3 OT CG       0.13E+00    6.4     0.00034370     -2915.9690792552 -6.55E-02
+     4 OT LS       0.46E-01    2.9                    -2915.9252130503
+     5 OT CG       0.46E-01    6.4     0.00008600     -2915.9874748392 -1.84E-02
+     6 OT LS       0.93E-01    2.9                    -2915.9892175662
+     7 OT CG       0.93E-01    6.1     0.00006024     -2915.9898225651 -2.35E-03
+     8 OT LS       0.65E-01    3.0                    -2915.9904809404
+     9 OT CG       0.65E-01    6.7     0.00002492     -2915.9906295209 -8.07E-04
+    10 OT LS       0.76E-01    3.1                    -2915.9907876177
+    11 OT CG       0.76E-01    6.1     0.00001325     -2915.9907910162 -1.61E-04
+    12 OT LS       0.80E-01    3.2                    -2915.9908387075
+    13 OT CG       0.80E-01    6.1     0.00000702     -2915.9908387994 -4.78E-05
+    14 OT LS       0.71E-01    3.0                    -2915.9908506345
+    15 OT CG       0.71E-01    6.5     0.00000380     -2915.9908508010 -1.20E-05
+    16 OT LS       0.81E-01    2.9                    -2915.9908547514
+    17 OT CG       0.81E-01    6.1     0.00000201     -2915.9908548121 -4.01E-06
+    18 OT LS       0.76E-01    3.2                    -2915.9908558513
+    19 OT CG       0.76E-01    6.1     0.00000120     -2915.9908558574 -1.05E-06
+    20 OT LS       0.72E-01    3.0                    -2915.9908562124
+    21 OT CG       0.72E-01    6.8     0.00000068     -2915.9908562131 -3.56E-07
+    22 OT LS       0.67E-01    3.1                    -2915.9908563175
+    23 OT CG       0.67E-01    6.1     0.00000035     -2915.9908563182 -1.05E-07
+    24 OT LS       0.77E-01    2.9                    -2915.9908563494
+    25 OT CG       0.77E-01    6.5     0.00000016     -2915.9908563499 -3.18E-08
+    26 OT LS       0.81E-01    2.9                    -2915.9908563571
+    27 OT CG       0.81E-01    6.2     0.00000008     -2915.9908563571 -7.18E-09
+
+  *** SCF run converged in    27 steps ***
+
+
+  Electronic density on regular grids:      -2047.9999999994        0.0000000006
+  Core density on regular grids:             2047.9999999810       -0.0000000190
+  Total charge density on r-space grids:       -0.0000000184
+  Total charge density g-space grids:          -0.0000000184
+
+  Overlap energy of the core charge distribution:               0.00000590918687
+  Self energy of the core charge distribution:              -6827.52405850378818
+  Core Hamiltonian energy:                                   2157.56237502402428
+  Hartree energy:                                            2666.43918835000113
+  Exchange-correlation energy:                               -910.69966117558374
+  Dispersion energy:                                           -1.76870596093400
+
+  Total energy:                                             -2915.99085635709298
+
+  outer SCF iter =    2 RMS gradient =   0.75E-07 energy =      -2915.9908563571
+  outer SCF loop converged in   2 iterations or   77 steps
+
+
+ ENERGY| Total FORCE_EVAL ( QS ) energy [a.u.]:            -2915.990856357092980
+
+ -------------------------------------------------------------------------------
+ -                                                                             -
+ -                                DBCSR STATISTICS                             -
+ -                                                                             -
+ -------------------------------------------------------------------------------
+ COUNTER                                    TOTAL       BLAS       SMM       ACC
+ flops    13 x    32 x    32            872415232       0.0%    100.0%      0.0%
+ flops   624 x    64 x   104          38144311296     100.0%      0.0%      0.0%
+ flops   637 x    64 x   104          38938984448     100.0%      0.0%      0.0%
+ flops   676 x    64 x   104          41323003904     100.0%      0.0%      0.0%
+ flops   689 x    64 x   104          42117677056     100.0%      0.0%      0.0%
+ flops   624 x    64 x   117          49042685952     100.0%      0.0%      0.0%
+ flops   637 x    64 x   117          50064408576     100.0%      0.0%      0.0%
+ flops   676 x    64 x   117          53129576448     100.0%      0.0%      0.0%
+ flops   689 x    64 x   117          54151299072     100.0%      0.0%      0.0%
+ flops   128 x    64 x    32          58518929408       0.0%    100.0%      0.0%
+ flops   128 x    64 x   104          74046242816       0.0%    100.0%      0.0%
+ flops   650 x    64 x   104          79467315200     100.0%      0.0%      0.0%
+ flops   663 x    64 x   104          81056661504     100.0%      0.0%      0.0%
+ flops   702 x    64 x   104          85824700416     100.0%      0.0%      0.0%
+ flops   624 x    64 x    32          87350575104       0.0%    100.0%      0.0%
+ flops   637 x    64 x    32          89170378752       0.0%    100.0%      0.0%
+ flops   676 x    64 x    32          94629789696       0.0%    100.0%      0.0%
+ flops   128 x    64 x   117          95202312192       0.0%    100.0%      0.0%
+ flops   689 x    64 x    32          96449593344       0.0%    100.0%      0.0%
+ flops   650 x    64 x   117         102172262400     100.0%      0.0%      0.0%
+ flops   663 x    64 x   117         104215707648     100.0%      0.0%      0.0%
+ flops   702 x    64 x   117         110346043392     100.0%      0.0%      0.0%
+ flops   624 x    96 x   104         114432933888     100.0%      0.0%      0.0%
+ flops   637 x    96 x   104         116816953344     100.0%      0.0%      0.0%
+ flops   676 x    96 x   104         123969011712     100.0%      0.0%      0.0%
+ flops   689 x    96 x   104         126353031168     100.0%      0.0%      0.0%
+ flops   624 x    96 x   117         147128057856     100.0%      0.0%      0.0%
+ flops   637 x    96 x   117         150193225728     100.0%      0.0%      0.0%
+ flops   676 x    96 x   117         159388729344     100.0%      0.0%      0.0%
+ flops   689 x    96 x   117         162453897216     100.0%      0.0%      0.0%
+ flops   128 x    96 x    32         175556788224       0.0%    100.0%      0.0%
+ flops    96 x    64 x    32         175556788224       0.0%    100.0%      0.0%
+ flops   650 x    64 x    32         181980364800       0.0%    100.0%      0.0%
+ flops   663 x    64 x    32         185619972096       0.0%    100.0%      0.0%
+ flops   702 x    64 x    32         196538793984       0.0%    100.0%      0.0%
+ flops   128 x    96 x   104         222138728448       0.0%    100.0%      0.0%
+ flops    96 x    64 x   104         222138728448       0.0%    100.0%      0.0%
+ flops   650 x    96 x   104         238401945600     100.0%      0.0%      0.0%
+ flops   663 x    96 x   104         243169984512     100.0%      0.0%      0.0%
+ flops   702 x    96 x   104         257474101248     100.0%      0.0%      0.0%
+ flops   624 x    96 x    32         262051725312       0.0%    100.0%      0.0%
+ flops   637 x    96 x    32         267511136256       0.0%    100.0%      0.0%
+ flops   676 x    96 x    32         283889369088       0.0%    100.0%      0.0%
+ flops   128 x    96 x   117         285606936576       0.0%    100.0%      0.0%
+ flops    96 x    64 x   117         285606936576       0.0%    100.0%      0.0%
+ flops   689 x    96 x    32         289348780032     100.0%      0.0%      0.0%
+ flops   650 x    96 x   117         306516787200     100.0%      0.0%      0.0%
+ flops   663 x    96 x   117         312647122944     100.0%      0.0%      0.0%
+ flops   702 x    96 x   117         331038130176     100.0%      0.0%      0.0%
+ flops    96 x    96 x    32         526670364672       0.0%    100.0%      0.0%
+ flops   650 x    96 x    32         545941094400       0.0%    100.0%      0.0%
+ flops   663 x    96 x    32         556859916288       0.0%    100.0%      0.0%
+ flops   702 x    96 x    32         589616381952     100.0%      0.0%      0.0%
+ flops    96 x    96 x   104         666416185344       0.0%    100.0%      0.0%
+ flops    96 x    96 x   117         856820809728       0.0%    100.0%      0.0%
+ flops    13 x    13 x    32        3538516180992       0.0%    100.0%      0.0%
+ flops    13 x    32 x    13       11228692873216       0.0%    100.0%      0.0%
+ flops inhomo. stacks                           0       0.0%      0.0%      0.0%
+ flops total                        25.859298E+12      17.8%     82.2%      0.0%
+ flops max/rank                    287.244346E+09      25.6%     74.4%      0.0%
+ matmuls inhomo. stacks                         0       0.0%      0.0%      0.0%
+ matmuls total                         1369735776       0.0%    100.0%      0.0%
+ number of processed stacks               6459232       7.7%     92.3%      0.0%
+ average stack size                                     1.0     229.8       0.0
+ marketing flops                    29.474721E+12
+ -------------------------------------------------------------------------------
+ # multiplications                           1144
+ max memory usage/rank             368.156672E+06
+ # max total images/rank                        6
+ # max 3D layers                                1
+ # MPI messages exchanged                14963520
+ MPI messages size (bytes):
+  total size                         1.274629E+12
+  min size                           0.000000E+00
+  max size                         657.072000E+03
+  average size                      85.182414E+03
+ MPI breakdown and total messages size (bytes):
+             size <=      128             4811928                        0
+       128 < size <=     8192                 576                  4718592
+      8192 < size <=    32768             3964288              93306486784
+     32768 < size <=   131072             3606720             292531732480
+    131072 < size <=  4194304             2580008             888728502272
+   4194304 < size <= 16777216                   0                        0
+  16777216 < size                               0                        0
+ -------------------------------------------------------------------------------
+
+ *** WARNING in dbcsr_mm.F:294 :: Using a non-square number of MPI ranks ***
+ *** might lead to poor performance. Used ranks: 120 Suggested: 121 225  ***
+
+ -------------------------------------------------------------------------------
+ -                                                                             -
+ -                      DBCSR MESSAGE PASSING PERFORMANCE                      -
+ -                                                                             -
+ -------------------------------------------------------------------------------
+ ROUTINE             CALLS      AVE VOLUME [Bytes]
+ MP_Bcast               58                     12.
+ MP_Allreduce         5964                     77.
+ MP_Alltoall          3930                  70192.
+ MP_ISend           259814                  44708.
+ MP_IRecv           260768                  44058.
+ -------------------------------------------------------------------------------
+
+ -------------------------------------------------------------------------------
+ -                                                                             -
+ -                                GRID STATISTICS                              -
+ -                                                                             -
+ -------------------------------------------------------------------------------
+ LP    KERNEL             BACKEND                              COUNT     PERCENT
+ 4     collocate ortho    REF                               97204224      66.64%
+ 4     integrate ortho    REF                               48602112      33.32%
+ 0     collocate general  REF                                  61440       0.04%
+ -------------------------------------------------------------------------------
+
+ MEMORY| Estimated peak process memory [MiB]                                 352
+
+ -------------------------------------------------------------------------------
+ -                                                                             -
+ -                         MESSAGE PASSING PERFORMANCE                         -
+ -                                                                             -
+ -------------------------------------------------------------------------------
+
+ ROUTINE             CALLS      AVE VOLUME [Bytes]
+ MP_Group                5
+ MP_Bcast             3473                  54109.
+ MP_Allreduce         9153                    419.
+ MP_Sync               349
+ MP_Alltoall          1578                4260703.
+ MP_SendRecv           476                   5138.
+ MP_ISendRecv        41769                   5232.
+ MP_Wait             49765
+ MP_comm_split          55
+ MP_ISend            10410                  56260.
+ MP_IRecv            10137                  57609.
+ -------------------------------------------------------------------------------
+
+
+ -------------------------------------------------------------------------------
+ -                                                                             -
+ -                           R E F E R E N C E S                               -
+ -                                                                             -
+ -------------------------------------------------------------------------------
+ 
+ CP2K version 9.0 (Development Version), the CP2K developers group (2021).
+ CP2K is freely available from https://www.cp2k.org/ .
+
+ Kuehne,Thomas D.; Iannuzzi,Marcella; Del Ben,Mauro;
+ Rybkin,Vladimir V.; Seewald,Patrick; Stein,Frederick; Laino,Teodoro;
+ Khaliullin,Rustam Z.; Schuett,Ole; Schiffmann,Florian; Golze,Dorothea;
+ Wilhelm,Jan; Chulkov,Sergey; Bani-Hashemian,Mohammad Hossein;
+ Weber,Valery; Borstnik,Urban; Taillefumier,Mathieu;
+ Jakobovits,Alice Shoshana; Lazzaro,Alfio; Pabst,Hans; Mueller,Tiziano;
+ Schade,Robert; Guidon,Manuel; Andermatt,Samuel; Holmberg,Nico;
+ Schenter,Gregory K.; Hehn,Anna; Bussy,Augustin; Belleflamme,Fabian;
+ Tabacchi,Gloria; Gloess,Andreas; Lass,Michael; Bethune,Iain;
+ Mundy,Christopher J.; Plessl,Christian; Watkins,Matt;
+ VandeVondele,Joost; Krack,Matthias; Hutter,Juerg. 
+ The Journal of Chemical Physics, 152 (19), (2020). 
+ CP2K: An electronic structure and molecular dynamics software package -
+ Quickstep: Efficient and accurate electronic structure calculations.
+ https://doi.org/10.1063/5.0007045
+
+ Goerigk, Lars; Hansen, Andreas; Bauer, Christoph; Ehrlich, Stephan;
+ Najibi, Asim; Grimme, Stefan. , 19 (48), (2017). 
+ A look at the density functional theory zoo with the advanced GMTKN55 database
+ for general main group thermochemistry, kinetics and noncovalent interactions.
+ https://doi.org/10.1039/C7CP04913G
+
+ Schuett, Ole; Messmer, Peter; Hutter, Juerg; VandeVondele, Joost. 
+ Electronic Structure Calculations on Graphics Processing Units, John
+ Wiley & Sons, Ltd, 173-190 (2016). 
+ GPU-Accelerated Sparse Matrix-Matrix Multiplication for
+ Linear Scaling Density Functional Theory.
+ https://doi.org/10.1002/9781118670712.ch8
+
+ Heinecke, A; Henry, G; Hutchinson, M; Pabst, H. 
+ Proceedings of Intl. Supercomputing Conference, 981-991 (2016). 
+ LIBXSMM: Accelerating Small Matrix Multiplications
+ by Runtime Code Generation.
+ https://doi.org/10.1109/SC.2016.83
+
+ Borstnik, U; VandeVondele, J; Weber, V; Hutter, J. 
+ PARALLEL COMPUTING, 40 (5-6), 47-58 (2014). 
+ Sparse matrix multiplication: The distributed block-compressed sparse
+ row library.
+ https://doi.org/10.1016/j.parco.2014.03.012
+
+ Hutter, J; Iannuzzi, M; Schiffmann, F; VandeVondele, J. 
+ WIREs Comput Mol Sci., 4 (1), 15-25 (2014). 
+ CP2K: atomistic simulations of condensed matter systems.
+ https://doi.org/10.1002/wcms.1159
+
+ Grimme, S; Ehrlich, S; Goerigk, L. 
+ JOURNAL OF COMPUTATIONAL CHEMISTRY, 32, 1456 (2011). 
+ Effect of the damping function in dispersion corrected density functional theory.
+ https://doi.org/10.1002/jcc.21759
+
+ Grimme, S; Antony, J; Ehrlich, S; Krieg, H. 
+ JOURNAL OF CHEMICAL PHYSICS, 132 (15), 154104 (2010). 
+ A consistent and accurate ab initio parametrization of density
+ functional dispersion correction (DFT-D) for the 94 elements H-Pu.
+ https://doi.org/10.1063/1.3382344
+
+ VandeVondele, J; Hutter, J. 
+ JOURNAL OF CHEMICAL PHYSICS, 127 (11), 114105 (2007). 
+ Gaussian basis sets for accurate calculations on molecular systems in
+ gas and condensed phases.
+ https://doi.org/10.1063/1.2770708
+
+ Krack, M. 
+ THEORETICAL CHEMISTRY ACCOUNTS, 114 (1-3), 145-152 (2005). 
+ Pseudopotentials for H to Kr optimized for gradient-corrected
+ exchange-correlation functionals.
+ https://doi.org/10.1007/s00214-005-0655-y
+
+ VandeVondele, J; Krack, M; Mohamed, F; Parrinello, M; Chassaing, T;
+ Hutter, J. COMPUTER PHYSICS COMMUNICATIONS, 167 (2), 103-128 (2005). 
+ QUICKSTEP: Fast and accurate density functional calculations using a
+ mixed Gaussian and plane waves approach.
+ https://doi.org/10.1016/j.cpc.2004.12.014
+
+ Frigo, M; Johnson, SG. 
+ PROCEEDINGS OF THE IEEE, 93 (2), 216-231 (2005). 
+ The design and implementation of FFTW3.
+ https://doi.org/10.1109/JPROC.2004.840301
+
+ VandeVondele, J; Hutter, J. 
+ JOURNAL OF CHEMICAL PHYSICS, 118 (10), 4365-4369 (2003). 
+ An efficient orbital transformation method for electronic structure
+ calculations.
+ https://doi.org/10.1063/1.1543154
+
+ Hartwigsen, C; Goedecker, S; Hutter, J. 
+ PHYSICAL REVIEW B, 58 (7), 3641-3662 (1998). 
+ Relativistic separable dual-space Gaussian pseudopotentials from H to Rn.
+ https://doi.org/10.1103/PhysRevB.58.3641
+
+ Lippert, G; Hutter, J; Parrinello, M. 
+ MOLECULAR PHYSICS, 92 (3), 477-487 (1997). 
+ A hybrid Gaussian and plane wave density functional scheme.
+ https://doi.org/10.1080/002689797170220
+
+ Perdew, JP; Burke, K; Ernzerhof, M. 
+ PHYSICAL REVIEW LETTERS, 77 (18), 3865-3868 (1996). 
+ Generalized gradient approximation made simple.
+ https://doi.org/10.1103/PhysRevLett.77.3865
+
+ Goedecker, S; Teter, M; Hutter, J. 
+ PHYSICAL REVIEW B, 54 (3), 1703-1710 (1996). 
+ Separable dual-space Gaussian pseudopotentials.
+ https://doi.org/10.1103/PhysRevB.54.1703
+
+
+ -------------------------------------------------------------------------------
+ -                                                                             -
+ -                                T I M I N G                                  -
+ -                                                                             -
+ -------------------------------------------------------------------------------
+ SUBROUTINE                       CALLS  ASD         SELF TIME        TOTAL TIME
+                                MAXIMUM       AVERAGE  MAXIMUM  AVERAGE  MAXIMUM
+ CP2K                                 1  1.0    0.031    0.041  400.367  400.423
+ qs_energies                          1  2.0    0.001    0.001  400.126  400.182
+ scf_env_do_scf                       1  3.0    0.000    0.001  381.604  381.657
+ scf_env_do_scf_inner_loop           77  4.0    0.002    0.007  363.522  363.573
+ qs_rho_update_rho                   78  5.0    0.000    0.001  209.445  209.550
+ calculate_rho_elec                  78  6.0    0.020    0.033  209.445  209.549
+ grid_collocate_task_list            78  7.0  197.200  201.146  197.200  201.146
+ qs_ks_update_qs_env                 79  5.0    0.001    0.001  116.516  116.668
+ rebuild_ks_matrix                   77  6.0    0.000    0.001  116.285  116.434
+ qs_ks_build_kohn_sham_matrix        77  7.0    0.008    0.009  116.284  116.434
+ sum_up_and_integrate                39  8.0    0.005    0.009  106.693  106.707
+ integrate_v_rspace                  39  9.0    0.001    0.001  106.688  106.700
+ grid_integrate_task_list            39 10.0  101.177  103.529  101.177  103.529
+ qs_scf_new_mos                      77  5.0    0.000    0.001   45.641   45.824
+ qs_scf_loop_do_ot                   77  6.0    0.000    0.001   45.641   45.824
+ dbcsr_multiply_generic            1144  9.8    0.083    0.087   43.577   44.199
+ ot_scf_mini                         77  7.0    0.002    0.002   42.203   42.418
+ multiply_cannon                   1144 10.8    0.172    0.184   35.748   37.379
+ multiply_cannon_loop              1144 11.8    0.484    0.508   34.308   35.745
+ mp_waitall_1                    162270 13.2   28.127   29.524   28.127   29.524
+ multiply_cannon_metrocomm3       68640 12.8    0.064    0.068   22.860   26.204
+ init_scf_loop                        2  4.0    0.000    0.000   18.077   18.080
+ ot_mini                             77  8.0    0.001    0.001   15.679   15.953
+ qs_energies_init_hamiltonians        1  3.0    0.000    0.001   15.233   15.235
+ cp_fm_syevd                         55 10.8    0.000    0.001   14.707   14.713
+ cp_fm_redistribute_end              55 11.8    6.688   14.636    6.701   14.646
+ calculate_dispersion_pairpot         1  4.0   12.105   14.583   14.589   14.591
+ cp_fm_syevd_base                    55 11.4    7.917   14.506    7.917   14.506
+ qs_ot_get_p                         79  7.9    0.001    0.023   12.123   12.678
+ rs_pw_transfer                     586  9.0    0.006    0.007   11.226   11.941
+ prepare_preconditioner               2  5.0    0.000    0.000   11.853   11.870
+ make_preconditioner                  2  6.0    0.000    0.000   11.853   11.870
+ density_rs2pw                       78  7.0    0.003    0.004   11.198   11.864
+ make_full_single                     2  7.0    0.002    0.003   11.144   11.150
+ mp_waitany                        7875 11.0    9.870   10.601    9.870   10.601
+ qs_ot_get_derivative                39  9.0    0.000    0.000    9.788   10.031
+ rs_pw_transfer_RS2PW_150            79  9.0    0.182    0.196    8.687    9.847
+ multiply_cannon_multrec          68640 12.8    7.868    9.156    7.875    9.164
+ qs_ot_p2m_diag                      51  9.0    0.053    0.075    7.977    8.021
+ -------------------------------------------------------------------------------
+
+ The number of warnings for this run is : 1
+ 
+ -------------------------------------------------------------------------------
+  **** **** ******  **  PROGRAM ENDED AT                 2022-10-26 16:36:57.249
+ ***** ** ***  *** **   PROGRAM RAN ON            bc12111.int.ets1.calculquebec.
+ **    ****   ******    PROGRAM RAN BY                                       rzk
+ ***** **    ** ** **   PROGRAM PROCESS ID                                119355
+  **** **  *******  **  PROGRAM STOPPED IN /lustre03/project/6037349/rzk/cp2k-de
+                                           v/cp2k-tidft/tests/QS/regtest-tidft-g
+                                           round
+[1666816617.360442] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4193dc0 was not returned to mpool ucp_requests
+[1666816617.360475] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4193f80 was not returned to mpool ucp_requests
+[1666816617.360477] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4194140 was not returned to mpool ucp_requests
+[1666816617.360479] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4194300 was not returned to mpool ucp_requests
+[1666816617.360480] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4194840 was not returned to mpool ucp_requests
+[1666816617.360481] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4194f40 was not returned to mpool ucp_requests
+[1666816617.360483] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4195640 was not returned to mpool ucp_requests
+[1666816617.360484] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4195d40 was not returned to mpool ucp_requests
+[1666816617.360485] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4196280 was not returned to mpool ucp_requests
+[1666816617.360486] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4198040 was not returned to mpool ucp_requests
+[1666816617.360488] [bc12111:119365:0]          mpool.c:38   UCX  WARN  object 0x4199700 was not returned to mpool ucp_requests
+[1666816617.363181] [bc12111:119363:0]          mpool.c:38   UCX  WARN  object 0x5566580 was not returned to mpool ucp_requests
+[1666816617.363214] [bc12111:119363:0]          mpool.c:38   UCX  WARN  object 0x5567a80 was not returned to mpool ucp_requests
+[1666816617.363216] [bc12111:119363:0]          mpool.c:38   UCX  WARN  object 0x5568340 was not returned to mpool ucp_requests
+[1666816617.363218] [bc12111:119363:0]          mpool.c:38   UCX  WARN  object 0x5568dc0 was not returned to mpool ucp_requests
+[1666816617.363219] [bc12111:119363:0]          mpool.c:38   UCX  WARN  object 0x5569d80 was not returned to mpool ucp_requests
+[1666816617.360703] [bc12111:119367:0]          mpool.c:38   UCX  WARN  object 0x4766d80 was not returned to mpool ucp_requests
+[1666816617.360734] [bc12111:119367:0]          mpool.c:38   UCX  WARN  object 0x4767100 was not returned to mpool ucp_requests
+[1666816617.360736] [bc12111:119367:0]          mpool.c:38   UCX  WARN  object 0x4767480 was not returned to mpool ucp_requests
+[1666816617.360738] [bc12111:119367:0]          mpool.c:38   UCX  WARN  object 0x476a580 was not returned to mpool ucp_requests
+[1666816617.360739] [bc12111:119367:0]          mpool.c:38   UCX  WARN  object 0x476ac80 was not returned to mpool ucp_requests
+[1666816617.363248] [bc12111:119368:0]          mpool.c:38   UCX  WARN  object 0x4389d00 was not returned to mpool ucp_requests
+[1666816617.363280] [bc12111:119368:0]          mpool.c:38   UCX  WARN  object 0x438a5c0 was not returned to mpool ucp_requests
+[1666816617.363282] [bc12111:119368:0]          mpool.c:38   UCX  WARN  object 0x438acc0 was not returned to mpool ucp_requests
+[1666816617.363184] [bc12111:119370:0]          mpool.c:38   UCX  WARN  object 0x5adb340 was not returned to mpool ucp_requests
+[1666816617.362530] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49cef00 was not returned to mpool ucp_requests
+[1666816617.362557] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49cf440 was not returned to mpool ucp_requests
+[1666816617.362559] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49cfb40 was not returned to mpool ucp_requests
+[1666816617.362561] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49d0400 was not returned to mpool ucp_requests
+[1666816617.362562] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49d2a80 was not returned to mpool ucp_requests
+[1666816617.362564] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49d3180 was not returned to mpool ucp_requests
+[1666816617.362565] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49d3880 was not returned to mpool ucp_requests
+[1666816617.362566] [bc12111:119373:0]          mpool.c:38   UCX  WARN  object 0x49d4a00 was not returned to mpool ucp_requests
+[1666816617.359839] [bc12111:119366:0]          mpool.c:38   UCX  WARN  object 0x569d2c0 was not returned to mpool ucp_requests
+[1666816617.359875] [bc12111:119366:0]          mpool.c:38   UCX  WARN  object 0x569f240 was not returned to mpool ucp_requests
+[1666816617.359877] [bc12111:119366:0]          mpool.c:38   UCX  WARN  object 0x569f5c0 was not returned to mpool ucp_requests
+[1666816617.359878] [bc12111:119366:0]          mpool.c:38   UCX  WARN  object 0x56a0e40 was not returned to mpool ucp_requests
+[1666816617.359880] [bc12111:119366:0]          mpool.c:38   UCX  WARN  object 0x56a2180 was not returned to mpool ucp_requests
+[1666816617.368762] [bc12111:119361:0]          mpool.c:38   UCX  WARN  object 0x4c649c0 was not returned to mpool ucp_requests
+[1666816617.368796] [bc12111:119361:0]          mpool.c:38   UCX  WARN  object 0x4c657c0 was not returned to mpool ucp_requests
+[1666816617.368798] [bc12111:119361:0]          mpool.c:38   UCX  WARN  object 0x4c65980 was not returned to mpool ucp_requests
+[1666816617.368800] [bc12111:119361:0]          mpool.c:38   UCX  WARN  object 0x4c66400 was not returned to mpool ucp_requests
+[1666816617.368801] [bc12111:119361:0]          mpool.c:38   UCX  WARN  object 0x4c67ac0 was not returned to mpool ucp_requests
+[1666816617.369903] [bc12111:119371:0]          mpool.c:38   UCX  WARN  object 0x3f85a80 was not returned to mpool ucp_requests
+[1666816617.369941] [bc12111:119371:0]          mpool.c:38   UCX  WARN  object 0x3f89280 was not returned to mpool ucp_requests
+[1666816617.371586] [bc12111:119357:0]          mpool.c:38   UCX  WARN  object 0x5a28700 was not returned to mpool ucp_requests
+[1666816617.371616] [bc12111:119357:0]          mpool.c:38   UCX  WARN  object 0x5a28fc0 was not returned to mpool ucp_requests
+[1666816617.371618] [bc12111:119357:0]          mpool.c:38   UCX  WARN  object 0x5a2c0c0 was not returned to mpool ucp_requests
+[1666816617.371756] [bc12111:119360:0]          mpool.c:38   UCX  WARN  object 0x5b955c0 was not returned to mpool ucp_requests
+[1666816617.371792] [bc12111:119360:0]          mpool.c:38   UCX  WARN  object 0x5b98340 was not returned to mpool ucp_requests
+[1666816617.371794] [bc12111:119360:0]          mpool.c:38   UCX  WARN  object 0x5b994c0 was not returned to mpool ucp_requests
+[1666816617.371656] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f61f00 was not returned to mpool ucp_requests
+[1666816617.371686] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f620c0 was not returned to mpool ucp_requests
+[1666816617.371688] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f62280 was not returned to mpool ucp_requests
+[1666816617.371690] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f63400 was not returned to mpool ucp_requests
+[1666816617.371691] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f64900 was not returned to mpool ucp_requests
+[1666816617.371692] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f65000 was not returned to mpool ucp_requests
+[1666816617.371694] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f658c0 was not returned to mpool ucp_requests
+[1666816617.371695] [bc12111:119374:0]          mpool.c:38   UCX  WARN  object 0x3f66f80 was not returned to mpool ucp_requests
+[1666816617.375254] [bc12111:119358:0]          mpool.c:38   UCX  WARN  object 0x3e137c0 was not returned to mpool ucp_requests
+[1666816617.375286] [bc12111:119358:0]          mpool.c:38   UCX  WARN  object 0x3e14240 was not returned to mpool ucp_requests
+[1666816617.375288] [bc12111:119358:0]          mpool.c:38   UCX  WARN  object 0x3e14400 was not returned to mpool ucp_requests
+[1666816617.374298] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e3da40 was not returned to mpool ucp_requests
+[1666816617.374333] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e3e840 was not returned to mpool ucp_requests
+[1666816617.374335] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e3ea00 was not returned to mpool ucp_requests
+[1666816617.374337] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e3ed80 was not returned to mpool ucp_requests
+[1666816617.374338] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e3ef40 was not returned to mpool ucp_requests
+[1666816617.374340] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e42740 was not returned to mpool ucp_requests
+[1666816617.374341] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e42ac0 was not returned to mpool ucp_requests
+[1666816617.374342] [bc12111:119355:0]          mpool.c:38   UCX  WARN  object 0x4e42c80 was not returned to mpool ucp_requests
+[1666816617.375800] [bc12111:119356:0]          mpool.c:38   UCX  WARN  object 0x576c880 was not returned to mpool ucp_requests
+[1666816617.375836] [bc12111:119356:0]          mpool.c:38   UCX  WARN  object 0x576d140 was not returned to mpool ucp_requests
+[1666816617.375838] [bc12111:119356:0]          mpool.c:38   UCX  WARN  object 0x576d4c0 was not returned to mpool ucp_requests
+[1666816617.375840] [bc12111:119356:0]          mpool.c:38   UCX  WARN  object 0x576f600 was not returned to mpool ucp_requests
+[1666816617.375841] [bc12111:119356:0]          mpool.c:38   UCX  WARN  object 0x576f980 was not returned to mpool ucp_requests
+[1666816617.374222] [bc12111:119372:0]          mpool.c:38   UCX  WARN  object 0x50d1880 was not returned to mpool ucp_requests
+[1666816617.374252] [bc12111:119372:0]          mpool.c:38   UCX  WARN  object 0x50d5e80 was not returned to mpool ucp_requests
+[1666816617.375530] [bc12111:119359:0]          mpool.c:38   UCX  WARN  object 0x3caa580 was not returned to mpool ucp_requests
+[1666816617.375565] [bc12111:119359:0]          mpool.c:38   UCX  WARN  object 0x3cab1c0 was not returned to mpool ucp_requests
+[1666816617.375568] [bc12111:119359:0]          mpool.c:38   UCX  WARN  object 0x3cabe00 was not returned to mpool ucp_requests
+[1666816617.375569] [bc12111:119359:0]          mpool.c:38   UCX  WARN  object 0x3cac880 was not returned to mpool ucp_requests
+[1666816617.375571] [bc12111:119359:0]          mpool.c:38   UCX  WARN  object 0x3caca40 was not returned to mpool ucp_requests
+[1666816617.375572] [bc12111:119359:0]          mpool.c:38   UCX  WARN  object 0x3cacf80 was not returned to mpool ucp_requests
+[1666816617.372492] [bc12111:119362:0]          mpool.c:38   UCX  WARN  object 0x47db600 was not returned to mpool ucp_requests
+[1666816617.372524] [bc12111:119362:0]          mpool.c:38   UCX  WARN  object 0x47dc940 was not returned to mpool ucp_requests
+[1666816617.372831] [bc12111:119364:0]          mpool.c:38   UCX  WARN  object 0x5a78a40 was not returned to mpool ucp_requests
+[1666816617.372864] [bc12111:119364:0]          mpool.c:38   UCX  WARN  object 0x5a78c00 was not returned to mpool ucp_requests
+[1666816617.372866] [bc12111:119364:0]          mpool.c:38   UCX  WARN  object 0x5a7a100 was not returned to mpool ucp_requests
+[1666816617.372868] [bc12111:119364:0]          mpool.c:38   UCX  WARN  object 0x5a7a2c0 was not returned to mpool ucp_requests
+[1666816617.372869] [bc12111:119364:0]          mpool.c:38   UCX  WARN  object 0x5a7a9c0 was not returned to mpool ucp_requests
+[1666816617.374633] [bc12111:119369:0]          mpool.c:38   UCX  WARN  object 0x4ad8f80 was not returned to mpool ucp_requests
+[1666816617.374662] [bc12111:119369:0]          mpool.c:38   UCX  WARN  object 0x4ada800 was not returned to mpool ucp_requests
+[1666816617.374664] [bc12111:119369:0]          mpool.c:38   UCX  WARN  object 0x4adab80 was not returned to mpool ucp_requests
+[1666816617.374666] [bc12111:119369:0]          mpool.c:38   UCX  WARN  object 0x4adbec0 was not returned to mpool ucp_requests
+[1666816617.374667] [bc12111:119369:0]          mpool.c:38   UCX  WARN  object 0x4adc240 was not returned to mpool ucp_requests
+[1666816617.374669] [bc12111:119369:0]          mpool.c:38   UCX  WARN  object 0x4adce80 was not returned to mpool ucp_requests

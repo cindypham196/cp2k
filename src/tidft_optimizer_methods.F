@@ -1179,9 +1179,9 @@ CONTAINS
                                          kTS_sum=kTS_sum)
    
 ! perform population analysis
-CALL mulliken_population_analysis(qs_env, &
-        output_unit = unit_nr, &
-        print_level = 2)
+!CALL mulliken_population_analysis(qs_env, &
+!        output_unit = unit_nr, &
+!        print_level = 2)
 
                ! re-compute projector from the dm
                IF (nspins == 1) THEN
