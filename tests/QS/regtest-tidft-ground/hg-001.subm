@@ -1,7 +1,8 @@
 #!/bin/bash
-#SBATCH --time=00:30:00
+#SBATCH --time=00:60:00
 #SBATCH --nodes=10
 #SBATCH --tasks-per-node=40
+#SBATCH --mem=700G
 #SBATCH --account=ctb-rzk
 #SBATCH --job-name=hg-001
 #SBATCH --error=_hg-001.stde
@@ -13,7 +14,7 @@ cd $workd
 if [ -f "action-pre-001.sh" ]; then
  bash action-pre-001.sh
 fi
-srun $EXE HexagonalGraphite.inp > $workd/HexagonalGraphite.OT.out-001
+srun $EXE HexagonalGraphite.inp > $workd/HexagonalGraphite-12x12x1.OT.out-001
 if [ -f "action-post-001.sh" ]; then
  bash action-post-001.sh
 fi

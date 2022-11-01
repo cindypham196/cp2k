@@ -47,7 +47,7 @@ MODULE tidft_methods
         dbcsr_reserve_block2d, dbcsr_scale_by_vector, dbcsr_set, dbcsr_set_diag, dbcsr_transposed, &
         dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create, &
         dbcsr_complete_redistribute, dbcsr_distribution_new, dbcsr_distribution_release, &
-        dbcsr_norm_maxabsnorm, dbcsr_norm, dbcsr_dot
+        dbcsr_norm_frobenius, dbcsr_norm_maxabsnorm, dbcsr_norm, dbcsr_dot
    USE domain_submatrix_methods,        ONLY: &
         add_submatrices, construct_dbcsr_from_submatrices, construct_submatrices, &
         copy_submatrices, copy_submatrix_data, init_submatrices, multiply_submatrices, &
@@ -66,7 +66,8 @@ MODULE tidft_methods
    USE iterate_matrix,                  ONLY: invert_Hotelling,&
                                               invert_Taylor,&
                                               matrix_sqrt_Newton_Schulz
-   USE kinds,                           ONLY: dp
+   USE kinds,                           ONLY: dp,&
+                                              int_8
    USE mathlib,                         ONLY: binomial
    USE tidft_qs,                        ONLY: matrix_layout
    USE tidft_types,                     ONLY: tidft_env_type
@@ -80,8 +81,8 @@ MODULE tidft_methods
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'almo_scf_methods'
 
-   PUBLIC stitch_columns, determinant_generalized, determinant_local, &
-          cp_dbcsr_adjugate, split_columns, matrix_invert_local, &
+   PUBLIC stitch_columns, determinant_local, &
+          split_columns, matrix_invert_local, &
           gradMO_to_gradVAR_increment, &
           precMO_to_precVAR_increment, &
           tidft_optimizer_mainvar_multiply, &
@@ -245,12 +246,12 @@ CONTAINS
 
       IF (mat_left_contravariant .AND. mat_right_contravariant) THEN
          CPASSERT(PRESENT(metric))
-         CPASSERT(PRESENT(eps_filter))
+         !CPASSERT(PRESENT(eps_filter))
       ENDIF
 
       IF (mat_left_covariant .AND. mat_right_covariant) THEN
          CPASSERT(PRESENT(metric_inv))
-         CPASSERT(PRESENT(eps_filter))
+         !CPASSERT(PRESENT(eps_filter))
       ENDIF
 
       nstates = SIZE(mat_left, 1)
@@ -282,8 +283,8 @@ CONTAINS
                   CALL dbcsr_multiply("N", "N", 1.0_dp, &
                           metric, &
                           mat_right(istate,ivar), &
-                          0.0_dp, mat_temp, &
-                          filter_eps=eps_filter)
+                          0.0_dp, mat_temp) !, &
+                          !filter_eps=eps_filter)
                   CALL dbcsr_dot(mat_left(istate,ivar), mat_temp, prod)
                   CALL dbcsr_release(mat_temp)
 
@@ -293,8 +294,8 @@ CONTAINS
                   CALL dbcsr_multiply("N", "N", 1.0_dp, & 
                           metric_inv, &
                           mat_right(istate,ivar), &
-                          0.0_dp, mat_temp, &
-                          filter_eps=eps_filter)
+                          0.0_dp, mat_temp) !, &
+                          !filter_eps=eps_filter)
                   CALL dbcsr_dot(mat_left(istate,ivar), mat_temp, prod)
                   CALL dbcsr_release(mat_temp)
 
@@ -465,35 +466,76 @@ CONTAINS
 !>       2022.05 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE tidft_optimizer_gradient_norm(mat_grad, ncols_var, grad_norm)
+   SUBROUTINE tidft_optimizer_gradient_norm(mat_grad, which_norm, grad_norm, &
+      ncols_var, metric_inv)
 
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: mat_grad
-      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+      INTEGER, INTENT(IN)                                :: which_norm
       REAL(KIND=dp), INTENT(OUT)                         :: grad_norm
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
+      TYPE(dbcsr_type), OPTIONAL, INTENT(IN)             :: metric_inv
 
       INTEGER                                            :: istate, ivar, &
-                                                            nstates, nvars
+                                                            nstates, nvars, &
+                                                            ncols, nbasis, &
+                                                            itmp
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: grad_norm_array
+      REAL(KIND=dp)                                      :: denom
 
       nstates = SIZE(mat_grad, 1)
       nvars = SIZE(mat_grad, 2)
       CPASSERT(nvars.EQ.3)
 
-      ALLOCATE(grad_norm_array(nstates,nvars))
-      grad_norm_array=0.0_dp
+      SELECT CASE (which_norm)
+      CASE (dbcsr_norm_maxabsnorm)
 
-      DO istate = 1, nstates
-         DO ivar = 1, nvars
-            IF (ncols_var(ivar).GT.0) THEN
-            CALL dbcsr_norm(matrix=mat_grad(istate,ivar), &
-                            which_norm=dbcsr_norm_maxabsnorm, &
-                            norm_scalar=grad_norm_array(istate,ivar))
-            ENDIF
-         ENDDO ! ivar
-      ENDDO ! stateI
-      grad_norm = MAXVAL(grad_norm_array)
+         ALLOCATE(grad_norm_array(nstates,nvars))
+         grad_norm_array=0.0_dp
 
-      DEALLOCATE(grad_norm_array)
+         DO istate = 1, nstates
+            DO ivar = 1, nvars
+               IF (ncols_var(ivar).GT.0) THEN
+                  CALL dbcsr_norm(matrix=mat_grad(istate,ivar), &
+                          which_norm=dbcsr_norm_maxabsnorm, &
+                          norm_scalar=grad_norm_array(istate,ivar))
+               ENDIF
+            ENDDO ! ivar
+         ENDDO ! stateI
+         grad_norm = MAXVAL(grad_norm_array)
+
+         DEALLOCATE(grad_norm_array)
+
+      CASE (dbcsr_norm_frobenius)
+
+         CPASSERT(PRESENT(metric_inv))
+         CALL tidft_optimizer_mainvar_dot( &
+                 mat_left = mat_grad, &
+                 mat_right = mat_grad, &
+                 mat_left_covariant = .TRUE., &
+                 mat_right_covariant = .TRUE., &
+                 metric_inv = metric_inv, &
+                 dot_product = grad_norm, &
+                 ncols_var = ncols_var) !, &
+
+         ncols = 0
+         DO istate = 1, nstates
+            DO ivar = 1, nvars
+               IF (ncols_var(ivar).GT.0) THEN
+                  CALL dbcsr_get_info(mat_grad(istate,ivar), nfullrows_total=nbasis)
+                  CALL dbcsr_get_info(mat_grad(istate,ivar), nfullcols_total=itmp)
+                  ncols = ncols + itmp
+               ENDIF
+            ENDDO ! ivar
+         ENDDO ! stateI
+
+         denom = SQRT( 1.0_dp*INT(nbasis, KIND=int_8) ) * SQRT( 1.0_dp*INT(ncols, KIND=int_8) )
+         IF ( denom .NE. 0.0_dp) THEN
+            grad_norm = SQRT(ABS(grad_norm)) / denom
+         ELSE
+            CPABORT("Zero electronic variables")
+         ENDIF
+
+      END SELECT
 
    END SUBROUTINE tidft_optimizer_gradient_norm
 
@@ -877,95 +919,6 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE
-
-! *****************************************************************************
-!> \brief Computes the adjugate of a square DBCSR matrix
-!> \param matrix - input: initial matrix, output: the adjugate
-!> \param det - determinant
-!> \par History
-!>       2022.05 created [Rustam Z Khaliullin]
-!> \author Rustam Z. Khaliullin
-! **************************************************************************************************
-   SUBROUTINE cp_dbcsr_adjugate(matrix, det, para_env, blacs_env)
-
-      TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
-      REAL(KIND=dp), INTENT(INOUT)                       :: det
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
-
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'cp_dbcsr_adjugate'
-
-      INTEGER                                            :: handle, &
-                                                            nfullcols_total, &
-                                                            nfullrows_total
-      TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
-      TYPE(cp_fm_type), POINTER                          :: fm_matrix
-
-      CALL timeset(routineN, handle)
-
-      CALL dbcsr_get_info(matrix, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
-
-      NULLIFY (fm_matrix, fm_struct)
-      CALL cp_fm_struct_create(fm_struct, context=blacs_env, nrow_global=nfullrows_total, &
-                               ncol_global=nfullcols_total, para_env=para_env)
-      CALL cp_fm_create(fm_matrix, fm_struct, name="fm_matrix")
-      CALL cp_fm_struct_release(fm_struct)
-
-      CALL copy_dbcsr_to_fm(matrix, fm_matrix)
-
-      ! Do the work - compute adjugate
-      CALL cp_fm_adjugate(fm_matrix, det)
-
-      CALL copy_fm_to_dbcsr(fm_matrix, matrix)
-
-      CALL cp_fm_release(fm_matrix)
-
-      CALL timestop(handle)
-
-   END SUBROUTINE cp_dbcsr_adjugate
-
-! *****************************************************************************
-!> \brief Computes the determinant of a square matrix
-!> \param matrix ...
-!> \param det - determinant
-!> \par History
-!>       2022.01 created [Rustam Z Khaliullin]
-!> \author Rustam Z. Khaliullin
-! **************************************************************************************************
-   SUBROUTINE determinant_generalized(matrix, det, para_env, blacs_env)
-
-      TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
-      REAL(KIND=dp), INTENT(INOUT)                       :: det
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
-
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'determinant_generalized'
-
-      INTEGER                                            :: handle, &
-                                                            nfullcols_total, &
-                                                            nfullrows_total
-      TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
-      TYPE(cp_fm_type), POINTER                          :: fm_matrix
-
-      CALL timeset(routineN, handle)
-
-      CALL dbcsr_get_info(matrix, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
-
-      NULLIFY (fm_matrix, fm_struct)
-      CALL cp_fm_struct_create(fm_struct, context=blacs_env, nrow_global=nfullrows_total, &
-                               ncol_global=nfullcols_total, para_env=para_env)
-      CALL cp_fm_create(fm_matrix, fm_struct, name="fm_matrix")
-      CALL cp_fm_struct_release(fm_struct)
-
-      CALL copy_dbcsr_to_fm(matrix, fm_matrix)
-
-      CALL cp_fm_lu_decompose(fm_matrix, det, correct_sign = .TRUE.)
-
-      CALL cp_fm_release(fm_matrix)
-
-      CALL timestop(handle)
-
-   END SUBROUTINE determinant_generalized
 
 ! **************************************************************************************************
 !> \brief 

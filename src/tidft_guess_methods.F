@@ -75,10 +75,8 @@ MODULE tidft_guess_methods
                                               split_columns, &
                                               determinant_local, &
                                               matrix_invert_local, &
-                                              determinant_generalized, &
                                               gradMO_to_gradVAR_increment, &
-                                              precMO_to_precVAR_increment, &
-                                              cp_dbcsr_adjugate
+                                              precMO_to_precVAR_increment
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
 #include "./base/base_uses.f90"
 

@@ -15,6 +15,9 @@ MODULE tidft_optimizer_methods
    USE almo_scf_methods,                ONLY: almo_scf_t_to_proj,&
                                               get_overlap
    USE almo_scf_types,                  ONLY: optimizer_options_type
+   USE cp_dbcsr_singular,               ONLY: cp_dbcsr_pseudoinverse, &
+                                              cp_dbcsr_determinant_generalized, &
+                                              cp_dbcsr_adjugate
    USE cp_dbcsr_cholesky,               ONLY: cp_dbcsr_cholesky_decompose,&
                                               cp_dbcsr_cholesky_invert
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
@@ -38,7 +41,7 @@ MODULE tidft_optimizer_methods
    USE input_constants,                 ONLY: &
         cg_dai_yuan, cg_fletcher, cg_fletcher_reeves, &
         cg_hager_zhang, cg_hestenes_stiefel, cg_liu_storey, cg_polak_ribiere, cg_zero, &
-        tidft_prec_zero, tidft_prec_ks, tidft_prec_s
+        tidft_prec_zero, tidft_prec_s, tidft_prec_h_s, tidft_prec_qhq_s, tidft_prec_qhq_qsq
    !USE input_constants,                 ONLY: &
    !     almo_deloc_none, almo_deloc_scf, almo_deloc_x, almo_deloc_x_then_scf, &
    !     almo_deloc_xalmo_1diag, almo_deloc_xalmo_scf, almo_deloc_xalmo_x, almo_deloc_xk, &
@@ -73,10 +76,8 @@ MODULE tidft_optimizer_methods
                                               split_columns, &
                                               determinant_local, &
                                               matrix_invert_local, &
-                                              determinant_generalized, &
                                               gradMO_to_gradVAR_increment, &
-                                              precMO_to_precVAR_increment, &
-                                              cp_dbcsr_adjugate
+                                              precMO_to_precVAR_increment
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
 #include "./base/base_uses.f90"
 
@@ -484,7 +485,7 @@ CONTAINS
                        loss_components_out = loss_components, &
                        gradient_out = optimizer_storage%grad )
             ENDIF
-            
+
             energy_function = loss_components(1)
             penalty_func_new = loss_components(2) + loss_components(3)
             objf_new = SUM(loss_components)
@@ -493,8 +494,10 @@ CONTAINS
             ! check convergence and other exit criteria
             CALL tidft_optimizer_gradient_norm( &
                     optimizer_storage%grad, &
+                    optimizer%which_gnorm, &
+                    grad_norm, &
                     tidft_env%e_states(1)%slater_det(1)%ncols_var, &
-                    grad_norm)
+                    metric_inv = tidft_env%mat_s_inv)
 
             converged = (grad_norm .LE. optimizer%eps_error)
             IF (converged .OR. (iteration .GE. max_iter)) THEN
@@ -905,7 +908,7 @@ CONTAINS
                                                             mat_g_inter
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:,:)    :: mat_g_energy
       INTEGER                                            :: opposite_spin
-      
+
       CALL timeset(routineN, handle)
 
       my_silent=.FALSE.
@@ -918,7 +921,7 @@ CONTAINS
       ELSE
          unit_nr = -1
       ENDIF
-      
+
       ! supress output if necessary
       IF (my_silent) unit_nr = -1
 
@@ -1271,7 +1274,7 @@ CONTAINS
                                       eps_filter=tidft_env%eps_filter)
                   ENDIF
                   ! compute the determinant and save it to the Phi matrix
-                  CALL determinant_generalized( &
+                  CALL cp_dbcsr_determinant_generalized( &
                           matrix = tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
                           det = tidft_env%mat_phi_spin(stateI,stateI,ispin), &
                           para_env = tidft_env%para_env, &
@@ -1371,7 +1374,7 @@ CONTAINS
                            ! compute the determinant and save it to the Phi matrix
                            not_evaluated = .NOT. intrastate_penalty_component
                            IF ( stateI.NE.stateJ .OR. not_evaluated ) THEN
-                              CALL determinant_generalized( &
+                              CALL cp_dbcsr_determinant_generalized( &
                                       matrix = tidft_env%mat_sigma(stateI,stateJ,idet,ispin), &
                                       det = tidft_env%mat_phi_spin(stateI,stateJ,ispin), &
                                       para_env = tidft_env%para_env, &
@@ -2369,10 +2372,10 @@ WRITE(*,*)
 !tiidft
 
       SELECT CASE (precond)
-      CASE (tidft_prec_ks)
+      CASE (tidft_prec_h_s, tidft_prec_qhq_s, tidft_prec_qhq_qsq)
 
          IF (iteration .EQ. 0) THEN
-            CALL tidft_compute_invert_preconditioner(tidft_env, prec_inv)
+            CALL tidft_compute_invert_preconditioner(tidft_env, precond, prec_inv)
          ENDIF
 
          CALL tidft_optimizer_mainvar_multiply_diff( &
@@ -2667,9 +2670,10 @@ WRITE(*,*)
 !>       2022.06 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE tidft_compute_invert_preconditioner(tidft_env, prec_inv)
+   SUBROUTINE tidft_compute_invert_preconditioner(tidft_env, precond, prec_inv)
 
       TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
+      INTEGER, INTENT(IN)                                :: precond
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: prec_inv
 
       CHARACTER(len=*), PARAMETER :: routineN = 'tidft_compute_invert_preconditioner'
@@ -2690,17 +2694,42 @@ WRITE(*,*)
       INTEGER                                            :: nstates
       INTEGER                                            :: ndets
       INTEGER                                            :: nspins
+      INTEGER                                            :: min_zeros
       REAL(KIND=dp)                                      :: alpha
       REAL(KIND=dp)                                      :: scaling_factor_slater_determinant
       REAL(KIND=dp)                                      :: scaling_factor_spin
+      REAL(KIND=dp)                                      :: zero_eigenvalue_eps_factor
       LOGICAL                                            :: energy_component
+      LOGICAL                                            :: hamiltonian_project_R_out
       LOGICAL                                            :: overlap_project_R_out
       CHARACTER                                          :: mtype
 
       CALL timeset(routineN, handle)
 
       alpha = 1.0_dp
-      overlap_project_R_out = .FALSE.
+      zero_eigenvalue_eps_factor = 1.0_dp
+
+      SELECT CASE (precond)
+      CASE (tidft_prec_h_s)
+
+         overlap_project_R_out = .FALSE.
+         hamiltonian_project_R_out = .FALSE.
+
+      CASE (tidft_prec_qhq_s)
+
+         overlap_project_R_out = .FALSE.
+         hamiltonian_project_R_out = .TRUE.
+
+      CASE (tidft_prec_qhq_qsq)
+
+         overlap_project_R_out = .TRUE.
+         hamiltonian_project_R_out = .TRUE.
+
+      CASE DEFAULT
+
+         CPABORT("Cannot process this preconditioner")
+
+      END SELECT
 
       nspins = tidft_env%nspins
       nstates = tidft_env%nstates
@@ -2762,59 +2791,67 @@ WRITE(*,*)
                      CALL dbcsr_create(temp_prec, &
                              template=tidft_env%mat_s, matrix_type = dbcsr_type_no_symmetry)
 
-                     ! T.siginv
-                     CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                             tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                             tidft_env%mat_sigma_inv(stateI,idet,ispin), &
-                             0.0_dp, temp_NO1, &
-                             filter_eps=tidft_env%eps_filter)
-                     ! F.Tsiginv
-                     CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                             tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), &
-                             temp_NO1, &
-                             0.0_dp, temp_FTsiginv, &
-                             filter_eps=tidft_env%eps_filter)
-                     ! siginvT.FTsiginv
-                     CALL dbcsr_multiply("T", "N", 1.0_dp, &
-                             temp_NO1, &
-                             temp_FTsiginv, &
-                             0.0_dp, temp_siginvTFTsiginv, &
-                             filter_eps=tidft_env%eps_filter)
-                     ! S.T
-                     CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                             tidft_env%mat_s, &
-                             tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                             0.0_dp, temp_ST, &
-                             filter_eps=tidft_env%eps_filter)
+                     IF (hamiltonian_project_R_out) THEN
+                        ! T.siginv
+                        CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                tidft_env%mat_sigma_inv(stateI,idet,ispin), &
+                                0.0_dp, temp_NO1, &
+                                filter_eps=tidft_env%eps_filter)
+                        ! F.Tsiginv
+                        CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), &
+                                temp_NO1, &
+                                0.0_dp, temp_FTsiginv, &
+                                filter_eps=tidft_env%eps_filter)
+                        ! siginvT.FTsiginv
+                        CALL dbcsr_multiply("T", "N", 1.0_dp, &
+                                temp_NO1, &
+                                temp_FTsiginv, &
+                                0.0_dp, temp_siginvTFTsiginv, &
+                                filter_eps=tidft_env%eps_filter)
+                     ENDIF
+
+                     IF (hamiltonian_project_R_out .OR. overlap_project_R_out) THEN
+                        ! S.T
+                        CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                tidft_env%mat_s, &
+                                tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                0.0_dp, temp_ST, &
+                                filter_eps=tidft_env%eps_filter)
+                     ENDIF
 
                      ! prec = F
                      CALL dbcsr_desymmetrize( &
                              tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), &
                              temp_prec)
-                     ! prec = prec - FTsiginv.(ST)^t
-                     CALL dbcsr_multiply("N", "T", -1.0_dp, &
-                             temp_FTsiginv, &
-                             temp_ST, &
-                             1.0_dp, temp_prec, &
-                             filter_eps=tidft_env%eps_filter)
-                     ! prec = prec - ST.(FTsiginv)^t
-                     CALL dbcsr_multiply("N", "T", -1.0_dp, &
-                             temp_ST, &
-                             temp_FTsiginv, &
-                             1.0_dp, temp_prec, &
-                             filter_eps=tidft_env%eps_filter)
-                     ! ST.(siginvTFTsiginv)
-                     CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                             temp_ST, &
-                             temp_siginvTFTsiginv, &
-                             0.0_dp, temp_NO1, &
-                             filter_eps=tidft_env%eps_filter)
-                     ! prec = prec + STsiginvTFTsiginv.(ST)^t
-                     CALL dbcsr_multiply("N", "T", 1.0_dp, &
-                             temp_NO1, &
-                             temp_ST, &
-                             1.0_dp, temp_prec, &
-                             filter_eps=tidft_env%eps_filter)
+
+                     IF (hamiltonian_project_R_out) THEN
+                        ! prec = prec - FTsiginv.(ST)^t
+                        CALL dbcsr_multiply("N", "T", -1.0_dp, &
+                                temp_FTsiginv, &
+                                temp_ST, &
+                                1.0_dp, temp_prec, &
+                                filter_eps=tidft_env%eps_filter)
+                        ! prec = prec - ST.(FTsiginv)^t
+                        CALL dbcsr_multiply("N", "T", -1.0_dp, &
+                                temp_ST, &
+                                temp_FTsiginv, &
+                                1.0_dp, temp_prec, &
+                                filter_eps=tidft_env%eps_filter)
+                        ! ST.(siginvTFTsiginv)
+                        CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                temp_ST, &
+                                temp_siginvTFTsiginv, &
+                                0.0_dp, temp_NO1, &
+                                filter_eps=tidft_env%eps_filter)
+                        ! prec = prec + STsiginvTFTsiginv.(ST)^t
+                        CALL dbcsr_multiply("N", "T", 1.0_dp, &
+                                temp_NO1, &
+                                temp_ST, &
+                                1.0_dp, temp_prec, &
+                                filter_eps=tidft_env%eps_filter)
+                     ENDIF
 
                      ! prec = (1-SR)F(1-RS) + alpha * S
                      CALL dbcsr_create(temp_NN1, &
@@ -2864,17 +2901,13 @@ WRITE(*,*)
 
             ENDDO ! idet
 
-            ! Convert to mainvar preconditioners and invert
-            IF (overlap_project_R_out) THEN
-            ! Use diagonalization and pseudoinverse
+            ! Invert or pseudoinvert
+            DO ivar = 1, 3
+               IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).GT.0) THEN
 
-               CPABORT("Pseudoinverse is NYI")
-
-            ELSE
-            ! Invert using cholesky for dense matrices
-
-               DO ivar = 1, 3
-                  IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).GT.0) THEN
+                  SELECT CASE (precond)
+                  CASE (tidft_prec_h_s, tidft_prec_qhq_s)
+                  ! Invert using cholesky for dense matrices
 
                      CALL cp_dbcsr_cholesky_decompose( &
                              prec_inv(stateI,ivar), &
@@ -2889,10 +2922,59 @@ WRITE(*,*)
                              prec_inv(stateI,ivar), &
                              tidft_env%eps_filter)
 
-                  ENDIF ! zero columns check
-               ENDDO ! ivar
+                  CASE (tidft_prec_qhq_qsq)
+                  ! Pseudo-invert using diagonalization
 
-            ENDIF ! cholesky or not
+                     ! Determine how many eigenvectors are expected to be zero
+                     ! If ndets == 1 then
+                     ! Var1: nvar1+nvar2, nvar1+nvar3 (var1 includes spins alpha and beta)
+                     ! Var2: nvar1+nvar2              (var2 includes only alpha spins)
+                     ! Var3: nvar1+nvar3              (var3 includes only beta spins)
+                     ! If ndets == 2 then the following values are added to the list
+                     ! Var1: nvar1+nvar2+nvar3, nvar1 (var1 includes spins alpha and beta for the triplet state)
+                     ! Var2: nvar1+nvar2+nvar3        (var2 includes only alpha electrons for the triplet state)
+                     ! Var3: nvar1                    (var3 includes only beta electrons for the triplet state)
+                     ! Thus minimum expected number of zeros in the preconditioner is:
+                     ! Var1: If ndets == 1: nvar1, else: nvar1
+                     ! (the number of zeros might happen to be higher if singly-occupied alpha and beta are the same)
+                     ! Var2: If ndets == 1: nvar1+nvar2, else: nvar1+nvar2
+                     ! Var3: If ndets == 1: nvar1+nvar3, else: nvar1 (fewer beta orbitals in the triplet state)
+                     IF (ivar.EQ.1) THEN
+                        min_zeros = &
+                           tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
+                     ELSE IF (ivar.EQ.2) THEN
+                        min_zeros = &
+                           tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1) + &
+                           tidft_env%e_states(stateI)%slater_det(1)%ncols_var(2)
+                     ELSE IF (ivar.EQ.3) THEN
+                        IF (ndets.EQ.1) THEN
+                           min_zeros = &
+                              tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1) + &
+                              tidft_env%e_states(stateI)%slater_det(1)%ncols_var(3)
+                        ELSE
+                           min_zeros = &
+                              tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
+                        ENDIF
+                     ENDIF
+                     CALL cp_dbcsr_pseudoinverse( &
+                             matrix=prec_inv(stateI,ivar), &
+                             zero_eps=tidft_env%eps_filter*zero_eigenvalue_eps_factor, &
+                             min_eigenvalues_to_nullify=min_zeros, &
+                             spd_expected=.TRUE., &
+                             para_env=tidft_env%para_env, &
+                             blacs_env=tidft_env%blacs_env)
+                     CALL dbcsr_filter( &
+                             prec_inv(stateI,ivar), &
+                             tidft_env%eps_filter)
+
+                  CASE DEFAULT
+
+                     CPABORT("Cannot process this preconditioner")
+
+                  END SELECT
+
+               ENDIF ! zero columns check
+            ENDDO ! ivar
 
          ENDDO ! stateI
 

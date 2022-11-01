@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --time=02:00:00
-#SBATCH --nodes=3
+#SBATCH --time=00:30:00
+#SBATCH --nodes=1
 #SBATCH --tasks-per-node=40
 #SBATCH --account=ctb-rzk
 #SBATCH --job-name=cd-001
@@ -13,7 +13,7 @@ cd $workd
 if [ -f "action-pre-001.sh" ]; then
  bash action-pre-001.sh
 fi
-srun $EXE CubicDiamond.inp > $workd/CubicDiamond.TIDFT.out-001
+srun $EXE CubicDiamond-2x2x2.inp > $workd/CubicDiamond-2x2x2.TIDFT.H_S.out-001
 if [ -f "action-post-001.sh" ]; then
  bash action-post-001.sh
 fi

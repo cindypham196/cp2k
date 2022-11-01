@@ -212,6 +212,8 @@ CONTAINS
       ! optimizers
       CALL section_vals_val_get(tidft_pcg_optimizer_section, "EPS_ERROR", &
                                 r_val=tidft_env%tidft_optimizer_pcg%eps_error)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "WHICH_GRADIENT_NORM", &
+                                i_val=tidft_env%tidft_optimizer_pcg%which_gnorm)
       CALL section_vals_val_get(tidft_pcg_optimizer_section, "MAX_ITER", &
                                 i_val=tidft_env%tidft_optimizer_pcg%max_iter)
       CALL section_vals_val_get(tidft_pcg_optimizer_section, "MAX_ITER_OUTER_LOOP", &
@@ -245,7 +247,7 @@ CONTAINS
                                 r_val=tidft_env%allowed_determinant_deviaion)
 
       ! check for conflicts between options
-    
+
       CALL timestop(handle)
 
    END SUBROUTINE tidft_read_write_input

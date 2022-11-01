@@ -47,10 +47,8 @@ MODULE tidft
                                               split_columns, &
                                               determinant_local, &
                                               matrix_invert_local, &
-                                              determinant_generalized, &
                                               gradMO_to_gradVAR_increment, &
                                               tidft_mainvar_orthonormalize, &
-                                              cp_dbcsr_adjugate, &
                                               dbcsr_set_element
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init

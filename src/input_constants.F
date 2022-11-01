@@ -1053,8 +1053,10 @@ MODULE input_constants
 
    ! TIDFT parameters
    INTEGER, PARAMETER, PUBLIC   :: tidft_prec_zero = 0, &
-                                   tidft_prec_ks = 1, &
-                                   tidft_prec_s = 2
+                                   tidft_prec_h_s = 1, &
+                                   tidft_prec_qhq_s = 2, &
+                                   tidft_prec_qhq_qsq = 3, &
+                                   tidft_prec_s = 4
 
    ! spd matrix inversion algorithm
    INTEGER, PARAMETER, PUBLIC   :: spd_inversion_ls_hotelling = 0, &

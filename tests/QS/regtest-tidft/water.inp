@@ -49,6 +49,7 @@
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             QHQ_S
         EPS_ERROR                  1.0E-8
+        WHICH_GRADIENT_NORM        RMS
         MAX_ITER                   100
         MAX_ITER_OUTER_LOOP        20
         LIN_SEARCH_EPS_ERROR       0.2

@@ -42,6 +42,7 @@
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             QHQ_S
         EPS_ERROR                  1.0E-8
+        WHICH_GRADIENT_NORM        MAX
         MAX_ITER                   50
         MAX_ITER_OUTER_LOOP        20
         LIN_SEARCH_EPS_ERROR       0.2
@@ -109,11 +110,11 @@
     &CELL
       ABC 2.46 2.46 6.708
       ALPHA_BETA_GAMMA 90.0 90.0 120.0
-      MULTIPLE_UNIT_CELL 16 16 1  ! RZK: In the final calculation, proper values must be set. Hexagonal graphite: 16 16 1
+      MULTIPLE_UNIT_CELL 12 12 1  ! RZK: In the final calculation, proper values must be set. Hexagonal graphite: 16 16 1
     &END CELL
 
     &TOPOLOGY
-      MULTIPLE_UNIT_CELL 16 16 1  ! RZK: In the final calculation, proper values must be set.
+      MULTIPLE_UNIT_CELL 12 12 1  ! RZK: In the final calculation, proper values must be set.
     &END
 
     &COORD

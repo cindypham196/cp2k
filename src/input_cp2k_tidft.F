@@ -23,8 +23,9 @@ MODULE input_cp2k_tidft
         cg_liu_storey, cg_polak_ribiere, cg_zero, restart_guess, op_loc_berry, op_loc_pipek, &
         optimizer_diis, optimizer_lin_eq_pcg, optimizer_pcg, optimizer_trustr, &
         spd_inversion_dense_cholesky, spd_inversion_ls_hotelling, spd_inversion_ls_taylor, &
-        trustr_cauchy, trustr_dogleg, trustr_steihaug, tidft_prec_zero, tidft_prec_ks, &
-        tidft_prec_s, xalmo_trial_r0_out, xalmo_trial_simplex
+        trustr_cauchy, trustr_dogleg, trustr_steihaug, tidft_prec_zero, &
+        tidft_prec_s, xalmo_trial_r0_out, xalmo_trial_simplex, tidft_prec_h_s, tidft_prec_qhq_s, &
+        tidft_prec_qhq_qsq
    USE input_val_types,                 ONLY: char_t,&
                                               integer_t,&
                                               lchar_t,&
@@ -40,6 +41,8 @@ MODULE input_cp2k_tidft
                                               section_type
    USE kinds,                           ONLY: dp
    USE string_utilities,                ONLY: s2a
+   USE dbcsr_api, ONLY: &
+      dbcsr_norm_frobenius, dbcsr_norm_maxabsnorm
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -286,8 +289,19 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_ERROR", &
-                          description="Target value of the MAX norm of the error", &
+                          description="Target value of the gradient norm", &
                           usage="EPS_ERROR 1.E-6", default_r_val=1.0E-5_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="WHICH_GRADIENT_NORM", &
+                          description="Select which norm of the gradient to use when checking for convergence", &
+                          usage="WHICH_GRADIENT_NORM RMS", &
+                          default_i_val=dbcsr_norm_maxabsnorm, &
+                          enum_c_vals=s2a("RMS", "MAX"), &
+                          enum_desc=s2a("Use root mean square norm.", &
+                                        "Use max norm."), &
+                          enum_i_vals=(/dbcsr_norm_frobenius, dbcsr_norm_maxabsnorm/))
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -306,12 +320,16 @@ CONTAINS
          CALL keyword_create(keyword, __LOCATION__, name="PRECONDITIONER", &
                              description="Select a preconditioner for the conjugate gradient optimization", &
                              usage="PRECONDITIONER OVERLAP", &
-                             default_i_val=tidft_prec_ks, &
-                             enum_c_vals=s2a("NONE", "QHQ_S", "OVERLAP"), &
-                             enum_desc=s2a("Do not use preconditioner", &
-                                           "Virtual-virtual block of the Kohn-Sham Hamiltonian plus overlap", &
-                                           "Overlap matrix"), &
-                             enum_i_vals=(/tidft_prec_zero, tidft_prec_ks, &
+                             default_i_val=tidft_prec_qhq_s, &
+                             enum_c_vals=s2a("NONE", "H_S", "QHQ_S", "QHQ_QSQ", "S"), &
+                             enum_desc=s2a("Do not use preconditioner.", &
+                                           "The Kohn-Sham Hamiltonian plus the overlap. Cholesky inversion is used.", &
+                                           "Virtual-virtual block of the Kohn-Sham Hamiltonian plus the overlap. "// &
+                                           "Cholesky inversion is used.", &
+                                           "Virtual-virtual block of the Kohn-Sham Hamiltonian plus the "// &
+                                           "virtual-virtual block of the overlap. Pseudoinverse via diagonalization.", &
+                                           "Cholesky inversion of the overlap matrix."), &
+                             enum_i_vals=(/tidft_prec_zero, tidft_prec_h_s, tidft_prec_qhq_s, tidft_prec_qhq_qsq, &
                                            tidft_prec_s/))
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
