@@ -31,7 +31,7 @@ MODULE cp_dbcsr_singular
                                               cp_fm_type
    USE cp_para_types,                   ONLY: cp_para_env_type
    USE dbcsr_api,                       ONLY: &
-                                              dbcsr_create, dbcsr_multiply, &
+                                              dbcsr_create, dbcsr_multiply, dbcsr_add_on_diag, &
                                               dbcsr_release, dbcsr_set, dbcsr_type, &
                                               dbcsr_type_no_symmetry, dbcsr_get_info, dbcsr_get_diag, &
                                               dbcsr_print, dbcsr_set_diag, dbcsr_dot, dbcsr_desymmetrize
@@ -105,7 +105,9 @@ CONTAINS
       !          still leaves small eigenvalues
       IF (spd_expected) THEN
          ! a.
-         CPASSERT( eigenvalues(1) .GT. -ABS(zero_eps) )
+         IF (eigenvalues(1) .LT. -ABS(zero_eps)) THEN
+            CPWARN("There are negative eigenvalues")
+         ENDIF
          ! b.
          IF ( PRESENT(min_eigenvalues_to_nullify) ) THEN
             IF ( eigenvalues(my_min_eigenvalues_to_nullify+1) .LE. ABS(zero_eps)) THEN
@@ -129,6 +131,7 @@ CONTAINS
               template=matrix, matrix_type = dbcsr_type_no_symmetry)
 
       CALL dbcsr_set(temp_mat_diag, 0.0_dp)
+      CALL dbcsr_add_on_diag(temp_mat_diag, 1.0_dp)
       CALL dbcsr_set_diag(temp_mat_diag, eigenvalues)
 
       ! temp = diagonal.U^T

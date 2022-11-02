@@ -2707,7 +2707,7 @@ WRITE(*,*)
       CALL timeset(routineN, handle)
 
       alpha = 1.0_dp
-      zero_eigenvalue_eps_factor = 1.0_dp
+      zero_eigenvalue_eps_factor = 100.0_dp
 
       SELECT CASE (precond)
       CASE (tidft_prec_h_s)
@@ -2956,6 +2956,7 @@ WRITE(*,*)
                               tidft_env%e_states(stateI)%slater_det(1)%ncols_var(1)
                         ENDIF
                      ENDIF
+
                      CALL cp_dbcsr_pseudoinverse( &
                              matrix=prec_inv(stateI,ivar), &
                              zero_eps=tidft_env%eps_filter*zero_eigenvalue_eps_factor, &
