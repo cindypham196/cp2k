@@ -246,6 +246,13 @@ CONTAINS
                                 "ALLOWED_DETERMINANT_DEVIATION", &
                                 r_val=tidft_env%allowed_determinant_deviaion)
 
+      ! CINDY 
+      CALL section_vals_val_get(penalty_section, "CP_STEP", &
+                                i_val=tidft_env%cp_step)
+      CALL section_vals_val_get(penalty_section, &
+                                "TIGHTEN_EPS_SCF", &
+                                r_val=tidft_env%tighten_eps_scf)                       
+
       ! check for conflicts between options
 
       CALL timestop(handle)
@@ -276,6 +283,10 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(section_vals_type), POINTER                   :: input
+
+      !CINDY stores gradient of Lagrange function, which is the constraint itself
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_coeff
+
 
       CALL timeset(routineN, handle)
       
@@ -359,6 +370,10 @@ CONTAINS
 
       nstates = tidft_env%nstates
       nslater = tidft_env%ndets
+
+      ! CINDY 29/11/22 allocate an array that stores gradient of langrange function
+      ! for optimizing penalty strength Cp
+      ALLOCATE(tidft_env%grad_penalty_coeff(nstates+1))
 
       ALLOCATE(tidft_env%e_states(nstates))
       ALLOCATE(tidft_env%mat_phi_spin(nstates,nstates,nspins))
@@ -734,7 +749,9 @@ CONTAINS
             IF (idet.EQ.1) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
          ENDDO
       ENDDO
-
+      
+      ! CINDY 29/11/22
+      DEALLOCATE(tidft_env%grad_penalty_coeff)
       DEALLOCATE(tidft_env%mat_phi_inv)
       DEALLOCATE(tidft_env%mat_phi)
       DEALLOCATE(tidft_env%mat_phi_spin)

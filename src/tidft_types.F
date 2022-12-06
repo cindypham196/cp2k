@@ -162,6 +162,10 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: initial_guess_random_fraction
       INTEGER                                            :: initial_guess_type
       INTEGER                                            :: initial_guess_random_seed
+      ! CINDY
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_coeff
+      INTEGER                                            :: cp_step
+      REAL(KIND=dp)                                      :: tighten_eps_scf
 
       ! dipole evaluation
       INTEGER                                            :: dipole_reference_type

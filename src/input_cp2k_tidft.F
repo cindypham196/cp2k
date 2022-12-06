@@ -461,7 +461,19 @@ CONTAINS
                           n_keywords=3, n_subsections=0, repeats=.FALSE.)
 
       NULLIFY (keyword)
+      ! CINDY 
+      CALL keyword_create(keyword, __LOCATION__, name="TIGHTEN_EPS_SCF", &
+                          description="Initial target value of grad. norm for tighter convergence performance", &
+                          usage="TIGHTEN_EPS_SCF", default_r_val=1.0E-2_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="CP_STEP", &
+                          description="Number of steps needed to modify/optimze intra penalty term", &
+                          usage="CP_STEP 3", default_i_val=2)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+      
       CALL keyword_create(keyword, __LOCATION__, name="INTERSTATE_NON_PENALTY_STRENGTH", &
                           description="Strength of the interstate nonorthogonality penalty term.", &
                           usage="INTERSTATE_NON_PENALTY_STRENGTH 0.5", &

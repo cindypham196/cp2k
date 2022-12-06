@@ -79,6 +79,8 @@ MODULE tidft_optimizer_methods
                                               gradMO_to_gradVAR_increment, &
                                               precMO_to_precVAR_increment
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
+   ! CINDY 
+   USE dm_ls_scf_types,                 ONLY: ls_scf_env_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -252,10 +254,12 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       CHARACTER(LEN=59)                                  :: print_string
-      INTEGER                                            :: unit_nr
-      REAL(KIND=dp)                                      :: prev_determinant
+      INTEGER                                            :: unit_nr, istep, beta
+      REAL(KIND=dp)                                      :: prev_determinant, g_max, cp_init, &
+                                                            tighten_eps_scf
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_update
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
@@ -268,7 +272,18 @@ CONTAINS
       ! loop over the orthogonalization penalty strength
       ! vary both intra and inter strengths together
       !prev_determinant = HUGE(1.0_dp)
-      DO
+      
+      IF (tidft_env%nstates > 1) THEN 
+         CPABORT("NEED TO UNCOMMENT DET(PHI) CHECK FIRST")
+      ENDIF
+
+      g_max = 1.0_dp ! play around 
+      beta = NINT((tidft_env%tighten_eps_scf / tidft_env%tidft_optimizer_pcg%eps_error)**(1.0_dp/REAL(tidft_env%cp_step-1,dp)))
+      cp_init = tidft_env%intrastate_nonorthogonality_penalty_coeff
+      tighten_eps_scf = tidft_env%tighten_eps_scf 
+      ALLOCATE(grad_penalty_update(tidft_env%nstates + 1))
+      !DO ! before implement cp optimal procedure
+      DO istep=1, tidft_env%cp_step
 
          IF (unit_nr > 0) THEN
 
@@ -296,10 +311,13 @@ CONTAINS
                "Objective Function", "Change", "Convergence", "Time"
             WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
          ENDIF
+
+         tidft_env%tidft_optimizer_pcg%eps_error = tighten_eps_scf 
          CALL tidft_optimize_pcg( &
                  qs_env=qs_env, &
                  tidft_env=tidft_env, &
                  optimizer=tidft_env%tidft_optimizer_pcg)
+
          !CASE (almo_scf_trustr)
          !   CALL trust_r_report(unit_nr, &
          !                       iter_type=0, & ! print header, all values are ignored
@@ -324,23 +342,45 @@ CONTAINS
 
          !det_diff = prev_determinant - tidft_env%det_mat_phi
 
+         !RZK-WARNNG: turn off check for GS
          ! Check whether the determinant is sufficiently close to 1
-         IF ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion &
-             .OR. .NOT.tidft_env%loss_function_components(3)) THEN
-            EXIT
-         ENDIF
+         !IF ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion &
+         !    .OR. .NOT.tidft_env%loss_function_components(3)) THEN
+         !   EXIT
+         !ENDIF
 
          !prev_determinant = tidft_env%det_mat_phi
 
+         !tidft_env%intrastate_nonorthogonality_penalty_coeff = &
+         !   tidft_env%intrastate_nonorthogonality_penalty_coeff * &
+         !   ABS(tidft_env%penalty_strength_inc_factor)
+
+         ! CINDY update Cp with the additional gradient wrt Cp, which is the constraint itself
+         ! and tighten eps_scf to optimum convergence rate. Less penalty coeff, more orthogonality -> tighten eps_scf
+         tighten_eps_scf = tighten_eps_scf / beta
+         grad_penalty_update = MIN(tidft_env%grad_penalty_coeff, g_max) ! or tidft_env%grad_penalty_coeff(1) 
          tidft_env%intrastate_nonorthogonality_penalty_coeff = &
-            tidft_env%intrastate_nonorthogonality_penalty_coeff * &
-            ABS(tidft_env%penalty_strength_inc_factor)
+            tidft_env%intrastate_nonorthogonality_penalty_coeff + &
+            grad_penalty_update(1)
+
+         ! Cp should not exceed 1  
+         !IF (tidft_env%intrastate_nonorthogonality_penalty_coeff .GE. 1.0_dp) THEN 
+         !   tidft_env%intrastate_nonorthogonality_penalty_coeff = cp_init*100
+         !   !ABS(grad_penalty_update(1)) 
+         !ENDIF
+         
+         IF (unit_nr > 0) THEN 
+            WRITE (*,*) "Cp update: " , tidft_env%intrastate_nonorthogonality_penalty_coeff 
+            WRITE (*,*) "At Cp step:", istep, ", EPS SCF: " , tidft_env%tidft_optimizer_pcg%eps_error
+            WRITE (*,*) "beta", beta
+         ENDIF
 
          tidft_env%interstate_nonorthogonality_penalty_coeff = &
             tidft_env%interstate_nonorthogonality_penalty_coeff * &
             ABS(tidft_env%penalty_strength_inc_factor)
 
       ENDDO
+      DEALLOCATE(grad_penalty_update)
 
       IF (unit_nr > 0) THEN
 
@@ -399,7 +439,7 @@ CONTAINS
          grad_norm, line_search_error, energy_function, next_step_size_guess, &
          obj_function_ispin, objf_diff, objf_new, objf_old, penalty_func_new, step_size, t1, t2
       REAL(KIND=dp), DIMENSION(100)                      :: loss_components
-      TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(cp_logger_type), POINTER                      :: logger 
 
       CALL timeset(routineN, handle)
 
@@ -909,6 +949,7 @@ CONTAINS
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:,:)    :: mat_g_energy
       INTEGER                                            :: opposite_spin
 
+      
       CALL timeset(routineN, handle)
 
       my_silent=.FALSE.
@@ -1304,20 +1345,32 @@ CONTAINS
                   DEALLOCATE(diagonal)
 
                   IF (unit_nr > 0) THEN
+                     ! CINDY: print out DetDiagonalSigma
+                     !WRITE (unit_nr, '(T2,A23,ES14.7)') &
+                     !   "Det. diagonal: ", DetDiagonalSigma
+
                      !WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
                      !                   "Det. diagon: ", DetDiagonalSigma
-                     WRITE (unit_nr, '(T2,A23,I5,2I2,A25,F21.16)') &
+
+                     ! CINDY: increase decimals from F21.16 to F21.19 in exponent form
+                     WRITE (unit_nr, '(T2,A23,I5,2I2,A25,ES14.7)') & 
                         "State, Slater, Spin: ", stateI, idet, ispin, &
                         "Normalized determinant: ", &
                         tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
-                  ENDIF
 
+                    
+                  ENDIF
                   penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff * &
                      ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
+                  
+                  ! CINDY save each component of gradient of Lagrange function (all INTRA terms and several INTER terms)
+                  tidft_env%grad_penalty_coeff(stateI) = - ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
 
-                  !IF (unit_nr > 0) THEN
-                  !   WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State penalty ", stateI, penalty_stateI
-                  !ENDIF
+                  IF (unit_nr > 0) THEN
+                     !WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State penalty ", stateI, penalty_stateI
+                     WRITE (*,*) "Penalty state ", penalty_stateI
+                     WRITE (*,*) "Grad_penalty_coeff ", tidft_env%grad_penalty_coeff(stateI)
+                  ENDIF
 
                   intrastate_nonorthogonality_penalty = intrastate_nonorthogonality_penalty + &
                      penalty_stateI
@@ -1445,7 +1498,9 @@ CONTAINS
             - tidft_env%interstate_nonorthogonality_penalty_coeff * &
             ( LOG(tidft_env%det_mat_phi) )
 
-
+         ! CINDY save each component of gradient of Lagrange function (all INTRA terms and several INTER terms)
+         ! tidft_env%grad_penalty_coeff(stateI+1) = - ( LOG(tidft_env%det_mat_phi) )
+         
       ENDIF ! interstate_penalty_component
 
       ! Pass the result up
