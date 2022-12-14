@@ -1,19 +1,19 @@
 &GLOBAL
-  PROJECT Si
+  PROJECT Cr(Cl)6
   RUN_TYPE ENERGY
   PRINT_LEVEL LOW
 &END GLOBAL
 &FORCE_EVAL
   METHOD QS
   &DFT
-    BASIS_SET_FILE_NAME GTH_BASIS_SETS
+    BASIS_SET_FILE_NAME BASIS_MOLOPT_COMBINED  !GTH_BASIS_SETS
     POTENTIAL_FILE_NAME POTENTIAL
     &MGRID
       CUTOFF 300
       NGRIDS 4
     &END MGRID
-    UKS                  F
-    !ROKS                T
+    !UKS                  F
+    ROKS                T
     &QS
       TIDFT T
       EPS_DEFAULT 1.0E-12
@@ -50,8 +50,8 @@
         INTERSTATE_NON_PENALTY_STRENGTH    1
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
         ALLOWED_DETERMINANT_DEVIATION      1E-4
-        MAX_CP_STEP                         3
-        LOOSE_EPS_SCF                      1E-2
+        CP_STEP                             3
+        TIGHTEN_EPS_SCF                     1E-2
       &END PENALTY
 
     &END TIDFT
@@ -75,32 +75,44 @@
       &END
     &END SCF
     &XC
-      &XC_FUNCTIONAL PBE
+      &XC_FUNCTIONAL BLYP
       &END XC_FUNCTIONAL
     &END XC
   &END DFT
   &SUBSYS
     &CELL
-      ABC 5.430710 5.430710 5.430710
+      ABC 11.49  10.905  6.197
       MULTIPLE_UNIT_CELL 1 1 1
     &END CELL
     &TOPOLOGY
       MULTIPLE_UNIT_CELL 1 1 1
     &END
     &COORD
-      SCALED T
-      Si         0.000000      0.000000      0.000000
-      Si         0.000000      0.500000      0.500000
-      Si         0.500000      0.000000      0.500000
-      Si         0.500000      0.500000      0.000000
-      Si         0.250000      0.250000      0.250000
-      Si         0.250000      0.750000      0.750000
-      Si         0.750000      0.250000      0.750000
-      Si         0.750000      0.750000      0.250000
+      Cr      1.462792    2.726250    0.381301
+      C       2.515735    2.726250    1.976161
+      C       0.324937    4.071600    1.119488
+      O       3.142975    2.726250    2.920522
+      O      -0.362739    4.870391    1.551853
+      C       0.426854    2.726250   -1.221553
+      O      -0.183036    2.726250   -2.184876
+      C       2.585135    1.360508   -0.358806
+      O       3.236388    0.540779   -0.801334
+      C       0.324937    1.380900    1.119488
+      O      -0.362739    0.582109    1.551853
+      C       2.585135    4.091992   -0.358806
+      O       3.236388    4.911721   -0.801334
     &END COORD
-    &KIND Si
-      BASIS_SET DZVP-GTH
-      POTENTIAL GTH-PBE-q4
+    &KIND Cr
+      BASIS_SET TZV2P-MOLOPT-SR-GTH
+      POTENTIAL GTH-BLYP-q14
+    &END KIND
+    &KIND C
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-BLYP-q4
+    &END KIND
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-BLYP-q6
     &END KIND
   &END SUBSYS
 &END FORCE_EVAL

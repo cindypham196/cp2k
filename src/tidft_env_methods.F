@@ -247,11 +247,11 @@ CONTAINS
                                 r_val=tidft_env%allowed_determinant_deviaion)
 
       ! CINDY 
-      CALL section_vals_val_get(penalty_section, "CP_STEP", &
-                                i_val=tidft_env%cp_step)
+      CALL section_vals_val_get(penalty_section, "MAX_CP_STEP", &
+                                i_val=tidft_env%max_cp_step)
       CALL section_vals_val_get(penalty_section, &
-                                "TIGHTEN_EPS_SCF", &
-                                r_val=tidft_env%tighten_eps_scf)                       
+                                "LOOSE_EPS_SCF", &
+                                r_val=tidft_env%loose_eps_scf)                       
 
       ! check for conflicts between options
 
@@ -286,7 +286,9 @@ CONTAINS
 
       !CINDY stores gradient of Lagrange function, which is the constraint itself
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_coeff
-
+      !CINDY change Cp to an array to store Cp update on each iteration
+      !REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: intrastate_nonorthogonality_penalty_coeff
+      !REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: interstate_nonorthogonality_penalty_coeff
 
       CALL timeset(routineN, handle)
       
@@ -374,6 +376,8 @@ CONTAINS
       ! CINDY 29/11/22 allocate an array that stores gradient of langrange function
       ! for optimizing penalty strength Cp
       ALLOCATE(tidft_env%grad_penalty_coeff(nstates+1))
+      !ALLOCATE(intrastate_nonorthogonality_penalty_coeff(nstates))
+      !ALLOCATE(interstate_nonorthogonality_penalty_coeff(nstates))
 
       ALLOCATE(tidft_env%e_states(nstates))
       ALLOCATE(tidft_env%mat_phi_spin(nstates,nstates,nspins))
@@ -752,6 +756,8 @@ CONTAINS
       
       ! CINDY 29/11/22
       DEALLOCATE(tidft_env%grad_penalty_coeff)
+      !DEALLOCATED(tidft_env%intrastate_nonorthogonality_penalty_coeff)
+      !DEALLOCATE(tidft_env%interstate_nonorthogonality_penalty_coeff)
       DEALLOCATE(tidft_env%mat_phi_inv)
       DEALLOCATE(tidft_env%mat_phi)
       DEALLOCATE(tidft_env%mat_phi_spin)

@@ -116,7 +116,6 @@ CONTAINS
       INTEGER                                            :: unit_nr, &
                                                             nstates, &
                                                             current_no_of_states
-      REAL(KIND=dp)                                      :: prev_determinant
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp)                                      :: save_initial_intra
@@ -254,8 +253,8 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       CHARACTER(LEN=59)                                  :: print_string
-      INTEGER                                            :: unit_nr, istep, beta
-      REAL(KIND=dp)                                      :: prev_determinant, g_max, cp_init, &
+      INTEGER                                            :: unit_nr, istep, beta, iteration
+      REAL(KIND=dp)                                      :: g_max, cp_init, &
                                                             tighten_eps_scf
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
@@ -271,35 +270,46 @@ CONTAINS
 
       ! loop over the orthogonalization penalty strength
       ! vary both intra and inter strengths together
-      !prev_determinant = HUGE(1.0_dp)
-      
-      IF (tidft_env%nstates > 1) THEN 
-         CPABORT("NEED TO UNCOMMENT DET(PHI) CHECK FIRST")
-      ENDIF
 
-      g_max = 1.0_dp ! play around 
-      beta = NINT((tidft_env%tighten_eps_scf / tidft_env%tidft_optimizer_pcg%eps_error)**(1.0_dp/REAL(tidft_env%cp_step-1,dp)))
+      g_max = 0.1_dp
+      iteration = 0
       cp_init = tidft_env%intrastate_nonorthogonality_penalty_coeff
-      tighten_eps_scf = tidft_env%tighten_eps_scf 
       ALLOCATE(grad_penalty_update(tidft_env%nstates + 1))
-      !DO ! before implement cp optimal procedure
-      DO istep=1, tidft_env%cp_step
+      ! For case of fixed Cp, i.e, max_cp_step = 1
+      IF (tidft_env%max_cp_step .EQ. 1) THEN
+         tighten_eps_scf = tidft_env%tidft_optimizer_pcg%eps_error 
+         beta = 1
+      ELSE
+         tighten_eps_scf = tidft_env%loose_eps_scf 
+         beta = NINT((tidft_env%loose_eps_scf / tidft_env%tidft_optimizer_pcg%eps_error)**(1.0_dp/REAL(tidft_env%max_cp_step-1,dp)))
+      ENDIF
+      
+      DO
+         iteration = iteration + 1
 
          IF (unit_nr > 0) THEN
 
             WRITE (unit_nr, '()')
             WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-            print_string = "Penalty strength:"
+            print_string = "INTRA Penalty strength:"
             WRITE (unit_nr, '(T2,A59,F20.10)') print_string, &
                tidft_env%intrastate_nonorthogonality_penalty_coeff
+            print_string = "INTER Penalty strength:"
+            WRITE (unit_nr, '(T2,A59,F20.10)') print_string, &
+               tidft_env%interstate_nonorthogonality_penalty_coeff
             WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
             WRITE (unit_nr, '()')
+
+            WRITE (unit_nr,*) "Cp INTRA update: " , tidft_env%intrastate_nonorthogonality_penalty_coeff
+            WRITE (unit_nr,*) "Cp INTER update: " , tidft_env%interstate_nonorthogonality_penalty_coeff  
+            WRITE (unit_nr,*) "EPS SCF: " , tighten_eps_scf
+            WRITE (unit_nr,*) "Iteration: " , iteration
+            WRITE (unit_nr,*) "beta: ", beta
 
             ! print the optimization header
             WRITE (unit_nr, '(T2,A,A,A)') REPEAT("-", 26), &
                " TIDFT optimization of MOs ", REPEAT("-", 26)
             WRITE (unit_nr, '()')
-
             WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
 
          ENDIF
@@ -312,7 +322,7 @@ CONTAINS
             WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
          ENDIF
 
-         tidft_env%tidft_optimizer_pcg%eps_error = tighten_eps_scf 
+         tidft_env%tidft_optimizer_pcg%eps_error = tighten_eps_scf
          CALL tidft_optimize_pcg( &
                  qs_env=qs_env, &
                  tidft_env=tidft_env, &
@@ -340,41 +350,26 @@ CONTAINS
          !   CPABORT("Illegal optmizer")
          !END SELECT
 
-         !det_diff = prev_determinant - tidft_env%det_mat_phi
+         ! CINDY: Combine the optimization of both inter and intra terms
+         ! INTER term condition: Check whether the determinant is sufficiently close to 1
+         IF (iteration .GE. tidft_env%max_cp_step .AND. (ABS(1.0_dp - tidft_env%det_mat_phi) .LE. &
+            tidft_env%allowed_determinant_deviaion .OR. .NOT.tidft_env%loss_function_components(3))) THEN
+            EXIT
+         ENDIF
 
-         !RZK-WARNNG: turn off check for GS
-         ! Check whether the determinant is sufficiently close to 1
-         !IF ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion &
-         !    .OR. .NOT.tidft_env%loss_function_components(3)) THEN
-         !   EXIT
-         !ENDIF
+         ! INTRA term condition: EPS_SCF should not be lower than the default SCF
+         IF (.NOT. (iteration .GT. tidft_env%max_cp_step)) THEN
+            tighten_eps_scf = tighten_eps_scf / beta
+         ENDIF
 
-         !prev_determinant = tidft_env%det_mat_phi
-
-         !tidft_env%intrastate_nonorthogonality_penalty_coeff = &
-         !   tidft_env%intrastate_nonorthogonality_penalty_coeff * &
-         !   ABS(tidft_env%penalty_strength_inc_factor)
-
-         ! CINDY update Cp with the additional gradient wrt Cp, which is the constraint itself
-         ! and tighten eps_scf to optimum convergence rate. Less penalty coeff, more orthogonality -> tighten eps_scf
-         tighten_eps_scf = tighten_eps_scf / beta
-         grad_penalty_update = MIN(tidft_env%grad_penalty_coeff, g_max) ! or tidft_env%grad_penalty_coeff(1) 
+         ! Update Cp INTRA with the additional gradient wrt Cp, which is the constraint itself
+         ! Less penalty coeff, more orthogonality -> tighten eps_scf 
+         grad_penalty_update = MIN(tidft_env%grad_penalty_coeff, g_max)
          tidft_env%intrastate_nonorthogonality_penalty_coeff = &
             tidft_env%intrastate_nonorthogonality_penalty_coeff + &
             grad_penalty_update(1)
-
-         ! Cp should not exceed 1  
-         !IF (tidft_env%intrastate_nonorthogonality_penalty_coeff .GE. 1.0_dp) THEN 
-         !   tidft_env%intrastate_nonorthogonality_penalty_coeff = cp_init*100
-         !   !ABS(grad_penalty_update(1)) 
-         !ENDIF
          
-         IF (unit_nr > 0) THEN 
-            WRITE (*,*) "Cp update: " , tidft_env%intrastate_nonorthogonality_penalty_coeff 
-            WRITE (*,*) "At Cp step:", istep, ", EPS SCF: " , tidft_env%tidft_optimizer_pcg%eps_error
-            WRITE (*,*) "beta", beta
-         ENDIF
-
+         ! Update Cp INTER
          tidft_env%interstate_nonorthogonality_penalty_coeff = &
             tidft_env%interstate_nonorthogonality_penalty_coeff * &
             ABS(tidft_env%penalty_strength_inc_factor)
@@ -517,23 +512,23 @@ CONTAINS
                        tidft_env = tidft_env, &
                        dx = tidft_env%numerical_gradient_dx, &
                        loss_components_out = loss_components, &
-                       gradient_out = optimizer_storage%grad )
+                       gradient_out = optimizer_storage%grad )  
             ELSE
                CALL mainvar_to_loss_and_gradient( &
                        qs_env = qs_env, &
                        tidft_env = tidft_env, &
                        loss_components_out = loss_components, &
-                       gradient_out = optimizer_storage%grad )
+                       gradient_out = optimizer_storage%grad )   
             ENDIF
 
             energy_function = loss_components(1)
-            penalty_func_new = loss_components(2) + loss_components(3)
+            penalty_func_new = loss_components(2) + loss_components(3) 
             objf_new = SUM(loss_components)
 
 ! STEP 6: Convergence
             ! check convergence and other exit criteria
             CALL tidft_optimizer_gradient_norm( &
-                    optimizer_storage%grad, &
+                    optimizer_storage%grad, &           
                     optimizer%which_gnorm, &
                     grad_norm, &
                     tidft_env%e_states(1)%slater_det(1)%ncols_var, &
@@ -567,7 +562,7 @@ CONTAINS
                      denom = 0.0_dp
                      denom2 = 0.0_dp
 
-! STEP 7: Line-search error
+! STEP 7: Line-search error    ! add g_phi and g_I by modifying the function tidft_optimizer_mainvar_dot
                      CALL tidft_optimizer_mainvar_dot( &
                              mat_left = optimizer_storage%grad, &
                              mat_right = optimizer_storage%step, &
@@ -635,14 +630,14 @@ CONTAINS
 
                   cg_iteration = cg_iteration + 1
 
-                  ! save the previous step
+                  ! save the previous step   
                   CALL tidft_optimizer_mainvar_copy( &
                           optimizer_storage%prev_step, &
                           optimizer_storage%step, &
                           ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
 ! STEP 8: Grad to step
-                  ! compute the new step
+                  ! compute the new step                  
                   CALL tidft_optimizer_grad_to_step( &
                           tidft_env = tidft_env, &
                           precond = optimizer%preconditioner, &
@@ -1345,9 +1340,6 @@ CONTAINS
                   DEALLOCATE(diagonal)
 
                   IF (unit_nr > 0) THEN
-                     ! CINDY: print out DetDiagonalSigma
-                     !WRITE (unit_nr, '(T2,A23,ES14.7)') &
-                     !   "Det. diagonal: ", DetDiagonalSigma
 
                      !WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
                      !                   "Det. diagon: ", DetDiagonalSigma
@@ -1913,7 +1905,8 @@ CONTAINS
    END SUBROUTINE mainvar_to_loss_and_gradient
 
 ! **************************************************************************************************
-!> \brief Copy matrices describing main variables from tidft_env into storage: 
+!> \brief Copy matrices describing main variables from tidft_env into storage:
+!> \brief CINDY: Compute gradient numerically or analytically
 !> \param ncols_var ...
 !> \par History
 !>       2022.05 created [Rustam Z Khaliullin]
