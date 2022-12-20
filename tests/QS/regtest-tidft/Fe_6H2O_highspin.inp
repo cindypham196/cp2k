@@ -1,5 +1,5 @@
 &GLOBAL
-  PROJECT Cr(H2O)6
+  PROJECT Fe(H2O)6
   RUN_TYPE ENERGY
   PRINT_LEVEL LOW
 &END GLOBAL
@@ -8,8 +8,8 @@
   &DFT
     BASIS_SET_FILE_NAME BASIS_MOLOPT
     POTENTIAL_FILE_NAME POTENTIAL
-    CHARGE 3
-    LSD
+    CHARGE 2
+    !LSD
     &MGRID
       CUTOFF 300
       NGRIDS 4
@@ -26,7 +26,7 @@
       SUGGESTED_MO_BLOCK_SIZE    34
       EPS_FILTER                 1.0E-11
       SPIN_PURE                  FALSE
-      MAX_UNPAIR                 3
+      MAX_UNPAIR                 4
       MO_GUESS_RANDOM_FRAC       0.05
       MO_GUESS_RANDOM_SEED       30304
       STATE_BY_STATE             TRUE
@@ -52,7 +52,7 @@
         INTERSTATE_NON_PENALTY_STRENGTH    1
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
         ALLOWED_DETERMINANT_DEVIATION      1E-4
-        MAX_CP_STEP                             3
+        MAX_CP_STEP                          3
         LOOSE_EPS_SCF                     1E-2
       &END PENALTY
 
@@ -66,7 +66,7 @@
         !ALGORITHM IRAC
         !MINIMIZER DIIS
         PRECONDITIONER  FULL_SINGLE_INVERSE !FULL_ALL is not compatible with ROTATION
-        ROTATION T      ! Restricted calculation with OT requires orbital rotation
+        ROTATION T ! Restricted calculation with OT requires orbital rotation
       &END OT
       &OUTER_SCF
          EPS_SCF 1.0E-7
@@ -78,42 +78,42 @@
       &END
     &END SCF
     &XC
-      &XC_FUNCTIONAL BLYP  ! Change to HSE
+      &XC_FUNCTIONAL BLYP ! change to HSE
       &END XC_FUNCTIONAL
     &END XC
   &END DFT
   &SUBSYS
     &CELL
-      ABC 10.1775 10.1775 10.1775   !7.1775
+      ABC 8.8 8.8 8.8   !6.4  6.4  6.4
       MULTIPLE_UNIT_CELL 1 1 1
     &END CELL
     &TOPOLOGY
       MULTIPLE_UNIT_CELL 1 1 1
     &END
     &COORD
-         Cr                 2.62666085    2.63704419    2.61896813
-          O                  2.62666085    2.63704419    4.40896813
-          H                  1.75180187    2.86903934    4.72896813
-          O                  0.83666085    2.63704419    2.61896813
-          H                  0.51666085    2.19870392    1.82709832
-          O                  2.62666085    4.42704419    2.61896813
-          H                  2.60136617    4.74704419    1.71422498
-          O                  2.62666085    2.63704419    0.82896813
-          H                  2.84972008    1.75986429    0.50896813
-          O                  4.41666085    2.63704419    2.61896813
-          H                  4.73666085    1.81071477    2.24967193
-          O                  2.62666085    0.84704419    2.61896813
-          H                  2.45404202    0.52704419    3.50745153
-          H                  1.85577764    4.74704419    3.09324555
-          H                  0.51666085    2.17043494    3.39451685
-          H                  2.86317665    1.76339650    4.72896813
-          H                  3.48241946    0.52704419    2.32421873
-          H                  4.73666085    3.37002879    2.08799397
-          H                  1.75547116    2.88245918    0.50896813
+         Fe                 2.01160109    2.00870261    1.98010463
+          O                  2.01160109    0.18870261    1.98010463
+          H                  1.41210397   -0.29041562    1.40430836
+          O                  3.83160109    2.00870261    1.98010463
+          H                  4.15160109    2.78019994    2.45338242
+          O                  2.01160109    2.00870261    0.16010463
+          H                  2.00394560    2.91376691   -0.15989537
+          O                  2.01160109    3.82870261    1.98010463
+          H                  1.52617840    4.14870261    2.74401877
+          O                  2.01160109    2.00870261    3.80010463
+          H                  1.12113684    1.84661186    4.12010463
+          H                  2.91588149    4.14870261    2.01853594
+          H                  2.59720793    1.31858332    4.12010463
+          H                  4.15160109    1.21308335    2.41160202
+          H                  1.23162016    1.54954061   -0.15989537
+          H                  2.60704046   -0.29017396    2.55978209
+          O                  0.19160109    2.00870261    1.98010463
+          H                 -0.28839891    2.68977195    1.50329800
+          H                 -0.28839891    1.32763327    2.45691126
     &END COORD
-    &KIND Cr
+    &KIND Fe
       BASIS_SET DZVP-MOLOPT-SR-GTH
-      POTENTIAL GTH-BLYP-q14
+      POTENTIAL GTH-BLYP-q16
     &END KIND
     &KIND H
       BASIS_SET DZVP-MOLOPT-GTH
@@ -123,14 +123,6 @@
       BASIS_SET DZVP-MOLOPT-GTH
       POTENTIAL GTH-BLYP-q6
     &END KIND
-    !&KIND N
-      !BASIS_SET DZVP-MOLOPT-GTH
-      !POTENTIAL GTH-BLYP-q5
-    !&END KIND
-    !&KIND F
-      !BASIS_SET DZVP-MOLOPT-GTH
-      !POTENTIAL GTH-BLYP-q7
-    !&END KIND
     
   &END SUBSYS
 &END FORCE_EVAL

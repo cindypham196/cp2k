@@ -1,12 +1,12 @@
 &GLOBAL
-  PROJECT Cr(Cl)6
+  PROJECT Cr(CO)6
   RUN_TYPE ENERGY
   PRINT_LEVEL LOW
 &END GLOBAL
 &FORCE_EVAL
   METHOD QS
   &DFT
-    BASIS_SET_FILE_NAME BASIS_MOLOPT_COMBINED  !GTH_BASIS_SETS
+    BASIS_SET_FILE_NAME BASIS_MOLOPT 
     POTENTIAL_FILE_NAME POTENTIAL
     &MGRID
       CUTOFF 300
@@ -15,7 +15,7 @@
     !UKS                  F
     ROKS                T
     &QS
-      TIDFT T
+      TIDFT  F
       EPS_DEFAULT 1.0E-12
     &END QS
 
@@ -24,7 +24,7 @@
       SUGGESTED_MO_BLOCK_SIZE    34
       EPS_FILTER                 1.0E-11
       SPIN_PURE                  FALSE
-      MAX_UNPAIR                 0
+      MAX_UNPAIR                 3
       MO_GUESS_RANDOM_FRAC       0.05
       MO_GUESS_RANDOM_SEED       30304
       STATE_BY_STATE             TRUE
@@ -50,8 +50,8 @@
         INTERSTATE_NON_PENALTY_STRENGTH    1
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
         ALLOWED_DETERMINANT_DEVIATION      1E-4
-        CP_STEP                             3
-        TIGHTEN_EPS_SCF                     1E-2
+        MAX_CP_STEP                             3
+        LOOSE_EPS_SCF                     1E-2
       &END PENALTY
 
     &END TIDFT
@@ -63,7 +63,8 @@
       &OT ON
         !ALGORITHM IRAC
         !MINIMIZER DIIS
-        PRECONDITIONER FULL_ALL
+        PRECONDITIONER FULL_SINGLE_INVERSE !FULL_ALL
+        ROTATION T
       &END OT
       &OUTER_SCF
          EPS_SCF 1.0E-7
@@ -103,7 +104,7 @@
       O       3.236388    4.911721   -0.801334
     &END COORD
     &KIND Cr
-      BASIS_SET TZV2P-MOLOPT-SR-GTH
+      BASIS_SET DZVP-MOLOPT-SR-GTH
       POTENTIAL GTH-BLYP-q14
     &END KIND
     &KIND C

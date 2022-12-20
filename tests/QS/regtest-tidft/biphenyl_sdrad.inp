@@ -15,7 +15,7 @@
     UKS                  F
     !ROKS                T
     &QS
-      TIDFT T
+      TIDFT  F 
       EPS_DEFAULT 1.0E-12
     &END QS
 
@@ -50,15 +50,15 @@
         INTERSTATE_NON_PENALTY_STRENGTH    1
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
         ALLOWED_DETERMINANT_DEVIATION      1E-4
-        CP_STEP                             3
-        TIGHTEN_EPS_SCF                     1E-2
+        MAX_CP_STEP                        3
+        LOOSE_EPS_SCF                     1E-2
       &END PENALTY
 
     &END TIDFT
 
     &SCF
       SCF_GUESS ATOMIC
-      EPS_SCF 1.0E-7
+      EPS_SCF 1.0E-8
       MAX_SCF 30
       &OT ON
         !ALGORITHM IRAC
@@ -66,7 +66,7 @@
         PRECONDITIONER FULL_ALL
       &END OT
       &OUTER_SCF
-         EPS_SCF 1.0E-7
+         EPS_SCF 1.0E-8
          MAX_SCF 5
       &END
       &PRINT
@@ -82,10 +82,10 @@
   &SUBSYS
     &CELL
       ABC 15.0795 14.78295  14.5827
-      MULTIPLE_UNIT_CELL 1 1 1
+      MULTIPLE_UNIT_CELL 2 2 1
     &END CELL
     &TOPOLOGY
-      MULTIPLE_UNIT_CELL 1 1 1
+      MULTIPLE_UNIT_CELL 2 2 1
     &END
     &COORD
       O       0.222700    2.135100    4.544200
