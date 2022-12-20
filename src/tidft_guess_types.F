@@ -59,6 +59,7 @@ MODULE tidft_guess_types
 
    END TYPE orbital_list_type
 
+   ! Container of orbital lists
    TYPE orbital_set_type
 
       TYPE(orbital_list_type), DIMENSION(:,:), &

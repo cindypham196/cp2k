@@ -136,26 +136,27 @@ CONTAINS
       ENDIF
 
       ! MAJOR STEP: Obtain canonical orbital energies and info on orbital location in matrices
-      ! RZK-WARNING: make mainvar consistent with canonical orbitals - alternatively: 
+      ! RZK-WARNING: make mainvar consistent with canonical orbitals - alternatively:
       ! Do not modify the orbitals in tidft_env, only get the energy (orbitals are needed later here though)
       nspins = tidft_env%nspins
-      idet = 1 ! Use the singlet state to produce canonical orbitals
+      idet = 1 ! Use the "mixed" state to produce canonical orbitals
 
+      ! The first index is spin, the second is occ/virt
       ALLOCATE(orbital_set%orbital_list(nspins, 2))
       DO ispin = 1, nspins
-      
+
          DO ivirtual = 1, 2
-      
+
             IF (ivirtual .EQ. 1) THEN
                CALL dbcsr_get_info(tidft_env%mat_sigma_inv(1,idet,ispin), nfullrows_total=norbs)
             ELSE
                CALL dbcsr_get_info(tidft_env%mat_sigma_vv(1,idet,ispin), nfullrows_total=norbs)
             ENDIF
-      
+
             orbital_set%orbital_list(ispin, ivirtual)%norbs = norbs
             orbital_set%orbital_list(ispin, ivirtual)%ispin = ispin
             orbital_set%orbital_list(ispin, ivirtual)%ivirtual = ivirtual - 1
-            
+
             IF (norbs .GT. 0) THEN
                ALLOCATE(orbital_set%orbital_list(ispin, ivirtual)%orb_energy(norbs))
                ALLOCATE(orbital_set%orbital_list(ispin, ivirtual)%index_within_matrix(norbs))
@@ -168,9 +169,9 @@ CONTAINS
                   orbital_set%orbital_list(ispin, ivirtual)%orb_has_spin_double(:) = .FALSE.
                ENDIF
             ENDIF
-      
+
          ENDDO
-      
+
       ENDDO
 
       CALL construct_canonical_orbitals(tidft_env, estate = 1, orbital_set = orbital_set)
@@ -186,7 +187,7 @@ CONTAINS
       count_unpairings = -1
       check_unpairings = tidft_env%restricted .AND. tidft_env%unpairings.GT.0
       IF (check_unpairings) THEN
-      
+
          eps_diff_orb_energy = SQRT(tidft_env%eps_filter)
 
          count_unpairings = 0
@@ -323,14 +324,14 @@ CONTAINS
       DEALLOCATE(excitation_list%excitations)
 
       DO ispin = 1, nspins
-      
+
          DO ivirtual = 1, 2
-      
+
             IF (unit_nr > 0) THEN
                WRITE(unit_nr, *) "Orbital energies for spin, virt: ", ispin, ivirtual
                WRITE(unit_nr, *) orbital_set%orbital_list(ispin, ivirtual)%orb_energy(:)
             ENDIF
-      
+
             IF ( orbital_set%orbital_list(ispin, ivirtual)%norbs .GT. 0 ) THEN
                DEALLOCATE(orbital_set%orbital_list(ispin, ivirtual)%orb_energy)
                DEALLOCATE(orbital_set%orbital_list(ispin, ivirtual)%index_within_matrix)
@@ -338,9 +339,9 @@ CONTAINS
                DEALLOCATE(orbital_set%orbital_list(ispin, ivirtual)%index_within_block)
                DEALLOCATE(orbital_set%orbital_list(ispin, ivirtual)%orb_has_spin_double)
             ENDIF
-      
+
          ENDDO
-      
+
       ENDDO
       DEALLOCATE(start_orbital_indices)
       DEALLOCATE(orbital_set%orbital_list)
@@ -788,7 +789,7 @@ CONTAINS
 
       INTEGER, DIMENSION(:), POINTER                     :: blk_sizes
       INTEGER                                            :: mo_start, iblock, imo
-      
+
       CALL dbcsr_get_info(matrix, row_blk_size=blk_sizes)
       mo_start = 1
       DO iblock = 1, SIZE(blk_sizes)
