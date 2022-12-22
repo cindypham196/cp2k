@@ -12,10 +12,12 @@
       CUTOFF 300
       NGRIDS 4
     &END MGRID
-    UKS                  F
-    !ROKS                T
+    CHARGE               0
+    MULTIPLICITY         1
+    UKS                  T ! RZK: Perform the same calculations as for CH2, NH2+, OH+ diradicals
+    ROKS                 F
     &QS
-      TIDFT  F 
+      TIDFT  F
       EPS_DEFAULT 1.0E-12
     &END QS
 
@@ -81,11 +83,11 @@
   &END DFT
   &SUBSYS
     &CELL
-      ABC 15.0795 14.78295  14.5827
-      MULTIPLE_UNIT_CELL 2 2 1
+      ABC 15.0795 14.78295  14.5827 ! RZK: Why cell has such weird size? Why not use 15.0 15.0 15.0?
+      MULTIPLE_UNIT_CELL 1 1 1 ! RZK: No need to multiply the cell for gas-phase molecules
     &END CELL
     &TOPOLOGY
-      MULTIPLE_UNIT_CELL 2 2 1
+      MULTIPLE_UNIT_CELL 1 1 1
     &END
     &COORD
       O       0.222700    2.135100    4.544200
@@ -142,6 +144,9 @@
     &KIND C
       BASIS_SET DZVP-GTH
       POTENTIAL GTH-BLYP-q4
+      &BS
+        ! RZK: Break spin symmetry as shown for small diradicals. It is better to create spin-density on atoms that are expected to carry unpaired electrons. In this case, SCF will converge faster.
+      &END BS
     &END KIND
     &KIND O
       BASIS_SET DZVP-GTH

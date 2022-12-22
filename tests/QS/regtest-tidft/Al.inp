@@ -14,6 +14,7 @@
     BASIS_SET_FILE_NAME BASIS_MOLOPT
     POTENTIAL_FILE_NAME POTENTIAL
 
+    CHARGE              0
     MULTIPLICITY        1
     UKS                 F
     !ROKS                T
@@ -81,10 +82,10 @@
     &END SCF
 
       &MGRID
-      CUTOFF 650 !300
+      CUTOFF 300
       NGRIDS 5
-      REL_CUTOFF 50  
-    &END MGRID   
+      REL_CUTOFF 50
+    &END MGRID
 
     &XC
       &XC_FUNCTIONAL PBE
@@ -99,24 +100,24 @@
   &SUBSYS
 
     &CELL
-      ABC 6.0 6.0 6.0
-      MULTIPLE_UNIT_CELL 1 1 1 !10 10 1
+      ABC 4.0495 4.0495 4.0495
+      MULTIPLE_UNIT_CELL N N N ! RZK: Find proper N (either in the literature or by computing energy/atom with N=1,2,4,8,16)
     &END CELL
 
     &TOPOLOGY
-      MULTIPLE_UNIT_CELL 1 1 1 !10 10 1
+      MULTIPLE_UNIT_CELL N N N ! Use the same N
     &END
 
     &COORD
- Al        -0.4201082476       -0.4201082770       -0.4201082658
- Al         2.1120503717        0.1540265147        0.1540265525
- Al         0.1540266214        2.1120506065        0.1540265605
- Al         0.1540266183        0.1540265196        2.1120505165
+      SCALED T
+      Al 0.0 0.0 0.0
+      Al 0.0 0.5 0.5
+      Al 0.5 0.0 0.5
+      Al 0.5 0.5 0.0
     &END COORD
 
     &KIND Al
       BASIS_SET DZVP-MOLOPT-SR-GTH
-
       POTENTIAL GTH-PBE-q3
     &END KIND
 

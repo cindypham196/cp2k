@@ -12,8 +12,10 @@
       CUTOFF 300
       NGRIDS 4
     &END MGRID
-    UKS                  T !F
-    !ROKS                T
+    CHARGE               0
+    MULTIPLICITY         2 ! One unpaired electron
+    UKS                  T ! RZK: Two calculations should be performed. One: UKS=T, ROKS=F; the other: UKS=F, ROKS=T
+    ROKS                 F
     &QS
       TIDFT T
       EPS_DEFAULT 1.0E-12
