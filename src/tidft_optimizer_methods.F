@@ -1227,9 +1227,9 @@ CONTAINS
                   CALL dbcsr_scale(mat_proj(1), 0.5_dp)
                ENDIF
    
-               !IF (unit_nr > 0 .AND. ndets.EQ.2) THEN
-               !   WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Determinant", idet, energy
-               !ENDIF
+               IF (unit_nr > 0 .AND. ndets.EQ.2) THEN
+                  WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Determinant", idet, energy
+               ENDIF
    
                IF (idet.EQ.1) THEN
                   energy_singlet = energy
@@ -1246,7 +1246,7 @@ CONTAINS
    
             state_energy = 2*energy_singlet-energy_triplet
             IF (unit_nr > 0) THEN
-               WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State ", stateI, state_energy
+               WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State", stateI, state_energy
             ENDIF
             tidft_env%e_states(stateI)%state_energy = state_energy
    

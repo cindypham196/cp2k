@@ -103,14 +103,14 @@
     &KIND C
       BASIS_SET DZVP-GTH   ! RZK: use larger basis set
       POTENTIAL GTH-BLYP-q4
-      &BS
+      &BS            ! RZK: You can see how initial atomic configurations change in the output file
         &ALPHA       ! Modification to the spin-up initial MOs
-           NEL     +1    ! Carbon recieves one electron from hydrogen
+           NEL     +1    ! Transfer 1 beta electron to alpha (on carbon atom)
            N        2
            L        1
         &END ALPHA
         &BETA        ! Modification to the spin-down initial MOs
-           NEL      0    ! Nothing is transferred in the beta-channel
+           NEL     -1    ! Transfer 1 beta electron to alpha (on carbon atom)
            N        2
            L        1
         &END BETA
@@ -121,14 +121,14 @@
       POTENTIAL GTH-BLYP-q1
       &BS
         &ALPHA
-           NEL     +1    ! Hydrogen sends one electron to carbon
-           N        2
-           L        1
+           NEL      0    ! Do not do anything to hydrogen (the H's &BS can be deleted)
+           N        1
+           L        0
         &END ALPHA
         &BETA
            NEL      0
-           N        2
-           L        1
+           N        1
+           L        0
         &END BETA
       &END BS
     &END KIND
