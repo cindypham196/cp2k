@@ -944,7 +944,6 @@ CONTAINS
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:,:)    :: mat_g_energy
       INTEGER                                            :: opposite_spin
 
-      
       CALL timeset(routineN, handle)
 
       my_silent=.FALSE.
@@ -978,66 +977,6 @@ CONTAINS
       intrastate_penalty_component=tidft_env%loss_function_components(2)
       interstate_penalty_component=tidft_env%loss_function_components(3)
 
-!      ! CINDY's code starts here
-!      ! Combine X1-X3 to generate MOs mat_t(alpha) and mat_t(beta) for ROKS and UKS
-!      DO stateI = 1, nstates
-!         DO slaterI = ndets, 1, -1 ! do T before S to avoid overwrite in the X1 U X2 step
-!            DO ispin = 1, nspins
-!               ! Do we have paired e-? X1
-!               IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) .NE. 0) THEN
-!                  WRITE(*,*) "State, determinant, sipn: ", stateI, slaterI, ispin
-!                  IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .NE. 0) THEN
-!                     ! combine paired and unpaired electrons
-!                     IF (slaterI .EQ. 2)  THEN ! Triplet
-!                        IF (ispin .EQ. 1) THEN ! T_alpha
-!                              ! Use the singlet matrix to store intermediate X1 U X2 matrix
-!                              CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), & ! X1 U X2
-!                                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
-!                                                   tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin))
-!                              CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), & ! X1 U X2 U X3
-!                                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
-!                                                   tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
-!                        ELSE ! T_beta = X1, copy mat_var(1) into mat_t
-!                              CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin), &
-!                                              tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
-!                        ENDIF
-!                     ELSE ! Singlet state, here can do for both beta and alpha
-!                           CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), & ! X1 U X2 and X1 U X3
-!                                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
-!                                                tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
-!                     ENDIF
-!                  ELSE !copy mat_var(1) into mat_t
-!                        CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin), &
-!                                        tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
-!                  ENDIF
-!
-!               ELSE ! No paired e-. Do we have unpaired e-? n_alpha and n_beta are different
-!                  IF (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(ispin+1) .EQ. 0) THEN
-!                     IF (ispin .EQ. 1) CPABORT("Number of alpha electrons cannot be zero!")
-!                  ELSE ! No paired electrons, only unpaired. This also takes care of UKS
-!
-!
-!                     !RZK-WARNING: Should deal with the triplet state here!
-!                     IF (slaterI .EQ. 2)  THEN ! Triplet
-!                        IF (ispin .EQ. 1) THEN ! T_alpha
-!                        ! Use the singlet matrix to store intermediate X1 U X2 matrix
-!                           CALL stitch_columns(tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), & ! X1 U X2
-!                                             tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
-!                                             tidft_env%e_states(stateI)%slater_det(slaterI)%mat_t(ispin))
-!                        ELSE ! no T_beta for the triplet state, do nothing
-!                        ENDIF
-!                     ELSE ! Singlet state, here can do for both beta and alpha
-!                        CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), &
-!                            tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
-!                     ENDIF
-!
-!                     
-!                  ENDIF
-!               ENDIF
-!            ENDDO ! end ispin
-!         ENDDO ! end slaterI
-!      ENDDO  ! end stateI
-      
       !! RZK: templates for looping over the key matrices
       !! orbital matrices
       !DO idet = 1, ndets
@@ -1168,17 +1107,17 @@ CONTAINS
          ALLOCATE(mat_proj(nspins))
 
          DO stateI = first_state, nstates
-   
+
             DO idet = 1, ndets
-   
+
                DO ispin = 1, nspins
-   
+
                   CALL dbcsr_create(mat_proj(ispin), template=tidft_env%mat_s)
-   
+
                   ! Create projectors only if there are electrons of this spin
                   IF (tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin).GT.0) THEN
-   
-   
+!WRITE(*,*) "State, Det, Spin: ", stateI, idet, ispin
+!CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
                      ! compute projectors from electronic states
                      CALL almo_scf_t_to_proj(t=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                                              p=mat_proj(ispin), &
@@ -1198,17 +1137,23 @@ CONTAINS
                                              !inv_eps_factor=tidft_env%matrix_iter_eps_error_factor, &
                                              para_env=tidft_env%para_env, &
                                              blacs_env=tidft_env%blacs_env)
-   
+
+                  ELSE ! set projector to zero if there are no electrons
+
+                     CALL dbcsr_copy(mat_proj(ispin), tidft_env%mat_s)
+                     CALL dbcsr_set(mat_proj(ispin), 0.0_dp)
+
                   ENDIF
-   
+
                ENDDO ! ispin
-   
+
                ! compute dm from the projector(s)
                IF (nspins == 1) THEN
                   CALL dbcsr_scale(mat_proj(1), 2.0_dp)
                ENDIF
-   
-               ! RZK-WARNING: What happens if there are no beta electrons? And thus no projector
+
+               ! If there are no beta electrons, zero beta-projector with the proper
+               ! block structure should be passed down. This approach seems to work
                CALL tidft_dm_to_tidft_ks(qs_env, &
                                          mat_proj, &
                                          tidft_env%e_states(stateI)%slater_det(idet)%mat_ks, &
@@ -1216,21 +1161,21 @@ CONTAINS
                                          tidft_env%eps_filter, &
                                          smear=tidft_env%smear, &
                                          kTS_sum=kTS_sum)
-   
-! perform population analysis
-!CALL mulliken_population_analysis(qs_env, &
-!        output_unit = unit_nr, &
-!        print_level = 2)
+
+               ! perform population analysis
+               !CALL mulliken_population_analysis(qs_env, &
+               !        output_unit = unit_nr, &
+               !        print_level = 2)
 
                ! re-compute projector from the dm
                IF (nspins == 1) THEN
                   CALL dbcsr_scale(mat_proj(1), 0.5_dp)
                ENDIF
-   
+
                IF (unit_nr > 0 .AND. ndets.EQ.2) THEN
-                  WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Determinant", idet, energy
+                  WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Energy of Slater determinant", idet, energy
                ENDIF
-   
+
                IF (idet.EQ.1) THEN
                   energy_singlet = energy
                   energy_triplet = energy
@@ -1241,26 +1186,26 @@ CONTAINS
                DO ispin = 1, nspins
                   CALL dbcsr_release(mat_proj(ispin))
                ENDDO
-   
+
             ENDDO ! idet
-   
+
             state_energy = 2*energy_singlet-energy_triplet
             IF (unit_nr > 0) THEN
                WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State", stateI, state_energy
             ENDIF
             tidft_env%e_states(stateI)%state_energy = state_energy
-   
+
             obj_energy = obj_energy + state_energy
-   
+
          ENDDO ! stateI
-   
+
          !IF (unit_nr > 0) THEN
          !   WRITE (unit_nr, '(T2,A38,F40.10)') "Sum of energies of all states", obj_energy
          !   WRITE (unit_nr, '()')
          !ENDIF
-   
+
          DEALLOCATE(mat_proj)
-   
+
       ENDIF ! energy_component
 
       ! Return the sum of all energies to QS
@@ -1350,11 +1295,10 @@ CONTAINS
                         "Normalized determinant: ", &
                         tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
 
-                    
                   ENDIF
                   penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff * &
                      ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
-                  
+
                   ! CINDY save each component of gradient of Lagrange function (all INTRA terms and several INTER terms)
                   tidft_env%grad_penalty_coeff(stateI) = - ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
 
@@ -1430,7 +1374,7 @@ CONTAINS
                            !   WRITE (unit_nr, *) "StateI, StateJ, Slater, Spin: ", stateI, stateJ, idet, ispin, &
                            !                      "Determinant: ", tidft_env%mat_phi_spin(stateI,stateJ,ispin)
                            !ENDIF
-   
+
                         ENDIF ! zero MOs for state J
 
                      ENDDO ! stateJ
@@ -1450,14 +1394,14 @@ CONTAINS
          !   ENDDO
          !   WRITE (*,*)
          !ENDDO
-   
+
          ! Hadamard product of spin matrices to obtain full phi
          IF (nspins .EQ. 2) THEN
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,2)
          ELSE
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,1)
          ENDIF
-   
+
          ! Print phi matrix
          IF (unit_nr > 0) THEN
             WRITE (unit_nr, *)
@@ -1467,7 +1411,6 @@ CONTAINS
             ENDDO
          ENDIF
 
-   
          ! compute the product of the diagonal elements
          DetDiagonalSigma = 1.0_dp
          DO ivar = 1, nstates
@@ -1485,14 +1428,14 @@ CONTAINS
             WRITE (unit_nr, '(T2,A38,F40.10)') "Normalized determinant of PHI: ", &
                tidft_env%det_mat_phi
          ENDIF
-   
+
          interstate_nonorthogonality_penalty = &
             - tidft_env%interstate_nonorthogonality_penalty_coeff * &
             ( LOG(tidft_env%det_mat_phi) )
 
          ! CINDY save each component of gradient of Lagrange function (all INTRA terms and several INTER terms)
          ! tidft_env%grad_penalty_coeff(stateI+1) = - ( LOG(tidft_env%det_mat_phi) )
-         
+
       ENDIF ! interstate_penalty_component
 
       ! Pass the result up
@@ -1551,12 +1494,15 @@ CONTAINS
             ELSE
                idet = 1
             ENDIF
-            CALL dbcsr_create(mat_g_intra(stateI, ispin), &
-                    template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
-            CALL dbcsr_create(mat_g_inter(stateI, ispin), &
-                    template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
-            CALL dbcsr_set(mat_g_intra(stateI, ispin), 0.0_dp)
-            CALL dbcsr_set(mat_g_inter(stateI, ispin), 0.0_dp)
+            nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+            IF ( nmos_stateI .GT. 0) THEN
+               CALL dbcsr_create(mat_g_intra(stateI, ispin), &
+                       template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+               CALL dbcsr_create(mat_g_inter(stateI, ispin), &
+                       template=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+               CALL dbcsr_set(mat_g_intra(stateI, ispin), 0.0_dp)
+               CALL dbcsr_set(mat_g_inter(stateI, ispin), 0.0_dp)
+            ENDIF
 
          ENDDO ! stateI
       ENDDO ! ispin
@@ -1659,8 +1605,6 @@ CONTAINS
                              filter_eps=tidft_env%eps_filter)
                      ! Scale by 2.0
                      CALL dbcsr_scale(mat_g_energy(stateI, ispin, idet), 2.0_dp)
-               
-
 
                      CALL gradMO_to_gradVAR_increment( &
                              mat_g_out=gradient_out(stateI, :), &
@@ -1672,7 +1616,6 @@ CONTAINS
                              nspins=nspins, &
                              triplet_correction=tidft_env%triplet_correction, &
                              energy_term=.TRUE.)
-
 
                      !! RZK-WARNING: IF components are given, do not accumulate the total gradient
                      !! It's a waste of time
@@ -2952,7 +2895,8 @@ WRITE(*,*)
             ! Invert or pseudoinvert
             DO ivar = 1, 3
                IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).GT.0) THEN
-
+!WRITE(*,*) "State, var: ", stateI, ivar
+!CALL dbcsr_print(prec_inv(stateI,ivar))
                   SELECT CASE (precond)
                   CASE (tidft_prec_h_s, tidft_prec_qhq_s)
                   ! Invert using cholesky for dense matrices

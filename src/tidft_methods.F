@@ -1533,7 +1533,7 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
-      ! to re-use some almo_scf subroutines set 
+      ! to re-use some almo_scf subroutines set
       ! nocc_of_domain to the negative number
       ALLOCATE(fake_e_per_block(1))
       fake_e_per_block(:) = -1
@@ -1542,7 +1542,7 @@ CONTAINS
       nstates = tidft_env%nstates
       ndets=1
       IF (tidft_env%triplet_correction) ndets = 2
-      
+
       my_state_start = 1
       my_state_end = nstates
       IF (PRESENT(only_state)) THEN
@@ -1558,16 +1558,16 @@ CONTAINS
 
          DO ivar = 1, 3
 
+            ! Orthogonalize vectors describing variables in several steps
+            ! * Orthogonalize doubly occupied orbitals
+            ! * Create the projector R1 onto the doubly occupied subspace
+            ! * Project out the doubly occupied subspace from both singly-occupied
+            !   alpha and singly-occupied beta subspaces
+            ! * Orthogonalize singly occupied orbitals
+
             nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
 
             IF ( nmos_stateI .GT. 0 ) THEN
-
-               ! Orthogonalize vectors describing variables in several steps
-               ! * Orthogonalize doubly occupied orbitals 
-               ! * Create the projector R1 onto the doubly occupied subspace
-               ! * Project out the doubly occupied subspace from both singly-occupied
-               !   alpha and singly-occupied beta subspaces
-               ! * Orthogonalize singly occupied orbitals
 
                ! Project out the doubly occupied subspace if any
                IF (ivar .NE. 1) THEN
@@ -1597,7 +1597,7 @@ CONTAINS
 
                IF (tidft_env%triplet_correction .AND. ivar .GT. 1) THEN
 
-                  ! The singly-occupied alpha and beta electrons must be orthogonalized simultaneusly 
+                  ! The singly-occupied alpha and beta electrons must be orthogonalized simultaneusly
                   ! Do this for ivar.EQ.3, when R1 is projected out from both singly-occupied states
 
                   ! Do nothing for ivar.EQ.2
@@ -1619,13 +1619,13 @@ CONTAINS
                              suggested_mo_blk_size = 2, &
                              symmetry_new = dbcsr_type_no_symmetry, &
                              nmos = (/2, 2/) ) ! these are not MOs but independent vars
-   
+
                      CALL stitch_columns( &
                              tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
                              tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
                              mat_var23 &
                           )
-   
+
                      CALL orthogonalize_mos(ket=mat_var23, &
                                             overlap=mat_var23_sigma, &
                                             metric=tidft_env%mat_s, &
@@ -1660,6 +1660,7 @@ CONTAINS
                                          eps_lanczos=tidft_env%eps_lanczos, &
                                          max_iter_lanczos=tidft_env%max_iter_lanczos, &
                                          smear=tidft_env%smear)
+
                ENDIF ! triplet correction
 
                IF (ivar .EQ. 1) THEN
@@ -1669,7 +1670,7 @@ CONTAINS
                                 0.0_dp, mat_proj_var1, &
                                 filter_eps=tidft_env%eps_filter)
                ENDIF
-   
+
             ENDIF ! non-zero columns
 
          ENDDO ! end ivar

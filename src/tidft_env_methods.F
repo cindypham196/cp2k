@@ -251,7 +251,7 @@ CONTAINS
                                 i_val=tidft_env%max_cp_step)
       CALL section_vals_val_get(penalty_section, &
                                 "LOOSE_EPS_SCF", &
-                                r_val=tidft_env%loose_eps_scf)                       
+                                r_val=tidft_env%loose_eps_scf)
 
       ! check for conflicts between options
 
@@ -291,7 +291,7 @@ CONTAINS
       !REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: interstate_nonorthogonality_penalty_coeff
 
       CALL timeset(routineN, handle)
-      
+
       ! define the output_unit
       logger => cp_get_default_logger()
       IF (logger%para_env%ionode) THEN
