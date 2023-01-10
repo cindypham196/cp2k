@@ -305,9 +305,17 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+
       IF (optimizer_type .EQ. optimizer_pcg .OR. &
           optimizer_type .EQ. optimizer_lin_eq_pcg .OR. &
           optimizer_type .EQ. optimizer_trustr) THEN
+
+         ! CINDY 5/1/23: add weight alpha for QHQ_S prec 
+         CALL keyword_create(keyword, __LOCATION__, name="PREC_WEIGHT_OVERLAP", &
+                     description="Preconditioner weight of the overlap matrix. Between 0 and 1.", &
+                     usage="PREC_WEIGHT_OVERLAP 0.6", default_r_val=0.5_dp)
+         CALL section_add_keyword(section, keyword)
+         CALL keyword_release(keyword)
 
          CALL keyword_create(keyword, __LOCATION__, name="MAX_ITER_OUTER_LOOP", &
                              description="Maximum number of iterations in the outer loop. "// &
@@ -316,7 +324,7 @@ CONTAINS
                              usage="MAX_ITER 10", default_i_val=0)
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
-
+   
          CALL keyword_create(keyword, __LOCATION__, name="PRECONDITIONER", &
                              description="Select a preconditioner for the conjugate gradient optimization", &
                              usage="PRECONDITIONER OVERLAP", &
@@ -333,7 +341,6 @@ CONTAINS
                                            tidft_prec_s/))
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
-
       ENDIF
 
       IF (optimizer_type .EQ. optimizer_pcg) THEN

@@ -184,6 +184,9 @@ MODULE tidft_types
       ! Options for various optimizers
       TYPE(optimizer_options_type)                       :: tidft_optimizer_pcg
 
+      ! CINDY add weight alpha for modified QHQ_S prec
+      REAL(KIND=dp)                                      :: weight_alpha_prec
+
       !!!!!!!!!!!!!!!!!!!!!!!
       !!!!!! MATRICES !!!!!!!
       !!!!!!!!!!!!!!!!!!!!!!!

@@ -22,7 +22,7 @@
                            !   4. UKS=F, ROKS=T, SPIN_PURE=F, MULTIPLICITY=3
                            !   5. UKS=F, ROKS=T, SPIN_PURE=T, MULTIPLICITY=1
     &QS
-      TIDFT  T
+      TIDFT  F  !T
       EPS_DEFAULT 1.0E-12
     &END QS
 
@@ -101,7 +101,7 @@
       H    0.00000000   -1.04918899   -0.27851281
     &END COORD
     &KIND C
-      BASIS_SET DZVP-GTH   ! RZK: use larger basis set
+      BASIS_SET aug-TZV2P-GTH !DZVP-GTH   ! RZK: use larger basis set
       POTENTIAL GTH-BLYP-q4
       &BS            ! RZK: You can see how initial atomic configurations change in the output file
         &ALPHA       ! Modification to the spin-up initial MOs
@@ -117,7 +117,7 @@
       &END BS
     &END KIND
     &KIND H
-      BASIS_SET DZVP-GTH   ! RZK: larger
+      BASIS_SET aug-TZV2P-GTH  !DZVP-GTH   ! RZK: larger
       POTENTIAL GTH-BLYP-q1
       &BS
         &ALPHA

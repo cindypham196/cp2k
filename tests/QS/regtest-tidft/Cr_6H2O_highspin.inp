@@ -6,10 +6,10 @@
 &FORCE_EVAL
   METHOD QS
   &DFT
-    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT_UZH
     POTENTIAL_FILE_NAME POTENTIAL
 
-    CHARGE              3    ! RZK: I do not remember CHARGE, check it
+    CHARGE              2    ! RZK: I do not remember CHARGE, check it [Cr(H2O)6]2+
     MULTIPLICITY        1    ! RZK: I am not sure what multiplicites we decided to try. Compare energies for: 1,3,5 (or 2,4,6?)
     UKS                 T    ! == LSD?  RZK: UKS - compare to OT.
     !ROKS                T   ! RZK: Also, perform ROKS with TIDFT (same multiplicities)
@@ -18,10 +18,9 @@
       CUTOFF 300
       NGRIDS 4
     &END MGRID
-    !UKS                  F
-    ROKS                T
+
     &QS
-      TIDFT T  !F
+      TIDFT T
       EPS_DEFAULT 1.0E-12
     &END QS
 
@@ -30,7 +29,7 @@
       SUGGESTED_MO_BLOCK_SIZE    34
       EPS_FILTER                 1.0E-11
       SPIN_PURE                  FALSE
-      MAX_UNPAIR                 3
+      MAX_UNPAIR                 4
       MO_GUESS_RANDOM_FRAC       0.05
       MO_GUESS_RANDOM_SEED       30304
       STATE_BY_STATE             TRUE
@@ -43,6 +42,7 @@
 
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             QHQ_S
+        !WEIGHT_ALPHA_PREC          0.65
         EPS_ERROR                  1.0E-8
         MAX_ITER                   50
         MAX_ITER_OUTER_LOOP        100
@@ -53,6 +53,7 @@
 
       &PENALTY
         INTRASTATE_NON_PENALTY_STRENGTH    1E-5
+        WEIGHT_ALPHA_PREC          0.65
         INTERSTATE_NON_PENALTY_STRENGTH    1
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
         ALLOWED_DETERMINANT_DEVIATION      1E-4
@@ -65,7 +66,7 @@
     &SCF
       SCF_GUESS ATOMIC
       EPS_SCF 1.0E-7
-      MAX_SCF 30
+      MAX_SCF 50 !30
       &OT ON
         !ALGORITHM IRAC
         !MINIMIZER DIIS
@@ -74,16 +75,47 @@
       &END OT
       &OUTER_SCF
          EPS_SCF 1.0E-7
-         MAX_SCF 5
+         MAX_SCF 20 !5
       &END
       &PRINT
         &RESTART OFF
         &END
       &END
     &END SCF
-    &XC
-      &XC_FUNCTIONAL BLYP  ! RZK: Change to HSE
+    &XC ! RZK: Change to HSE functional 
+      &XC_FUNCTIONAL PBE !B3LYP
+        !&HYB_GGA_XC_HSE06 T ! did not work
+        !&END HYB_GGA_XC_HSE06
+       ! &PBE
+        !SCALE_X 0.0
+        !SCALE_C 1.0
+        !&END PBE
+
+        !&XWPBE
+        !SCALE_X -0.25
+        !SCALE_X0 1.0
+        !OMEGA 0.11
+        !&END XWPBE
       &END XC_FUNCTIONAL
+
+      !&HF
+        !&SCREENING
+        !EPS_SCHWARZ 1.0E-6
+        !SCREEN_ON_INITIAL_P FALSE
+        !&END SCREENING
+
+        !&INTERACTION_POTENTIAL
+        !POTENTIAL_TYPE SHORTRANGE
+        !OMEGA 0.11
+        !&END INTERACTION_POTENTIAL
+
+        !&MEMORY
+        !MAX_MEMORY 2400
+        !EPS_STORAGE_SCALING 0.1
+        !&END MEMORY
+
+        !FRACTION 0.25
+      !&END HF
     &END XC
   &END DFT
   &SUBSYS
@@ -117,25 +149,30 @@
     &END COORD
     ! RZK: For singlet, break the simmetry of the initial guess...
     &KIND Cr
-      BASIS_SET DZVP-MOLOPT-SR-GTH
+      BASIS_SET TZV2P-MOLOPT-PBE-GTH-q14 !DZVP-MOLOPT-SR-GTH
       POTENTIAL GTH-BLYP-q14
+      &BS 
+        &ALPHA ! Modification to the spin-up initial MOs 
+          NEL +2 ! Transfer 2 beta electrons to alpha (on Cr cation)
+          N 3
+          L 2
+        &END ALPHA
+        &BETA ! Modification to the spin-down initial MOs 
+          NEL -2 ! Transfer 2 beta electrons to alpha (on Cr cation)
+          N 3
+          L 2
+        &END BETA
+      &END BS 
+
     &END KIND
     &KIND H
-      BASIS_SET DZVP-MOLOPT-GTH
+      BASIS_SET TZV2P-MOLOPT-PBE-GTH-q1
       POTENTIAL GTH-BLYP-q1
     &END KIND
     &KIND O
-      BASIS_SET DZVP-MOLOPT-GTH
+      BASIS_SET TZV2P-MOLOPT-PBE-GTH-q6
       POTENTIAL GTH-BLYP-q6
     &END KIND
-    !&KIND N
-      !BASIS_SET DZVP-MOLOPT-GTH
-      !POTENTIAL GTH-BLYP-q5
-    !&END KIND
-    !&KIND F
-      !BASIS_SET DZVP-MOLOPT-GTH
-      !POTENTIAL GTH-BLYP-q7
-    !&END KIND
     
   &END SUBSYS
 &END FORCE_EVAL

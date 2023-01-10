@@ -1304,8 +1304,8 @@ CONTAINS
 
                   IF (unit_nr > 0) THEN
                      !WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State penalty ", stateI, penalty_stateI
-                     WRITE (*,*) "Penalty state ", penalty_stateI
-                     WRITE (*,*) "Grad_penalty_coeff ", tidft_env%grad_penalty_coeff(stateI)
+                     !WRITE (*,*) "Penalty state ", penalty_stateI
+                     !WRITE (*,*) "Grad_penalty_coeff ", tidft_env%grad_penalty_coeff(stateI)
                   ENDIF
 
                   intrastate_nonorthogonality_penalty = intrastate_nonorthogonality_penalty + &
@@ -2697,7 +2697,7 @@ WRITE(*,*)
 
       CALL timeset(routineN, handle)
 
-      alpha = 1.0_dp
+      alpha = tidft_env%weight_alpha_prec 
       zero_eigenvalue_eps_factor = 100.0_dp
 
       SELECT CASE (precond)
@@ -2708,8 +2708,8 @@ WRITE(*,*)
 
       CASE (tidft_prec_qhq_s)
 
-         overlap_project_R_out = .FALSE.
-         hamiltonian_project_R_out = .TRUE.
+         overlap_project_R_out = .FALSE. !QSQ
+         hamiltonian_project_R_out = .TRUE. !QHQ
 
       CASE (tidft_prec_qhq_qsq)
 
@@ -2844,14 +2844,17 @@ WRITE(*,*)
                                 filter_eps=tidft_env%eps_filter)
                      ENDIF
 
-                     ! prec = (1-SR)F(1-RS) + alpha * S
+                     ! prec = (1 - alpha)*(1-SR)F(1-RS) + alpha * S
+                     ! increase alpha to guarantee positive definiteness (increase S, decrease QHQ)
                      CALL dbcsr_create(temp_NN1, &
                              template=tidft_env%mat_s, matrix_type = dbcsr_type_no_symmetry)
                      CALL dbcsr_desymmetrize( &
                              tidft_env%mat_s, &
                              temp_NN1)
+
+
                      CALL dbcsr_add(temp_prec, &
-                             temp_NN1, 1.0_dp, alpha)
+                             temp_NN1, 1.0_dp - alpha, alpha)
                      CALL dbcsr_release(temp_NN1)
 
                      IF (overlap_project_R_out) THEN
