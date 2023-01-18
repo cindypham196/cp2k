@@ -227,8 +227,8 @@ CONTAINS
       CALL section_vals_val_get(tidft_pcg_optimizer_section, "PRECONDITIONER", &
                                 i_val=tidft_env%tidft_optimizer_pcg%preconditioner)
       ! CINDY 
-      !CALL section_vals_val_get(tidft_pcg_optimizer_section, "PREC_WEIGHT_OVERLAP", &
-      !                          r_val=tidft_env%tidft_optimizer_pcg%weight_alpha_prec)
+      CALL section_vals_val_get(tidft_pcg_optimizer_section, "PREC_WEIGHT_OVERLAP", &
+                                r_val=tidft_env%weight_alpha_prec)
 
       penalty_section => section_vals_get_subs_vals(tidft_section, "PENALTY")
 
@@ -255,8 +255,8 @@ CONTAINS
       CALL section_vals_val_get(penalty_section, &
                                 "LOOSE_EPS_SCF", &
                                 r_val=tidft_env%loose_eps_scf)
-      CALL section_vals_val_get(penalty_section, "PREC_WEIGHT_OVERLAP", &
-                                r_val=tidft_env%weight_alpha_prec)                      
+      !CALL section_vals_val_get(penalty_section, "PREC_WEIGHT_OVERLAP", &
+      !                          r_val=tidft_env%weight_alpha_prec)                      
 
       ! check for conflicts between options
 

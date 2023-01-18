@@ -54,7 +54,7 @@ MODULE tidft_optimizer_methods
    USE kinds,                           ONLY: default_path_length,&
                                               dp
    USE machine,                         ONLY: m_walltime
-   USE message_passing,                 ONLY: mp_sum
+   USE message_passing,                 ONLY: mp_comm_type, mp_sum
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_energy_types,                 ONLY: qs_energy_type
@@ -927,7 +927,7 @@ CONTAINS
       TYPE(dbcsr_type)                                   :: temp2, mat_var23, mat_var23_sigma
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:)        :: mat_proj
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: fake_e_per_block
-      INTEGER                                            :: group, nsize
+      INTEGER                                            :: nsize
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: diagonal
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       LOGICAL                                            :: energy_component, &
@@ -942,7 +942,8 @@ CONTAINS
                                                             mat_g_intra, &
                                                             mat_g_inter
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:,:)    :: mat_g_energy
-      INTEGER                                            :: opposite_spin
+      INTEGER                                            :: opposite_spin, para_group_handle
+      TYPE(mp_comm_type)                                 :: para_group
 
       CALL timeset(routineN, handle)
 
@@ -1277,10 +1278,11 @@ CONTAINS
 
                   ! compute the product of the diagonal elements
                   CALL dbcsr_get_info(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
-                          nfullrows_total=nsize, group=group)
+                          nfullrows_total=nsize, group=para_group_handle)
+                  CALL para_group%set_handle(para_group_handle)
                   ALLOCATE (diagonal(nsize))
                   CALL dbcsr_get_diag(tidft_env%mat_sigma(stateI,stateI,idet,ispin), diagonal)
-                  CALL mp_sum(diagonal, group)
+                  CALL mp_sum(diagonal, para_group)
                   DetDiagonalSigma = PRODUCT(diagonal)
                   DEALLOCATE(diagonal)
 
@@ -1643,7 +1645,7 @@ CONTAINS
                         CALL dbcsr_copy(mat_g_intra(stateI, ispin), STsiginv)
                         ! d^(-1)
                         CALL dbcsr_get_info(tidft_env%mat_sigma(stateI, stateI, idet, ispin), &
-                                nfullrows_total=nsize, group=group)
+                                nfullrows_total=nsize, group=para_group_handle)
                         ALLOCATE (diagonal(nsize))
                         CALL dbcsr_get_diag(tidft_env%mat_sigma(stateI, stateI, idet, ispin), diagonal)
                         diagonal(:) = 1.0_dp/diagonal(:) ! invert the diagonal

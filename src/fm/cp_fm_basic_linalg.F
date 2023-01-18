@@ -362,7 +362,8 @@ CONTAINS
 #if defined(__parallel)
       INTEGER, DIMENSION(9)                    :: desca
       REAL(KIND=dp), DIMENSION(:), POINTER     :: diag
-      INTEGER                                  :: group, exponent_of_minus_one
+      INTEGER                                  :: exponent_of_minus_one
+      TYPE(mp_comm_type)                       :: group
 #else
       INTEGER                                  :: lda
 #endif
