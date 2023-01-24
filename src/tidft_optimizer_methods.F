@@ -1046,6 +1046,7 @@ CONTAINS
                                 tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
                              )
                      ELSE
+                        ! RZK: for triplet_correction, project alpha-MO from the beta-MO
                         CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
                      ENDIF
@@ -1077,6 +1078,8 @@ CONTAINS
                              )
                      ELSE
                         ! combine paired and unpared
+                        ! RZK: Triplet correction: in case of beta-MOs,
+                        !      project the singly-occ beta-MO from singly-occ alpha-MO
                         !WRITE(*,*) "STITCH 4: ispin, istate, idet: ", ispin, stateI, idet
                         !WRITE(*,*) "L,R,C: ", &
                         ! tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1), &
