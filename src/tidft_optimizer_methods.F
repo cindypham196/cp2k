@@ -1037,7 +1037,8 @@ CONTAINS
                      ENDIF
                   ELSE
                      ! there are only unpaired electrons
-                     IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
+                     IF (tidft_env%triplet_correction) THEN
+                        IF (idet.EQ.2) THEN ! Deal with the triplet determinant
                         ! combine alpha and beta into alpha
                         CPASSERT(ispin.EQ.1) ! for triplets, cannot have 0 pairs and non-zero unpaired beta electrons
                         CALL stitch_columns( &
@@ -1045,8 +1046,26 @@ CONTAINS
                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
                                 tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
                              )
+                        ELSE ! Deal with the singlet determiant
+                           IF (ispin.EQ.2) THEN ! Beta electron
+                           ! RZK: project alpha-MO from the beta-MO
+                           !CALL dbcsr_create(tempTbeta, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
+                           !CALL project_out(orbital_in = tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+                           !                 orbital_out = tempTbeta, &
+                           !                 projector_orbital = tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                           !                 template_sigma = tidft_env%mat_var_sigma(2))
+                           !CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                           !        tempTbeta)
+                           ! TEST: tidft_env%mat_var_sigma(2) = transpose(tempTbeta)*mat_S*tidft_env%e_states(stateI)%slater_det(1)%mat_var(2)
+                           ! CALL dbcsr_print(tidft_env%mat_var_sigma(2)) - should be zero
+                           ! TEST: tidft_env%mat_var_sigma(2) = transpose(tempTbeta)*mat_S*transpose(tempTbeta) - norm test
+                           ! CALL dbcsr_print(tidft_env%mat_var_sigma(2)) - should be non-zero
+                           ELSE ! Alpha electron
+                              CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                      tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
+                           ENDIF
+                        ENDIF
                      ELSE
-                        ! RZK: for triplet_correction, project alpha-MO from the beta-MO
                         CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
                      ENDIF
