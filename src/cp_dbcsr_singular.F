@@ -177,13 +177,13 @@ CONTAINS
                                                             nfullcols_total, &
                                                             nfullrows_total
       TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
-      TYPE(cp_fm_type), POINTER                          :: fm_matrix
+      TYPE(cp_fm_type)                                   :: fm_matrix
 
       CALL timeset(routineN, handle)
 
       CALL dbcsr_get_info(matrix, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
 
-      NULLIFY (fm_matrix, fm_struct)
+      NULLIFY (fm_struct)
       CALL cp_fm_struct_create(fm_struct, context=blacs_env, nrow_global=nfullrows_total, &
                                ncol_global=nfullcols_total, para_env=para_env)
       CALL cp_fm_create(fm_matrix, fm_struct, name="fm_matrix")
@@ -223,13 +223,13 @@ CONTAINS
                                                             nfullcols_total, &
                                                             nfullrows_total
       TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
-      TYPE(cp_fm_type), POINTER                          :: fm_matrix
+      TYPE(cp_fm_type)                                   :: fm_matrix
 
       CALL timeset(routineN, handle)
 
       CALL dbcsr_get_info(matrix, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
 
-      NULLIFY (fm_matrix, fm_struct)
+      NULLIFY (fm_struct)
       CALL cp_fm_struct_create(fm_struct, context=blacs_env, nrow_global=nfullrows_total, &
                                ncol_global=nfullcols_total, para_env=para_env)
       CALL cp_fm_create(fm_matrix, fm_struct, name="fm_matrix")

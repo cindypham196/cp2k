@@ -434,12 +434,12 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE cp_fm_adjugate(matrix_a, det_a)
 
-      TYPE(cp_fm_type), POINTER                :: matrix_a
+      TYPE(cp_fm_type)                         :: matrix_a
       REAL(KIND=dp), INTENT(OUT)               :: det_a
 
       INTEGER                                  :: n
-      TYPE(cp_fm_type), POINTER                :: matrix_temp
-      TYPE(cp_fm_type), POINTER                :: u, vt, detDinvD 
+      TYPE(cp_fm_type)                         :: matrix_temp
+      TYPE(cp_fm_type)                         :: u, vt, detDinvD
       REAL(KIND=dp), DIMENSION(:), POINTER     :: diag
       REAL(KIND=dp)                            :: determinant, adjugate_value
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:) :: work
