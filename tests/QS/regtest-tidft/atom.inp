@@ -47,7 +47,7 @@
       INTERSTATE_COMPONENT          TRUE
 
       &TIDFT_OPTIMIZER_PCG
-        PRECONDITIONER              NONE ! QHQ_S
+        PRECONDITIONER              QHQ_S !NONE ! QHQ_S
         EPS_ERROR                   1.0E-6
         MAX_ITER                    100
         MAX_ITER_OUTER_LOOP         20
