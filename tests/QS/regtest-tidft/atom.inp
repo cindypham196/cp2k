@@ -26,34 +26,35 @@
     ROKS                            TRUE
     !UKS                             TRUE
     &QS
-      TIDFT                         T
+      TIDFT                         T !F
       EPS_DEFAULT                   1.0E-12
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              0
+      N_EXCITED_STATES              0 !0
       SUGGESTED_MO_BLOCK_SIZE       1
-      EPS_FILTER                    1.0E-11
+      EPS_FILTER                    1.0E-10
       SPIN_PURE                     T
       MAX_UNPAIR                    1
       MO_GUESS_RANDOM_FRAC          0.1
       MO_GUESS_RANDOM_SEED          301
       STATE_BY_STATE                TRUE
       PRE_ORTHOGONALIZE_STATES      FALSE
-      NUMERICAL_GRADIENT            FALSE
-      NUMERICAL_GRADIENT_DX         1E-6
+      NUMERICAL_GRADIENT            TRUE !FALSE
+      NUMERICAL_GRADIENT_DX         1E-9  !1E-6
       ENERGY_COMPONENT              TRUE
       INTRASTATE_COMPONENT          TRUE
       INTERSTATE_COMPONENT          TRUE
 
       &TIDFT_OPTIMIZER_PCG
-        PRECONDITIONER              QHQ_S !NONE ! QHQ_S
+        PRECONDITIONER              S !NONE ! QHQ_S
+        PREC_WEIGHT_OVERLAP         0.65
         EPS_ERROR                   1.0E-6
         MAX_ITER                    100
         MAX_ITER_OUTER_LOOP         20
         LIN_SEARCH_EPS_ERROR        0.1
         LIN_SEARCH_STEP_SIZE_GUESS  0.001
-        CONJUGATOR                  ZERO ! FLETCHER
+        CONJUGATOR                  ZERO ! FLETCHER !
       &END TIDFT_OPTIMIZER_PCG
 
       &PENALTY
@@ -74,7 +75,8 @@
       &OT ON
         !ALGORITHM IRAC
         !MINIMIZER DIIS
-        PRECONDITIONER FULL_ALL
+        PRECONDITIONER FULL_SINGLE !FULL_ALL
+        ROTATION T
       &END OT
       &OUTER_SCF
          EPS_SCF 1.0E-8
@@ -119,11 +121,11 @@
       !H       0.0 0.0 0.0
     &END COORD
     &KIND H
-      BASIS_SET TZVP-GTH
+      BASIS_SET DZVP-GTH !TZVP-GTH !SZV-GTH
       POTENTIAL GTH-BLYP-q1
     &END KIND
     &KIND He
-      BASIS_SET TZVP-GTH
+      BASIS_SET DZVP-GTH !SZV-GTH !TZVP-GTH !
       POTENTIAL GTH-BLYP-q2
       &BS
         &ALPHA

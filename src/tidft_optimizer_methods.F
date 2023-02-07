@@ -948,7 +948,7 @@ CONTAINS
       TYPE(mp_comm_type)                                 :: para_group
 
       ! CINDY-
-      TYPE(dbcsr_type)                                   :: tempTbeta, tempB, tempTalpha, tempA
+      TYPE(dbcsr_type)                                   :: tempB, projected_var_3
 
       CALL timeset(routineN, handle)
 
@@ -1031,6 +1031,45 @@ CONTAINS
                !      tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1), &
                !      tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
                !ENDIF
+               
+               IF (tidft_env%triplet_correction .AND. idet .EQ.1 .AND. ispin .EQ.2) THEN
+                  ! CINDY- project alpha-MO from the beta-MO to correct the mixed-determinant
+                  CALL dbcsr_create(projected_var_3, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
+                  CALL project_out(orbital_in = tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+                                    orbital_out = projected_var_3, &
+                                    projector_orbital = tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                                    mat_s = tidft_env%mat_s, &
+                                    template_sigma = tidft_env%mat_var_sigma(2),&
+                                    sigma =tidft_env%mat_sigma(stateI, stateI, idet,ispin), &
+                                    sigma_inv =tidft_env%mat_sigma_inv(stateI,idet,ispin), &
+                                    eps_filter =tidft_env%eps_filter, &
+                                    para_env =tidft_env%para_env, &
+                                    blacs_env =tidft_env%blacs_env)
+                  ! OVERLAP TEST
+                  !tidft_env%mat_var_sigma(2) = transpose(projected_var_3)*mat_S*tidft_env%e_states(stateI)%slater_det(1)%mat_var(2)
+!                  CALL dbcsr_create(tempB, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))                  
+!                  CALL dbcsr_multiply("N","N", 1.0_dp, &
+!                                      tidft_env%mat_s,projected_var_3, &
+!                                      0.0_dp, tempB, &
+!                                      filter_eps=tidft_env%eps_filter)
+!                  CALL dbcsr_multiply("T","N", 1.0_dp, &
+!                                      tempB, & 
+!                                      tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+!                                      0.0_dp, tidft_env%mat_var_sigma(2), &
+!                                      filter_eps=tidft_env%eps_filter)  
+!                  WRITE(*,*) "Overlap test:"
+!                  CALL dbcsr_print(tidft_env%mat_var_sigma(2)) !- 1x1 matrix, should be zero
+                  ! NORM TEST
+                  !tidft_env%mat_var_sigma(2) = transpose(projected_var_3)*mat_S*transpose(projected_var_3)
+!                  CALL dbcsr_multiply("T","N", 1.0_dp, &
+!                                      tempB, & 
+!                                      projected_var_3, &
+!                                      1.0_dp, tidft_env%mat_var_sigma(2), &
+!                                      filter_eps=tidft_env%eps_filter)  
+!                  WRITE(*,*) "Norm test:"
+!                  CALL dbcsr_print(tidft_env%mat_var_sigma(2)) !- should be non-zero
+!                  CALL dbcsr_release(tempB)
+               ENDIF
 
                IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1) .EQ. 0) THEN
                   IF (tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(ispin+1) .EQ. 0) THEN
@@ -1044,68 +1083,21 @@ CONTAINS
                      ! there are only unpaired electrons
                      IF (tidft_env%triplet_correction) THEN
                         IF (idet.EQ.2) THEN ! Deal with the triplet determinant
-                        ! combine alpha and beta into alpha
-                        CPASSERT(ispin.EQ.1) ! for triplets, cannot have 0 pairs and non-zero unpaired beta electrons
-                        CALL stitch_columns( &
-                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
-                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
-                                tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
-                             )
+                           ! combine alpha and beta into alpha
+                           CPASSERT(ispin.EQ.1) ! for triplets, cannot have 0 pairs and non-zero unpaired beta electrons
+                           CALL stitch_columns( &
+                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
+                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
+                                 tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+                              )
                         ELSE ! Deal with the singlet determiant
                            IF (ispin.EQ.2) THEN ! Beta electron
-                              !RZK: project alpha-MO from the beta-MO
-                              CALL dbcsr_create(tempTbeta, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
-                              !CINDY-
-                              CALL dbcsr_create(tempB, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
-!                              WRITE(*,*) "TempTbeta before projection:"
-!                              CALL dbcsr_print(tempTbeta)
-!                              CALL project_out(orbital_in = tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
-!                                                orbital_out = tempTbeta, &
-!                                                projector_orbital = tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
-!                                                mat_s = tidft_env%mat_s, &
-!                                                template_sigma = tidft_env%mat_var_sigma(2),&
-!                                                sigma =tidft_env%mat_sigma(stateI, stateI, idet,ispin), &
-!                                                sigma_inv =tidft_env%mat_sigma_inv(stateI,idet,ispin), &
-!                                                eps_filter =tidft_env%eps_filter, &
-!                                                para_env =tidft_env%para_env, &
-!                                                blacs_env =tidft_env%blacs_env)
-                              CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), tempTbeta)
-                              ! OVERLAP TEST
-                              !tidft_env%mat_var_sigma(2) = transpose(tempTbeta)*mat_S*tidft_env%e_states(stateI)%slater_det(1)%mat_var(2)
-!                              WRITE(*,*) "TempTbeta after projection:"
-!                              CALL dbcsr_print(tempTbeta)
-
-                              CALL dbcsr_multiply("T","N", 1.0_dp, &
-                                                   tempTbeta, tidft_env%mat_s, &
-                                                   0.0_dp, tempB, &
-                                                   filter_eps=tidft_env%eps_filter)
-                              CALL dbcsr_multiply("N","N", 1.0_dp, &
-                                                   tempB, & 
-                                                   tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
-                                                   0.0_dp, tidft_env%mat_var_sigma(2), &
-                                                   filter_eps=tidft_env%eps_filter)  
-                              WRITE(*,*) "Overlap test:"
-                              CALL dbcsr_print(tidft_env%mat_var_sigma(2)) !- 1x1 matrix, should be zero
-                              ! NORM TEST
-                              !tidft_env%mat_var_sigma(2) = transpose(tempTbeta)*mat_S*transpose(tempTbeta)
-                              CALL dbcsr_multiply("T","N", 1.0_dp, &
-                                                   tempTbeta, tidft_env%mat_s, &
-                                                   0.0_dp, tempB, &
-                                                   filter_eps=tidft_env%eps_filter)
-                              CALL dbcsr_multiply("N","T", 1.0_dp, &
-                                                   tempB, & 
-                                                   tempTbeta, &
-                                                   1.0_dp, tidft_env%mat_var_sigma(2), &
-                                                   filter_eps=tidft_env%eps_filter)  
-                              WRITE(*,*) "Norm test:"
-                              CALL dbcsr_print(tidft_env%mat_var_sigma(2)) !- should be non-zero
+                              CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                                      projected_var_3)
                            ELSE ! Alpha electron
                               CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                                       tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1))
                            ENDIF
-                           CALL dbcsr_release(tempTbeta)
-                           CALL dbcsr_release(tempB)
-
                         ENDIF
                      ELSE
                         CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
@@ -1122,58 +1114,41 @@ CONTAINS
                      CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                              tidft_env%e_states(stateI)%slater_det(1)%mat_var(1))
                   ELSE
-                     IF (tidft_env%triplet_correction .AND. idet.EQ.2) THEN
-                        ! for beta spin do nothing - it is already taken care of
-                        CPASSERT(ispin.EQ.1) ! for triplets, cannot have non-zero unpaired beta electrons
-                        ! for alpha spin combine: pairs + alpha + beta
-                        ! use mat_t of singlet as a temporary storage
-                        CALL stitch_columns( &
+                     IF (tidft_env%triplet_correction) THEN
+                        IF(idet .EQ. 2) THEN
+                           ! for beta spin do nothing - it is already taken care of
+                           CPASSERT(ispin.EQ.1) ! for triplets, cannot have non-zero unpaired beta electrons
+                           ! for alpha spin combine: pairs + alpha + beta
+                           ! use mat_t of singlet as a temporary storage (that is why idet is in reversed order)
+                           CALL stitch_columns( &
+                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
+                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
+                                 tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin) &
+                              )
+                           CALL stitch_columns( &
+                                 tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), &
+                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+2), &
+                                 tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+                              )                           
+                        ELSE
+                           ! Corrected singlet
+                           IF (ispin.EQ.2) THEN ! Beta electron
+                              CALL stitch_columns( &
                                 tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
-                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
-                                tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin) &
-                             )
-                        CALL stitch_columns( &
-                                tidft_env%e_states(stateI)%slater_det(1)%mat_t(ispin), &
-                                tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+2), &
+                                projected_var_3, &
                                 tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
                              )
+                           ELSE
+                              ! combine paired and unpaired alpha electrons
+                              CALL stitch_columns( &
+                                     tidft_env%e_states(stateI)%slater_det(1)%mat_var(1), &
+                                     tidft_env%e_states(stateI)%slater_det(1)%mat_var(ispin+1), &
+                                     tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin) &
+                              )
+                           ENDIF 
+                        ENDIF
+                     
                      ELSE
-                        ! combine paired and unpared
-                        ! RZK: Triplet correction: in case of beta-MOs,
-                        !      project the singly-occ beta-MO from singly-occ alpha-MO
-                        ! CINDY-
-                        CALL dbcsr_create(tempTalpha, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(2))
-                        CALL dbcsr_create(tempA, template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(2)) 
-!                        CALL project_out(orbital_in = tidft_env%e_states(stateI)%slater_det(1)%mat_var(2), &
-!                                          orbital_out = tempTalpha, &
-!                                          projector_orbital = tidft_env%e_states(stateI)%slater_det(1)%mat_var(3), &
-!                                          mat_s = tidft_env%mat_s, &
-!                                          template_sigma = tidft_env%mat_var_sigma(3),&
-!                                          sigma =tidft_env%mat_sigma(stateI, stateI, idet,ispin), &
-!                                          sigma_inv =tidft_env%mat_sigma_inv(stateI,idet,ispin), &
-!                                          eps_filter =tidft_env%eps_filter, &
-!                                          para_env =tidft_env%para_env, &
-!                                          blacs_env =tidft_env%blacs_env)
-                        CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), tempTalpha)
-                        WRITE(*,*) "Overlap test:"
-                        CALL dbcsr_print(tidft_env%mat_var_sigma(2)) !- 1x1 matrix, should be zero
-                        ! NORM TEST
-                        !tidft_env%mat_var_sigma(2) = transpose(tempTalpha)*mat_S*transpose(tempTalpha)
-                        CALL dbcsr_multiply("T","N", 1.0_dp, &
-                                             tempTalpha, tidft_env%mat_s, &
-                                             0.0_dp, tempA, &
-                                             filter_eps=tidft_env%eps_filter)
-                        CALL dbcsr_multiply("N","T", 1.0_dp, &
-                                             tempA, & 
-                                             tempTalpha, &
-                                             1.0_dp, tidft_env%mat_var_sigma(2), &
-                                             filter_eps=tidft_env%eps_filter)  
-                        WRITE(*,*) "Norm test:"
-                        CALL dbcsr_print(tidft_env%mat_var_sigma(2)) !- should be non-zero
-
-                        CALL dbcsr_release(tempTalpha)
-                        CALL dbcsr_release(tempA)
-                        
                         !WRITE(*,*) "STITCH 4: ispin, istate, idet: ", ispin, stateI, idet
                         !WRITE(*,*) "L,R,C: ", &
                         ! tidft_env%e_states(stateI)%slater_det(idet)%ncols_var(1), &
@@ -1187,6 +1162,11 @@ CONTAINS
                      ENDIF ! triplet correction
                   ENDIF ! zero unpaired?
                ENDIF ! zero paired?
+
+               IF (tidft_env%triplet_correction .AND. idet.EQ.1 .AND. ispin.EQ.2) THEN
+                  CALL dbcsr_release(projected_var_3)
+               ENDIF
+
             ENDDO ! ispin
          ENDDO ! stateI
       ENDDO ! idet
@@ -3094,12 +3074,11 @@ WRITE(*,*)
 ! **************************************************************************************************
    SUBROUTINE project_out(orbital_in, orbital_out, projector_orbital, template_sigma, &
                           mat_s, sigma, sigma_inv, eps_filter, para_env, blacs_env)
-      TYPE(dbcsr_type), INTENT(IN), DIMENSION(:), ALLOCATABLE      :: orbital_in
-      TYPE(dbcsr_type), INTENT(INOUT), DIMENSION(:), ALLOCATABLE   :: orbital_out
+      TYPE(dbcsr_type), INTENT(IN)                                 :: orbital_in
+      TYPE(dbcsr_type), INTENT(INOUT)                              :: orbital_out
       TYPE(dbcsr_type), INTENT(IN)                                 :: projector_orbital, & 
-                                                                     template_sigma
-      TYPE(dbcsr_type), INTENT(IN), DIMENSION(:), ALLOCATABLE      :: mat_s
-      TYPE(dbcsr_type), INTENT(INOUT), OPTIONAL                    :: sigma, sigma_inv                            
+                                                                     template_sigma, mat_s
+      TYPE(dbcsr_type), INTENT(INOUT), OPTIONAL                    :: sigma, sigma_inv                           
       REAL(KIND=dp), INTENT(IN)                                    :: eps_filter                               
       TYPE(cp_para_env_type), OPTIONAL, POINTER                    :: para_env
       TYPE(cp_blacs_env_type), OPTIONAL, POINTER                   :: blacs_env
@@ -3110,36 +3089,29 @@ WRITE(*,*)
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'project_out'
 
-      TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE                  :: tempNN, temp1, ST 
-      INTEGER, DIMENSION(:), ALLOCATABLE                           :: fake_e_per_block
+      TYPE(dbcsr_type)                                              :: tempNN, ST
+      INTEGER, DIMENSION(:), ALLOCATABLE                            :: fake_e_per_block
 
       ! Re-use some almo_scf subroutines set nocc_of_domain to the negative number
       ALLOCATE(fake_e_per_block(1))
       fake_e_per_block(:) = -1
 
-!      CALL dbcsr_create(tempNN, template=mat_s)
-!      CALL dbcsr_create(temp1, template = orbital_in)
-!      CALL dbcsr_create(ST, template = orbital_in)
-
-      ALLOCATE(tempNN(SIZE(mat_s)))
-      ALLOCATE(temp1(SIZE(orbital_in)))
-      ALLOCATE(ST(SIZE(orbital_in)))
-
-      
+      CALL dbcsr_create(tempNN, template=mat_s)
+      CALL dbcsr_create(ST, template = orbital_in)
+ 
       ! S.T
       CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                           tempNN, &
-                           temp1, &
+                           mat_s, &
+                           orbital_in, &
                            0.0_dp, ST, &
                            filter_eps=eps_filter)
 
       ! T'(sigma_inv)T't
-      ! Used tempNN(1) and mat_s(1) to avoid rank mismatch
       CALL almo_scf_t_to_proj(t=projector_orbital, &
-                              p=tempNN(1), &
+                              p=tempNN, &
                               eps_filter=eps_filter, &
                               nocc_of_domain= fake_e_per_block, &
-                              s=mat_s(1), &
+                              s=mat_s, &
                               sigma = sigma,&
                               sigma_inv = sigma_inv,&
                               orthog_orbs=.FALSE., &
@@ -3147,25 +3119,21 @@ WRITE(*,*)
                               smear=.FALSE., &
                               para_env=para_env, &
                               blacs_env=blacs_env)
-
+      
       ! T'(sigma_inv)T't.ST
-      CALL dbcsr_multiply("T", "N", 1.0_dp, &
+      CALL dbcsr_multiply("N", "N", 1.0_dp, &
                            tempNN, &
                            ST, &
                            0.0_dp, orbital_out, &
                            filter_eps=eps_filter)
 
       ! T~ = T - T'(sigma_inv)T't.ST
-      CALL dbcsr_add(orbital_in, orbital_out, 1.0_dp, -1.0_dp)
+      CALL dbcsr_add(orbital_out, orbital_in, -1.0_dp, 1.0_dp)
 
-      DEALLOCATE(tempNN)
-      DEALLOCATE(temp1) 
-      DEALLOCATE(ST)
       DEALLOCATE(fake_e_per_block)
 
-!      CALL dbcsr_release(tempNN)
-!      CALL dbcsr_release(temp1)
-!      CALL dbcsr_release(ST)
+      CALL dbcsr_release(tempNN)
+      CALL dbcsr_release(ST)
 
    END SUBROUTINE project_out
 
