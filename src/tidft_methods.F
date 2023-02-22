@@ -12,7 +12,8 @@
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
 MODULE tidft_methods
-   USE almo_scf_methods,                ONLY: orthogonalize_mos
+   USE almo_scf_methods,                ONLY: almo_scf_t_to_proj,&
+                                              orthogonalize_mos
    USE almo_scf_types,                  ONLY: almo_scf_env_type,&
                                               almo_scf_history_type,&
                                               almo_mat_dim_aobasis,&
@@ -79,11 +80,11 @@ MODULE tidft_methods
 
    PRIVATE
 
-   CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'almo_scf_methods'
+   CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_methods'
 
    PUBLIC stitch_columns, determinant_local, &
           split_columns, matrix_invert_local, &
-          gradMO_to_gradVAR_increment, &
+          gradVAR_scale_split_increment, &
           precMO_to_precVAR_increment, &
           tidft_optimizer_mainvar_multiply, &
           tidft_optimizer_mainvar_multiply_diff, &
@@ -93,6 +94,7 @@ MODULE tidft_methods
           tidft_optimizer_mainvar_set, &
           tidft_optimizer_mainvar_print, &
           dbcsr_set_element, &
+          project_out, &
           tidft_optimizer_gradient_norm, &
           tidft_mainvar_orthonormalize
 
@@ -553,7 +555,7 @@ CONTAINS
 !>       2022.05 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE gradMO_to_gradVAR_increment(mat_g_out, ncols_var, mat_g_in, mat_s, &
+   SUBROUTINE gradVAR_scale_split_increment(mat_g_out, ncols_var, mat_g_in, mat_s, &
       idet, ispin, nspins, triplet_correction, energy_term)
 
       TYPE(dbcsr_type), DIMENSION(3), INTENT(INOUT)      :: mat_g_out
@@ -690,7 +692,7 @@ CONTAINS
             ncolsA = ncols_var(varA)
             ncolsB = ncols_var(varB)
 
-            IF (ncolsA .NE. 0) THEN
+            IF (ncolsA .NE. 0) THEN ! There are doubly-occupied states
 
                IF (ncolsB .NE. 0) THEN
                ! Split the matrix since both parts are non-zero
@@ -745,7 +747,7 @@ CONTAINS
 
       ENDIF ! nspins check
 
-   END SUBROUTINE gradMO_to_gradVAR_increment
+   END SUBROUTINE gradVAR_scale_split_increment
 
 ! **************************************************************************************************
 !> \brief Converts MO-matrices to the corresponding matrices of independent variables
@@ -1684,6 +1686,156 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE tidft_mainvar_orthonormalize
+
+! **************************************************************************************************
+!> \brief IF (post_multiply == TRUE)
+!>           temp = in * projector_orbitals * sigma_inv(projector_orbitals)
+!>        ELSE
+!>           temp = in
+!>        ENDIF
+!>        IF (covariant_input == TRUE)
+!>           out = (I - S * projector(projector_orbitals)) * temp
+!>        ELSE
+!>           out = (I - projector(projector_orbitals) * S) * temp
+!>        ENDIF
+!>        Matrices should be compatible in size, blocks, distribution
+!>        If projector_orbitals is NxK, then
+!>           template_sigma is KxK
+!>           mat_S is NxN
+!>           mat_in is Nx(N/M) if post_multiply == T/F
+!>           mat_out is Nx(K/M) if post_multiply == T/F
+!>           M - is any integer
+!> \param project_out...
+!> \par History
+!>       2023.01 created [Cindy Pham]
+!> \author Cindy Pham, Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE project_out(mat_in, mat_out, projector_orbitals, template_sigma, &
+                 mat_s, covariant_input, eps_filter, para_env, blacs_env, post_multiply)
+
+      TYPE(dbcsr_type), INTENT(IN)                                 :: mat_in
+      TYPE(dbcsr_type), INTENT(INOUT)                              :: mat_out
+      TYPE(dbcsr_type), INTENT(IN)                                 :: projector_orbitals, &
+                                                                      template_sigma, mat_s
+      LOGICAL                                                      :: covariant_input
+      REAL(KIND=dp), INTENT(IN)                                    :: eps_filter
+      TYPE(cp_para_env_type), POINTER                              :: para_env
+      TYPE(cp_blacs_env_type), POINTER                             :: blacs_env
+      LOGICAL, OPTIONAL                                            :: post_multiply
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'project_out'
+
+      TYPE(dbcsr_type)                                             :: tempNN, ST
+      INTEGER, DIMENSION(:), ALLOCATABLE                           :: fake_e_per_block
+      TYPE(dbcsr_type)                                             :: sigma, sigma_inv, &
+                                                                      theta_siginv
+      LOGICAL                                                      :: my_post_multiply
+
+      my_post_multiply = .FALSE.
+      IF(PRESENT(post_multiply)) THEN
+         my_post_multiply = post_multiply
+      ENDIF
+
+      ! Re-use some almo_scf subroutines set nocc_of_domain to the negative number
+      ALLOCATE(fake_e_per_block(1))
+      fake_e_per_block(:) = -1
+
+      ! mat_in = T
+      ! mat_out = T~
+      ! projector_orbital = T'
+
+      CALL dbcsr_create(tempNN, template=mat_s)
+      CALL dbcsr_create(sigma, template = template_sigma)
+      CALL dbcsr_create(sigma_inv, template = template_sigma)
+
+      ! R = T'.(sigma_inv).T'^t
+      CALL almo_scf_t_to_proj(t=projector_orbitals, &
+                              p=tempNN, &
+                              eps_filter=eps_filter, &
+                              nocc_of_domain= fake_e_per_block, &
+                              s=mat_s, &
+                              sigma = sigma,&
+                              sigma_inv = sigma_inv,&
+                              algorithm = 1, & ! use Cholesky
+                              orthog_orbs=.FALSE., &
+                              use_guess=.FALSE., &
+                              smear=.FALSE., &
+                              para_env=para_env, &
+                              blacs_env=blacs_env)
+
+      IF (my_post_multiply) THEN
+
+         CALL dbcsr_create(theta_siginv, template = projector_orbitals)
+
+         ! NxK = NxK.KxK
+         CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                              projector_orbitals, &
+                              sigma_inv, &
+                              0.0_dp, theta_siginv, &
+                              filter_eps=eps_filter)
+
+         ! NxK = NxN.NxK
+         CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                              mat_in, &
+                              theta_siginv, &
+                              0.0_dp, mat_out, &
+                              filter_eps=eps_filter)
+
+         CALL dbcsr_release(theta_siginv)
+
+      ELSE
+
+         CALL dbcsr_copy(mat_out, mat_in)
+
+      ENDIF
+
+      CALL dbcsr_release(sigma)
+      CALL dbcsr_release(sigma_inv)
+      CALL dbcsr_create(ST, template = mat_out)
+
+      IF (covariant_input) THEN
+         ! T~ = T - S.R.T
+
+         ! R.T
+         CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                              tempNN, &
+                              mat_out, &
+                              0.0_dp, ST, &
+                              filter_eps=eps_filter)
+
+         ! S.RT
+         CALL dbcsr_multiply("N", "N", -1.0_dp, &
+                              mat_s, &
+                              ST, &
+                              1.0_dp, mat_out, &
+                              filter_eps=eps_filter)
+
+      ELSE
+         ! T~ = T - R.S.T
+
+         ! S.T
+         CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                              mat_s, &
+                              mat_out, &
+                              0.0_dp, ST, &
+                              filter_eps=eps_filter)
+
+         ! R.ST
+         CALL dbcsr_multiply("N", "N", -1.0_dp, &
+                              tempNN, &
+                              ST, &
+                              1.0_dp, mat_out, &
+                              filter_eps=eps_filter)
+
+      ENDIF
+
+      CALL dbcsr_release(ST)
+
+      DEALLOCATE(fake_e_per_block)
+
+      CALL dbcsr_release(tempNN)
+
+   END SUBROUTINE project_out
 
 END MODULE tidft_methods
 
