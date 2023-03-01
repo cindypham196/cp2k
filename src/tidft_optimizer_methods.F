@@ -15,6 +15,7 @@ MODULE tidft_optimizer_methods
    USE almo_scf_methods,                ONLY: almo_scf_t_to_proj,&
                                               get_overlap
    USE almo_scf_types,                  ONLY: optimizer_options_type
+   USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_shift_inverse
    USE cp_dbcsr_singular,               ONLY: cp_dbcsr_pseudoinverse, &
                                               cp_dbcsr_determinant_generalized, &
                                               cp_dbcsr_adjugate
@@ -2866,6 +2867,7 @@ WRITE(*,*)
       LOGICAL                                            :: energy_component
       LOGICAL                                            :: hamiltonian_project_R_out
       LOGICAL                                            :: overlap_project_R_out
+      LOGICAL                                            :: failed
       CHARACTER                                          :: mtype
 
       CALL timeset(routineN, handle)
@@ -3077,15 +3079,27 @@ WRITE(*,*)
                   CASE (tidft_prec_h_s, tidft_prec_qhq_s)
                   ! Invert using cholesky for dense matrices
 
+                     failed = .FALSE.
                      CALL cp_dbcsr_cholesky_decompose( &
                              prec_inv(stateI,ivar), &
                              para_env=tidft_env%para_env, &
-                             blacs_env=tidft_env%blacs_env)
-                     CALL cp_dbcsr_cholesky_invert( &
-                             prec_inv(stateI,ivar), &
-                             para_env=tidft_env%para_env, &
                              blacs_env=tidft_env%blacs_env, &
-                             upper_to_full=.TRUE.)
+                             failed = failed)
+
+                     IF (failed) THEN
+                        CPWARN("Cholesky decomposition failed for the preconditioner. Trying diagonalization.")
+                        CALL cp_dbcsr_shift_inverse( &
+                                prec_inv(stateI,ivar), &
+                                new_min_eigenvalue = 100.0_dp*tidft_env%eps_filter, &
+                                para_env=tidft_env%para_env, &
+                                blacs_env=tidft_env%blacs_env)
+                     ELSE
+                        CALL cp_dbcsr_cholesky_invert( &
+                                prec_inv(stateI,ivar), &
+                                para_env=tidft_env%para_env, &
+                                blacs_env=tidft_env%blacs_env, &
+                                upper_to_full=.TRUE.)
+                     ENDIF
                      CALL dbcsr_filter( &
                              prec_inv(stateI,ivar), &
                              tidft_env%eps_filter)

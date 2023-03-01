@@ -21,8 +21,6 @@ MODULE cp_dbcsr_diag
    USE cp_cfm_types,                    ONLY: cp_cfm_create,&
                                               cp_cfm_release,&
                                               cp_cfm_type
-   USE cp_dbcsr_api,                    ONLY: dbcsr_get_info,&
-                                              dbcsr_type
    USE cp_dbcsr_operations,             ONLY: copy_cfm_to_dbcsr,&
                                               copy_dbcsr_to_cfm,&
                                               copy_dbcsr_to_fm,&
@@ -36,6 +34,16 @@ MODULE cp_dbcsr_diag
    USE cp_fm_types,                     ONLY: cp_fm_create,&
                                               cp_fm_release,&
                                               cp_fm_type
+   USE cp_para_types,                   ONLY: cp_para_env_type
+   USE dbcsr_api,                       ONLY: dbcsr_get_info,&
+                                              dbcsr_type,&
+                                              dbcsr_create,&
+                                              dbcsr_set,&
+                                              dbcsr_multiply,&
+                                              dbcsr_add_on_diag,&
+                                              dbcsr_set_diag,&
+                                              dbcsr_release,&
+                                              dbcsr_type_no_symmetry
    USE kinds,                           ONLY: dp
    USE message_passing,                 ONLY: mp_para_env_type
 #include "base/base_uses.f90"
@@ -51,7 +59,8 @@ MODULE cp_dbcsr_diag
    PUBLIC :: cp_dbcsr_syevd, &
              cp_dbcsr_syevx, &
              cp_dbcsr_heevd, &
-             cp_dbcsr_power
+             cp_dbcsr_power, &
+             cp_dbcsr_shift_inverse
 
 CONTAINS
 
@@ -272,5 +281,79 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE
+
+! **************************************************************************************************
+!> \brief ...
+!> \param matrix ...
+!> \param new_min_eigenvalue ...
+!> \param para_env ...
+!> \param blacs_env ...
+! **************************************************************************************************
+   SUBROUTINE cp_dbcsr_shift_inverse(matrix, new_min_eigenvalue, para_env, blacs_env)
+
+      TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
+      REAL(KIND=dp), INTENT(IN)                          :: new_min_eigenvalue
+      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'cp_dbcsr_shift_inverse'
+
+      REAL(KIND=dp)                                      :: shift
+      INTEGER                                            :: handle, &
+                                                            ncols, ieigen, &
+                                                            nrows
+      TYPE(dbcsr_type)                                   :: eigenvectors, &
+                                                            temp_mat_diag, &
+                                                            temp_mat
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: eigenvalues
+
+      CALL timeset(routineN, handle)
+
+      CALL dbcsr_create(eigenvectors, &
+              template=matrix, matrix_type = dbcsr_type_no_symmetry)
+
+      CALL dbcsr_get_info(matrix, nfullrows_total=nrows, nfullcols_total=ncols)
+      CPASSERT(nrows.EQ.ncols)
+      ALLOCATE(eigenvalues(nrows))
+
+      CALL cp_dbcsr_syevd(matrix, eigenvectors, eigenvalues, para_env, blacs_env)
+
+      ! The code assumes that eigenvalues are sorted from lowest(1) to highest(nrows)
+      shift = new_min_eigenvalue - eigenvalues(1)
+      ! shift eigenvalues so that all of them are positive, then invert
+      DO ieigen = 1, nrows
+         eigenvalues(ieigen) = 1.0_dp / (shift + eigenvalues(ieigen))
+      END DO
+
+      CALL dbcsr_create(temp_mat_diag, &
+              template=matrix, matrix_type = dbcsr_type_no_symmetry)
+      CALL dbcsr_create(temp_mat, &
+              template=matrix, matrix_type = dbcsr_type_no_symmetry)
+
+      CALL dbcsr_set(temp_mat_diag, 0.0_dp)
+      CALL dbcsr_add_on_diag(temp_mat_diag, 1.0_dp)
+      CALL dbcsr_set_diag(temp_mat_diag, eigenvalues)
+
+      ! temp = diagonal.U^T
+      CALL dbcsr_multiply("N", "T", 1.0_dp, &
+              temp_mat_diag, &
+              eigenvectors, &
+              0.0_dp, temp_mat) !, &
+              !filter_eps=eps_filter)
+      ! matrix = U.temp
+      CALL dbcsr_multiply("N", "N", 1.0_dp, &
+              eigenvectors, &
+              temp_mat, &
+              0.0_dp, matrix) !, &
+              !filter_eps=eps_filter)
+
+      CALL dbcsr_release(temp_mat_diag)
+      CALL dbcsr_release(temp_mat)
+      DEALLOCATE(eigenvalues)
+      CALL dbcsr_release(eigenvectors)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE cp_dbcsr_shift_inverse
 
 END MODULE cp_dbcsr_diag

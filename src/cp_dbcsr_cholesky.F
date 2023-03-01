@@ -57,18 +57,25 @@ CONTAINS
 !>      12.2002 updated, added n optional parm [fawzi]
 !> \author Joost
 ! **************************************************************************************************
-   SUBROUTINE cp_dbcsr_cholesky_decompose(matrix, n, para_env, blacs_env)
-      TYPE(dbcsr_type)                                   :: matrix
-      INTEGER, INTENT(in), OPTIONAL                      :: n
-      TYPE(mp_para_env_type), POINTER                    :: para_env
-      TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
+   SUBROUTINE cp_dbcsr_cholesky_decompose(matrix, n, para_env, blacs_env, failed)
+      TYPE(dbcsr_type)                      :: matrix
+      INTEGER, INTENT(in), OPTIONAL            :: n
+      TYPE(cp_para_env_type), POINTER          :: para_env
+      TYPE(cp_blacs_env_type), POINTER         :: blacs_env
+      LOGICAL, INTENT(INOUT), OPTIONAL         :: failed
 
       CHARACTER(len=*), PARAMETER :: routineN = 'cp_dbcsr_cholesky_decompose'
 
-      INTEGER                                            :: handle, my_n, nfullcols_total, &
-                                                            nfullrows_total
-      TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
-      TYPE(cp_fm_type)                                   :: fm_matrix
+      INTEGER                                  :: handle, info, my_n, &
+                                                  nfullcols_total, &
+                                                  nfullrows_total
+      REAL(KIND=dp), DIMENSION(:, :), POINTER  :: a
+      REAL(KIND=sp), DIMENSION(:, :), POINTER  :: a_sp
+      TYPE(cp_fm_struct_type), POINTER         :: fm_struct
+      TYPE(cp_fm_type)                         :: fm_matrix
+#if defined(__parallel)
+      INTEGER, DIMENSION(9)                    :: desca
+#endif
 
       CALL timeset(routineN, handle)
 
@@ -89,7 +96,39 @@ CONTAINS
          my_n = n
       END IF
 
-      CALL cp_fm_potrf(fm_matrix, my_n)
+      a => fm_matrix%local_data
+      a_sp => fm_matrix%local_data_sp
+
+#if defined(__parallel)
+      desca(:) = fm_matrix%matrix_struct%descriptor(:)
+
+      IF (fm_matrix%use_sp) THEN
+         CALL pspotrf('U', my_n, a_sp(1, 1), 1, 1, desca, info)
+      ELSE
+         CALL pdpotrf('U', my_n, a(1, 1), 1, 1, desca, info)
+      END IF
+
+#else
+
+      IF (fm_matrix%use_sp) THEN
+         CALL spotrf('U', my_n, a_sp(1, 1), SIZE(a_sp, 1), info)
+      ELSE
+         CALL dpotrf('U', my_n, a(1, 1), SIZE(a, 1), info)
+      END IF
+
+#endif
+
+      IF (info /= 0) THEN
+         IF (PRESENT(failed)) THEN
+            failed = .TRUE.
+         ELSE
+            CPABORT("Cholesky decomposition failed. Matrix ill conditioned ?")
+         ENDIF
+      ELSE
+         IF (PRESENT(failed)) THEN
+            failed = .FALSE.
+         ENDIF
+      ENDIF
 
       CALL copy_fm_to_dbcsr(fm_matrix, matrix)
 
