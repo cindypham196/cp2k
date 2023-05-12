@@ -348,10 +348,11 @@ CONTAINS
 !>      - if you need the correct sign of the determinant, just add correct_sign==.TRUE. (fschiff)
 !>      - Use cp_fm_get_diag instead of n times cp_fm_get_element (A. Bussy)
 ! **************************************************************************************************
-   SUBROUTINE cp_fm_lu_decompose(matrix_a, almost_determinant, correct_sign)
-      TYPE(cp_fm_type), INTENT(IN)          :: matrix_a
+   SUBROUTINE cp_fm_lu_decompose(matrix_a, almost_determinant, correct_sign, verbose)
+      TYPE(cp_fm_type), INTENT(IN)             :: matrix_a
       REAL(KIND=dp), INTENT(OUT)               :: almost_determinant
       LOGICAL, INTENT(IN), OPTIONAL            :: correct_sign
+      LOGICAL, INTENT(IN), OPTIONAL            :: verbose
 
       CHARACTER(len=*), PARAMETER :: routineN = 'cp_fm_lu_decompose'
 
@@ -359,44 +360,68 @@ CONTAINS
       INTEGER, ALLOCATABLE, DIMENSION(:)       :: ipivot
       REAL(KIND=dp)                            :: determinant
       REAL(KIND=dp), DIMENSION(:, :), POINTER  :: a
+      LOGICAL                                  :: my_verbose
+      INTEGER                                  :: nrows_local
+      INTEGER, DIMENSION(:), POINTER           :: row_indices
 #if defined(__parallel)
       INTEGER, DIMENSION(9)                    :: desca
       REAL(KIND=dp), DIMENSION(:), POINTER     :: diag
       INTEGER                                  :: exponent_of_minus_one
       TYPE(mp_comm_type)                       :: group
+      INTEGER, ALLOCATABLE, DIMENSION(:)       :: pivot_global
 #else
       INTEGER                                  :: lda
 #endif
 
       CALL timeset(routineN, handle)
 
+      my_verbose=.FALSE.
+      IF (PRESENT(verbose)) my_verbose=verbose
+
       a => matrix_a%local_data
       n = matrix_a%matrix_struct%nrow_global
+      CALL cp_fm_get_info(matrix_a, &
+              nrow_local=nrows_local, &
+              row_indices=row_indices)
       ALLOCATE (ipivot(n + matrix_a%matrix_struct%nrow_block))
       ipivot(:) = 0
 
 #if defined(__parallel)
       MARK_USED(correct_sign)
+
       desca(:) = matrix_a%matrix_struct%descriptor(:)
       CALL pdgetrf(n, n, a, 1, 1, desca, ipivot, info)
 
       ALLOCATE (diag(n))
       diag(:) = 0.0_dp
       CALL cp_fm_get_diag(matrix_a, diag)
-      exponent_of_minus_one = 0
       determinant = 1.0_dp
       DO i = 1, n
          determinant = determinant*diag(i)
-         IF (ipivot(i) .NE. i) THEN
-            exponent_of_minus_one = exponent_of_minus_one + 1
-         END IF
       ENDDO
       DEALLOCATE (diag)
 
+      ! Count the number of pivots: global count is required
+      ALLOCATE(pivot_global(n))
+      pivot_global(:) = 0
+      DO i = 1, nrows_local
+         ! global row for local row i: row_indices(i)
+         IF (ipivot(i) .NE. row_indices(i)) THEN
+            pivot_global(row_indices(i)) = 1
+         END IF
+      ENDDO
       group = matrix_a%matrix_struct%para_env%group
-      CALL mp_sum(exponent_of_minus_one, group)
+      CALL mp_sum(pivot_global, group)
+      exponent_of_minus_one = 0
+      DO i = 1, n
+         IF (pivot_global(i) .NE. 0) THEN
+            exponent_of_minus_one = exponent_of_minus_one + 1
+         END IF
+      ENDDO
+      DEALLOCATE(pivot_global)
 
       IF (correct_sign) determinant = determinant*(-1.0_dp)**exponent_of_minus_one
+
 
 #else
       lda = SIZE(a, 1)
@@ -419,7 +444,7 @@ CONTAINS
       ! info is allowed to be zero
       ! this does just signal a zero diagonal element
       DEALLOCATE (ipivot)
-      almost_determinant = determinant 
+      almost_determinant = determinant
       CALL timestop(handle)
    END SUBROUTINE
 
@@ -1655,7 +1680,7 @@ CONTAINS
          IF (matrixa%use_sp) THEN
             DO irow = 1, nrow_local
                irow_global = row_indices(irow)
-               a(irow, icol) = REAL(scaling(irow_global), dp)*a(irow, icol)
+               a_sp(irow, icol) = REAL(scaling(irow_global), dp)*a_sp(irow, icol)
             END DO
          ELSE
             DO irow = 1, nrow_local
@@ -1690,6 +1715,7 @@ CONTAINS
 !>      - determinant only computed if det_a is present
 !>      12.2016 added option to use SVD instead of LU [Nico Holmberg]
 !>      - Use cp_fm_get diag instead of n times cp_fm_get_element (A. Bussy)
+!>      05.2023 correct sign for the determinant is implemented for SCALAPACK (Rustam Z. Khaliullin)
 !> \author Florian Schiffmann(02.2007)
 ! **************************************************************************************************
    SUBROUTINE cp_fm_invert(matrix_a, matrix_inverse, det_a, eps_svd, eigval)
@@ -1715,6 +1741,9 @@ CONTAINS
       REAL(KIND=dp)                            :: alpha, beta
       REAL(KIND=dp), DIMENSION(:), POINTER     :: diag
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:) :: work
+      INTEGER                                  :: nrows_local
+      INTEGER, DIMENSION(:), POINTER           :: row_indices
+      INTEGER, ALLOCATABLE, DIMENSION(:)       :: pivot_global
 #else
       LOGICAL                                  :: sign
       REAL(KIND=dp)                            :: eps1
@@ -1746,13 +1775,9 @@ CONTAINS
             diag(:) = 0.0_dp
             CALL cp_fm_get_diag(matrix_lu, diag)
 
-            exponent_of_minus_one = 0
             determinant = 1.0_dp
             DO i = 1, n
                determinant = determinant*diag(i)
-               IF (ipivot(i) .NE. i) THEN
-                  exponent_of_minus_one = exponent_of_minus_one + 1
-               END IF
             END DO
             IF (PRESENT(eigval)) THEN
                CPASSERT(.NOT. ASSOCIATED(eigval))
@@ -1761,8 +1786,32 @@ CONTAINS
             END IF
             DEALLOCATE (diag)
 
-            group = matrix_lu%matrix_struct%para_env
-            CALL group%sum(exponent_of_minus_one)
+            !group = matrix_lu%matrix_struct%para_env
+            !CALL group%sum(exponent_of_minus_one)
+
+            ! Compute the sign of the determinant
+            ! To this end, count the number of pivots
+            ! Global count is required
+            CALL cp_fm_get_info(matrix_a, &
+                    nrow_local=nrows_local, &
+                    row_indices=row_indices)
+            ALLOCATE(pivot_global(n))
+            pivot_global(:) = 0
+            DO i = 1, nrows_local
+               ! global row for local row i: row_indices(i)
+               IF (ipivot(i) .NE. row_indices(i)) THEN
+                  pivot_global(row_indices(i)) = 1
+               END IF
+            ENDDO
+            group = matrix_lu%matrix_struct%para_env%group
+            CALL mp_sum(pivot_global, group)
+            exponent_of_minus_one = 0
+            DO i = 1, n
+               IF (pivot_global(i) .NE. 0) THEN
+                  exponent_of_minus_one = exponent_of_minus_one + 1
+               END IF
+            ENDDO
+            DEALLOCATE(pivot_global)
 
             determinant = determinant*(-1.0_dp)**exponent_of_minus_one
 

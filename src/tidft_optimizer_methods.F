@@ -1342,20 +1342,34 @@ CONTAINS
                           det = tidft_env%mat_phi_spin(stateI,stateI,ispin), &
                           para_env = tidft_env%para_env, &
                           blacs_env = tidft_env%blacs_env)
+
                   !IF (unit_nr > 0) THEN
                   !   WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
                   !                      "Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
                   !ENDIF
 
-                  !IF (debug_mode) THEN
-                  !   CALL determinant(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
-                  !           determinant_spd, &
-                  !           tidft_env%eps_filter)
-                  !   IF (unit_nr > 0) THEN
-                  !      WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
-                  !                         "SPD determi: ", determinant_spd
-                  !   ENDIF
-                  !ENDIF
+                  IF (debug_mode) THEN
+                     CALL determinant(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
+                             determinant_spd, &
+                             tidft_env%eps_filter)
+                     IF (unit_nr > 0) THEN
+                        WRITE (unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
+                           "State, Slater, Spin:", stateI, idet, ispin, &
+                           "SPD Determinant: ", determinant_spd
+                        WRITE (unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
+                           "State, Slater, Spin:", stateI, idet, ispin, &
+                           "GEN Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
+                     ENDIF
+                  ENDIF
+
+                  IF (tidft_env%mat_phi_spin(stateI,stateI,ispin) .lt. 0.0_dp) THEN
+                     IF (unit_nr > 0) THEN
+                        WRITE (unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
+                           "State, Slater, Spin:", stateI, idet, ispin, &
+                           "Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
+                     ENDIF
+                     CPABORT("Negative determinant of a semi-positive definite matrix")
+                  ENDIF
 
                   ! compute the product of the diagonal elements
                   CALL dbcsr_get_info(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &

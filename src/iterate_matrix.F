@@ -178,7 +178,8 @@ CONTAINS
             threshold=threshold, &
             order=order_lanczos, &
             eps_lanczos=eps_lanczos, &
-            max_iter_lanczos=max_iter_lanczos)
+            max_iter_lanczos=max_iter_lanczos, &
+            silent=.TRUE.)
          recursion_depth = recursion_depth + 1
          CALL determinant(tmp3, det0, threshold)
          recursion_depth = recursion_depth - 1
@@ -222,13 +223,13 @@ CONTAINS
 
             t2 = m_walltime()
 
-            IF (unit_nr > 0) THEN
-               WRITE (unit_nr, '(T6,A,1X,I3,1X,F7.5,F16.10,F10.3,F11.3)') &
-                  "Determinant iter", i, occ_matrix, &
-                  det, t2 - t1, &
-                  flop1/(1.0E6_dp*MAX(0.001_dp, t2 - t1))
-               CALL m_flush(unit_nr)
-            END IF
+            !IF (unit_nr > 0) THEN
+            !   WRITE (unit_nr, '(T6,A,1X,I3,1X,F7.5,F16.10,F10.3,F11.3)') &
+            !      "Determinant iter", i, occ_matrix, &
+            !      det, t2 - t1, &
+            !      flop1/(1.0E6_dp*MAX(0.001_dp, t2 - t1))
+            !   CALL m_flush(unit_nr)
+            !END IF
 
             ! exit if the trace is close to zero
             IF (maxnorm < threshold) EXIT
@@ -244,11 +245,11 @@ CONTAINS
 
       IF (unit_nr > 0) THEN
          IF (recursion_depth .EQ. 0) THEN
-            WRITE (unit_nr, '(T6,A28,1X,F15.10)') &
+            WRITE (unit_nr, '(T6,A28,1X,ES15.8)') &
                "Final determinant:", det
             WRITE (unit_nr, '()')
          ELSE
-            WRITE (unit_nr, '(T6,A28,1X,F15.10)') &
+            WRITE (unit_nr, '(T6,A28,1X,ES15.8)') &
                "Recursive determinant:", det
          END IF
          CALL m_flush(unit_nr)
@@ -1624,7 +1625,7 @@ CONTAINS
 !> \author Joost VandeVondele
 ! **************************************************************************************************
    SUBROUTINE matrix_sqrt_Newton_Schulz(matrix_sqrt, matrix_sqrt_inv, matrix, threshold, order, &
-                                        eps_lanczos, max_iter_lanczos, symmetrize, converged, iounit)
+                                eps_lanczos, max_iter_lanczos, symmetrize, converged, iounit, silent)
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix_sqrt, matrix_sqrt_inv, matrix
       REAL(KIND=dp), INTENT(IN)                          :: threshold
       INTEGER, INTENT(IN)                                :: order
@@ -1632,6 +1633,7 @@ CONTAINS
       INTEGER, INTENT(IN)                                :: max_iter_lanczos
       LOGICAL, OPTIONAL                                  :: symmetrize, converged
       INTEGER, INTENT(IN), OPTIONAL                      :: iounit
+      LOGICAL, INTENT(IN), OPTIONAL                      :: silent
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'matrix_sqrt_Newton_Schulz'
 
@@ -1657,6 +1659,10 @@ CONTAINS
             unit_nr = -1
          END IF
       END IF
+      IF (PRESENT(silent)) THEN
+         IF (silent) unit_nr = -1
+      END IF
+
 
       IF (PRESENT(converged)) converged = .FALSE.
       IF (PRESENT(symmetrize)) THEN
