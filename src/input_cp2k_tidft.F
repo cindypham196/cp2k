@@ -310,9 +310,9 @@ CONTAINS
           optimizer_type .EQ. optimizer_lin_eq_pcg .OR. &
           optimizer_type .EQ. optimizer_trustr) THEN
 
-         ! CINDY 5/1/23: add weight alpha for QHQ_S prec 
+         ! CINDY 5/1/23: add weight alpha for QHQ_S precx
          CALL keyword_create(keyword, __LOCATION__, name="PREC_WEIGHT_OVERLAP", &
-                     description="Preconditioner weight of the overlap matrix. Between 0 and 1.", &
+                     description="Preconditioner weight of the overlap matrix. Should be between 0 and 1.", &
                      usage="PREC_WEIGHT_OVERLAP 0.6", default_r_val=0.5_dp)
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
@@ -324,7 +324,7 @@ CONTAINS
                              usage="MAX_ITER 10", default_i_val=0)
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
-   
+
          CALL keyword_create(keyword, __LOCATION__, name="PRECONDITIONER", &
                              description="Select a preconditioner for the conjugate gradient optimization", &
                              usage="PRECONDITIONER OVERLAP", &
@@ -470,17 +470,19 @@ CONTAINS
       NULLIFY (keyword)
       ! CINDY 
       CALL keyword_create(keyword, __LOCATION__, name="LOOSE_EPS_SCF", &
-                          description="Initial target value of grad. norm for tighter convergence performance", &
+                          description="Initial target value of the gradient norm.", &
                           usage="LOOSE_EPS_SCF", default_r_val=1.0E-2_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="MAX_CP_STEP", &
-                          description="Number of steps needed to modify/optimze intra penalty term", &
-                          usage="MAX_CP_STEP 3", default_i_val=3)
+      CALL keyword_create(keyword, __LOCATION__, name="NSTEPS_STRENGTH", &
+                          variants=(/"MAX_CP_STEP"/), &
+                          description="Number of steps in the gradual increase of the intrastate penalty strength "// &
+                          "(and the gradual tightening of the convergence criterion).", &
+                          usage="NSTEPS_STRENGTH 3", default_i_val=3)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
-      
+
       CALL keyword_create(keyword, __LOCATION__, name="INTERSTATE_NON_PENALTY_STRENGTH", &
                           description="Strength of the interstate nonorthogonality penalty term.", &
                           usage="INTERSTATE_NON_PENALTY_STRENGTH 0.5", &

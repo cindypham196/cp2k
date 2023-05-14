@@ -122,7 +122,7 @@ CONTAINS
                                                             current_no_of_states
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
-      REAL(KIND=dp)                                      :: save_initial_intra
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: save_initial_intra
       REAL(KIND=dp)                                      :: save_initial_inter
       LOGICAL, DIMENSION(:), ALLOCATABLE                 :: save_component_flags
 
@@ -134,21 +134,22 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
-      ALLOCATE(save_component_flags(SIZE(tidft_env%loss_function_components)))
-
       nstates = tidft_env%nstates
+
+      ALLOCATE(save_component_flags(SIZE(tidft_env%loss_function_components)))
+      ALLOCATE(save_initial_intra(nstates))
 
       IF (tidft_env%state_by_state) THEN
 
-         save_initial_intra = tidft_env%intrastate_nonorthogonality_penalty_coeff
+         save_initial_intra(:) = tidft_env%intrastate_nonorthogonality_penalty_coeff(:)
          save_initial_inter = tidft_env%interstate_nonorthogonality_penalty_coeff
 
          DO current_no_of_states = 1, nstates
-   
+
             tidft_env%nstates = current_no_of_states
 
             IF (current_no_of_states .GE. 2 .AND. tidft_env%pre_orthogonalize_states) THEN
-            ! For excited states, first inter-orthogonalize the current state to 
+            ! For excited states, first inter-orthogonalize the current state to
             ! those that are already converged
 
                IF (unit_nr > 0) THEN
@@ -172,27 +173,15 @@ CONTAINS
 
                tidft_env%loss_function_components(:)=save_component_flags(:)
 
-               tidft_env%intrastate_nonorthogonality_penalty_coeff = &
-                  save_initial_intra
+               tidft_env%intrastate_nonorthogonality_penalty_coeff(:) = &
+                  save_initial_intra(:)
                tidft_env%interstate_nonorthogonality_penalty_coeff = &
                   save_initial_inter
 
             ENDIF
 
-            IF (unit_nr > 0) THEN
-
-               WRITE (unit_nr, '()')
-               WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
-               WRITE (unit_nr, '(T2,A59,I6)') &
-                  "OPTIMIZATION OF STATE", &
-                  current_no_of_states
-               WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
-               WRITE (unit_nr, '()')
-
-            ENDIF
-
             IF (current_no_of_states .EQ. 2) THEN
-            ! Done with the ground state, 
+            ! Done with the ground state,
             ! generate a better guess for excited states
                !CALL construct_canonical_orbitals(tidft_env, 1)
                ! Argument 1 indicates that the GS WF is used to generate the guess
@@ -212,30 +201,21 @@ CONTAINS
                tidft_env%loss_function_components(:)=save_component_flags(:)
             ENDIF
 
-            tidft_env%intrastate_nonorthogonality_penalty_coeff = &
-               save_initial_intra
+            tidft_env%intrastate_nonorthogonality_penalty_coeff(:) = &
+               save_initial_intra(:)
             tidft_env%interstate_nonorthogonality_penalty_coeff = &
                save_initial_inter
 
          ENDDO
-   
+
       ELSE
 
-         IF (unit_nr > 0) THEN
-
-            WRITE (unit_nr, '()')
-            WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
-            WRITE (unit_nr, '(T2,A59)') &
-               "SIMULTANEOUS OPTIMIZATION OF ALL STATES"
-            WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
-            WRITE (unit_nr, '()')
-
-         ENDIF
-
+         ! Simulataneous optimization of all states
          CALL penalty_strength_variation(qs_env, tidft_env)
 
       ENDIF
 
+      DEALLOCATE(save_initial_intra)
       DEALLOCATE(save_component_flags)
 
    END SUBROUTINE tidft_variational_optimization
@@ -257,9 +237,13 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       CHARACTER(LEN=59)                                  :: print_string
-      INTEGER                                            :: unit_nr, istep, beta, iteration
-      REAL(KIND=dp)                                      :: g_max, cp_init, &
-                                                            tighten_eps_scf
+      INTEGER                                            :: unit_nr, istep, &
+                                                            iteration, first_state, &
+                                                            stateI
+      REAL(KIND=dp)                                      :: g_max, beta, &
+                                                            g_max_interstate, &
+                                                            save_eps_scf, &
+                                                            current_eps_scf
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_update
@@ -272,48 +256,72 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
+      save_eps_scf = tidft_env%tidft_optimizer_pcg%eps_error
+
+      ALLOCATE(grad_penalty_update(tidft_env%nstates))
+      ! For case of fixed penalty strength: NSTEPS_STRENGTH = 1
+      IF (tidft_env%nsteps_penalty_strength .EQ. 1) THEN
+         current_eps_scf = tidft_env%tidft_optimizer_pcg%eps_error
+         beta = 1.0_dp
+      ELSE
+         current_eps_scf = tidft_env%loose_eps_scf
+         beta = (tidft_env%tidft_optimizer_pcg%eps_error/current_eps_scf)**(1.0_dp/(tidft_env%nsteps_penalty_strength-1))
+      ENDIF
+
+      tidft_env%grad_wrt_inter_penalty_coeff = 0.0_dp
+      tidft_env%grad_wrt_penalty_coeff(:) = 0.0_dp
+
+      first_state = 1
+      IF (tidft_env%state_by_state) first_state = tidft_env%nstates
+
       ! loop over the orthogonalization penalty strength
       ! vary both intra and inter strengths together
-
-      g_max = 0.1_dp
       iteration = 0
-      cp_init = tidft_env%intrastate_nonorthogonality_penalty_coeff
-      ALLOCATE(grad_penalty_update(tidft_env%nstates + 1))
-      ! For case of fixed Cp, i.e, max_cp_step = 1
-      IF (tidft_env%max_cp_step .EQ. 1) THEN
-         tighten_eps_scf = tidft_env%tidft_optimizer_pcg%eps_error 
-         beta = 1
-      ELSE
-         tighten_eps_scf = tidft_env%loose_eps_scf 
-         beta = NINT((tidft_env%loose_eps_scf / tidft_env%tidft_optimizer_pcg%eps_error)**(1.0_dp/REAL(tidft_env%max_cp_step-1,dp)))
-      ENDIF
-      
       DO
          iteration = iteration + 1
 
          IF (unit_nr > 0) THEN
 
             WRITE (unit_nr, '()')
-            WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-            print_string = "INTRA Penalty strength:"
-            WRITE (unit_nr, '(T2,A59,F20.10)') print_string, &
-               tidft_env%intrastate_nonorthogonality_penalty_coeff
-            print_string = "INTER Penalty strength:"
-            WRITE (unit_nr, '(T2,A59,F20.10)') print_string, &
-               tidft_env%interstate_nonorthogonality_penalty_coeff
-            WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
-            WRITE (unit_nr, '()')
-
-            WRITE (unit_nr,*) "Cp INTRA update: " , tidft_env%intrastate_nonorthogonality_penalty_coeff
-            WRITE (unit_nr,*) "Cp INTER update: " , tidft_env%interstate_nonorthogonality_penalty_coeff  
-            WRITE (unit_nr,*) "EPS SCF: " , tighten_eps_scf
-            WRITE (unit_nr,*) "Iteration: " , iteration
-            WRITE (unit_nr,*) "beta: ", beta
-
-            ! print the optimization header
+            WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
             WRITE (unit_nr, '(T2,A,A,A)') REPEAT("-", 26), &
                " TIDFT optimization of MOs ", REPEAT("-", 26)
+            !WRITE (unit_nr, '()')
+            WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+
+            IF (tidft_env%state_by_state) THEN
+
+               !WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+               WRITE (unit_nr, '(T2,A49,I30)') &
+                  "Optimization of state:", &
+                  tidft_env%nstates
+               !WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+
+            ELSE
+
+               !WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+               WRITE (unit_nr, '(T2,A49)') &
+                  "Simultaneous optimization of all states"
+               !WRITE (unit_nr, '(T2,A)') REPEAT("=", 79)
+
+            ENDIF
+
+            WRITE (unit_nr,'(T2,A49,I30)') "Iteration for penalty strenght update:", iteration
+            DO stateI = first_state, tidft_env%nstates
+               WRITE (unit_nr, '(T2,A49,I6,F24.10)') "State and its INTRAstate penalty strength:", stateI, &
+                  tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI)
+            ENDDO
+            WRITE (unit_nr, '(T2,A49,F30.10)') "INTERstate penalty strength:", &
+               tidft_env%interstate_nonorthogonality_penalty_coeff
+            WRITE (unit_nr, '(T2,A49,F30.10)') "INTERstate penalty update factor:", &
+               ABS(tidft_env%penalty_strength_inc_factor)
+            WRITE (unit_nr, '(T2,A49,F30.10)') "Current SCF convergence criterion:" , &
+               current_eps_scf
+            WRITE (unit_nr, '(T2,A49,F30.10)') "SCF convergence update factor:", beta
+            WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
             WRITE (unit_nr, '()')
+
+            ! print the optimization header
             WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
 
          ENDIF
@@ -326,57 +334,42 @@ CONTAINS
             WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
          ENDIF
 
-         tidft_env%tidft_optimizer_pcg%eps_error = tighten_eps_scf
+         tidft_env%tidft_optimizer_pcg%eps_error = current_eps_scf
          CALL tidft_optimize_pcg( &
                  qs_env=qs_env, &
                  tidft_env=tidft_env, &
                  optimizer=tidft_env%tidft_optimizer_pcg)
 
-         !CASE (almo_scf_trustr)
-         !   CALL trust_r_report(unit_nr, &
-         !                       iter_type=0, & ! print header, all values are ignored
-         !                       iteration=0, &
-         !                       radius=0.0_dp, &
-         !                       loss=0.0_dp, &
-         !                       delta_loss=0.0_dp, &
-         !                       grad_norm=0.0_dp, &
-         !                       predicted_reduction=0.0_dp, &
-         !                       rho=0.0_dp, &
-         !                       new=.TRUE., &
-         !                       time=0.0_dp)
-         !   CALL construct_nlmos_trustr(qs_env=qs_env, &
-         !                               nlmo_env=nlmo_env, &
-         !                               optimizer=almo_scf_env%opt_nlmo_trustr, &
-         !                               matrix_s=almo_scf_env%matrix_s(1), &
-         !                               matrix_mo_inout=almo_scf_env%matrix_t, &
-         !                               matrix_templateOO=almo_scf_env%matrix_sigma_inv)
-         !CASE DEFAULT
-         !   CPABORT("Illegal optmizer")
-         !END SELECT
-
-         ! CINDY:Combine the optimization of both inter and intra terms
-         ! INTER term condition: Check whether the determinant is sufficiently close to 1
-         IF (iteration .GE. tidft_env%max_cp_step .AND. (ABS(1.0_dp - tidft_env%det_mat_phi) .LE. &
-            tidft_env%allowed_determinant_deviaion .OR. .NOT.tidft_env%loss_function_components(3))) THEN
+         ! INTER term condition: Check whether the determinant of PHI is sufficiently close to 1
+         IF ( iteration .GE. tidft_env%nsteps_penalty_strength .AND. &
+              ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion &
+              .OR. .NOT.tidft_env%loss_function_components(3) ) ) THEN
             EXIT
          ENDIF
 
          ! INTRA term condition: EPS_SCF should not be lower than the default SCF
-         IF (.NOT. (iteration .GT. tidft_env%max_cp_step)) THEN
-            tighten_eps_scf = tighten_eps_scf / beta
+         IF (iteration .LT. tidft_env%nsteps_penalty_strength) THEN
+            current_eps_scf = current_eps_scf * ABS(beta)
          ENDIF
 
-         ! Update Cp INTRA with the additional gradient wrt Cp, which is the constraint itself
-         ! Less penalty coeff, more orthogonality -> tighten eps_scf 
-         grad_penalty_update = MIN(tidft_env%grad_penalty_coeff, g_max)
-         tidft_env%intrastate_nonorthogonality_penalty_coeff = &
-            tidft_env%intrastate_nonorthogonality_penalty_coeff + &
-            grad_penalty_update(1)
-         
+         ! Update the INTRAstate penalty strength by adding the gradient wrt Cp
+         ! The gradient is the values of the constraint
+         g_max = 0.1_dp
+         DO stateI = first_state, tidft_env%nstates
+            grad_penalty_update(stateI) = MIN(tidft_env%grad_wrt_penalty_coeff(stateI), g_max)
+            tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI) = &
+               tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI) + &
+               grad_penalty_update(stateI)
+         ENDDO
+
          ! Update Cp INTER
+         g_max_interstate = 1.0_dp
          tidft_env%interstate_nonorthogonality_penalty_coeff = &
-            tidft_env%interstate_nonorthogonality_penalty_coeff * &
-            ABS(tidft_env%penalty_strength_inc_factor)
+            tidft_env%interstate_nonorthogonality_penalty_coeff + &
+            MIN(tidft_env%grad_wrt_inter_penalty_coeff, g_max_interstate)
+         !tidft_env%interstate_nonorthogonality_penalty_coeff = &
+         !   tidft_env%interstate_nonorthogonality_penalty_coeff * &
+         !   ABS(tidft_env%penalty_strength_inc_factor)
 
       ENDDO
       DEALLOCATE(grad_penalty_update)
@@ -395,9 +388,11 @@ CONTAINS
          WRITE (unit_nr, '(T2,A59,F20.10)') &
             print_string, tidft_env%det_mat_phi
 
-         print_string = "Final intrastate penalty strength:"
-         WRITE (unit_nr, '(T2,A59,F20.10)') &
-            print_string, tidft_env%intrastate_nonorthogonality_penalty_coeff
+         print_string = "State and final intrastate penalty strength:"
+         DO stateI = first_state, tidft_env%nstates
+            WRITE (unit_nr, '(T2,A54,I5,F20.10)') print_string, stateI, &
+               tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI)
+         ENDDO
 
          print_string = "Final interstate penalty strength:"
          WRITE (unit_nr, '(T2,A59,F20.10)') &
@@ -406,6 +401,8 @@ CONTAINS
          WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
 
       ENDIF
+
+      tidft_env%tidft_optimizer_pcg%eps_error = save_eps_scf
 
    END SUBROUTINE penalty_strength_variation
 
@@ -488,6 +485,17 @@ CONTAINS
          t1 = m_walltime()
          next_step_size_guess = 0.0_dp
          beta = 0.0_dp
+
+         IF (unit_nr > 0) THEN
+
+            WRITE (unit_nr, '()')
+            WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
+            WRITE (unit_nr, '(T2,A49,I30)') "Outer loop iteration:", &
+               outer_iteration
+            WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
+            WRITE (unit_nr, '()')
+
+         ENDIF
 
          DO
 
@@ -1311,6 +1319,8 @@ CONTAINS
 
          DO stateI = first_state, nstates
 
+            tidft_env%grad_wrt_penalty_coeff(stateI) = 0.0_dp
+
             IF (tidft_env%triplet_correction) THEN
                idet = 2
             ELSE
@@ -1393,20 +1403,15 @@ CONTAINS
                         tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
 
                   ENDIF
-                  penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff * &
+                  penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI) * &
                      ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
-
-                  ! CINDY:save each component of gradient of Lagrange function (all INTRA terms and several INTER terms)
-                  tidft_env%grad_penalty_coeff(stateI) = - ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
-
-                  IF (unit_nr > 0) THEN
-                     !WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State penalty ", stateI, penalty_stateI
-                     !WRITE (*,*) "Penalty state ", penalty_stateI
-                     !WRITE (*,*) "Grad_penalty_coeff ", tidft_env%grad_penalty_coeff(stateI)
-                  ENDIF
 
                   intrastate_nonorthogonality_penalty = intrastate_nonorthogonality_penalty + &
                      penalty_stateI
+
+                  ! Save each component of the gradient wrt to the INTRAstate penalty stregth
+                  tidft_env%grad_wrt_penalty_coeff(stateI) = tidft_env%grad_wrt_penalty_coeff(stateI) + &
+                     penalty_stateI / tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI)
 
                ENDIF ! zero MOs for state I
 
@@ -1428,6 +1433,7 @@ CONTAINS
       loss_components_out(2) = intrastate_nonorthogonality_penalty
 
       interstate_nonorthogonality_penalty = 0.0_dp
+      tidft_env%grad_wrt_inter_penalty_coeff = 0.0_dp
       IF (interstate_penalty_component) THEN 
       !! compute interstate nonorthogonality penalty
 
@@ -1530,8 +1536,9 @@ CONTAINS
             - tidft_env%interstate_nonorthogonality_penalty_coeff * &
             ( LOG(tidft_env%det_mat_phi) )
 
-         ! CINDY: save each component of gradient of Lagrange function (all INTRA terms and several INTER terms)
-         ! tidft_env%grad_penalty_coeff(stateI+1) = - ( LOG(tidft_env%det_mat_phi) )
+         ! Save the gradient wrt to the interstate penalty coefficient
+         tidft_env%grad_wrt_inter_penalty_coeff = interstate_nonorthogonality_penalty / &
+            tidft_env%interstate_nonorthogonality_penalty_coeff
 
       ENDIF ! interstate_penalty_component
 
@@ -1850,7 +1857,7 @@ CONTAINS
                                 1.0_dp, mat_g_intra(stateI, ispin), &
                                 filter_eps=tidft_env%eps_filter)
                         CALL dbcsr_scale(mat_g_intra(stateI, ispin), & 
-                                -2.0_dp*tidft_env%intrastate_nonorthogonality_penalty_coeff)
+                                -2.0_dp*tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI))
 
                         CALL gradVAR_scale_split_increment( &
                                 mat_g_out=gradient_out(stateI, :), &

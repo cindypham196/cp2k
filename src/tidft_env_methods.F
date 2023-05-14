@@ -111,10 +111,10 @@ CONTAINS
    SUBROUTINE tidft_read_write_input(input, tidft_env)
       TYPE(section_vals_type), POINTER                   :: input
       TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
-  
+
       CHARACTER(len=*), PARAMETER :: routineN = 'tidft_read_write_input', &
          routineP = moduleN//':'//routineN
-      
+
       INTEGER                                            :: handle, n_rep, suggested_blk_size, &
                                                             jj, GS_multips, nmultips 
       INTEGER, DIMENSION(:), POINTER                     :: tmplist
@@ -239,9 +239,7 @@ CONTAINS
          ABS(tidft_env%interstate_nonorthogonality_penalty_coeff)
       CALL section_vals_val_get(penalty_section, &
                                 "INTRASTATE_NON_PENALTY_STRENGTH", &
-                                r_val=tidft_env%intrastate_nonorthogonality_penalty_coeff)
-      tidft_env%intrastate_nonorthogonality_penalty_coeff = &
-         ABS(tidft_env%intrastate_nonorthogonality_penalty_coeff)
+                                r_val=tidft_env%intrastate_penalty_coeff)
       CALL section_vals_val_get(penalty_section, &
                                 "PENALTY_STRENGTH_INCREASE_FACTOR", &
                                 r_val=tidft_env%penalty_strength_inc_factor)
@@ -250,13 +248,11 @@ CONTAINS
                                 r_val=tidft_env%allowed_determinant_deviaion)
 
       ! CINDY 
-      CALL section_vals_val_get(penalty_section, "MAX_CP_STEP", &
-                                i_val=tidft_env%max_cp_step)
+      CALL section_vals_val_get(penalty_section, "NSTEPS_STRENGTH", &
+                                i_val=tidft_env%nsteps_penalty_strength)
       CALL section_vals_val_get(penalty_section, &
                                 "LOOSE_EPS_SCF", &
                                 r_val=tidft_env%loose_eps_scf)
-      !CALL section_vals_val_get(penalty_section, "PREC_WEIGHT_OVERLAP", &
-      !                          r_val=tidft_env%weight_alpha_prec)                      
 
       ! check for conflicts between options
 
@@ -289,11 +285,7 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(section_vals_type), POINTER                   :: input
 
-      !CINDY stores gradient of Lagrange function, which is the constraint itself
-      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_coeff
-      !CINDY change Cp to an array to store Cp update on each iteration
-      !REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: intrastate_nonorthogonality_penalty_coeff
-      !REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: interstate_nonorthogonality_penalty_coeff
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_wrt_penalty_coeff
 
       CALL timeset(routineN, handle)
 
@@ -378,11 +370,12 @@ CONTAINS
       nstates = tidft_env%nstates
       nslater = tidft_env%ndets
 
-      ! CINDY 29/11/22 allocate an array that stores gradient of langrange function
-      ! for optimizing penalty strength Cp
-      ALLOCATE(tidft_env%grad_penalty_coeff(nstates+1))
-      !ALLOCATE(intrastate_nonorthogonality_penalty_coeff(nstates))
-      !ALLOCATE(interstate_nonorthogonality_penalty_coeff(nstates))
+      ! Allocate an array that stores the gradient of the objective function
+      ! wrt the intrastate penalty strength Cp
+      ALLOCATE(tidft_env%grad_wrt_penalty_coeff(nstates))
+      ALLOCATE(tidft_env%intrastate_nonorthogonality_penalty_coeff(nstates))
+      tidft_env%intrastate_nonorthogonality_penalty_coeff(:) = &
+         ABS(tidft_env%intrastate_penalty_coeff)
 
       ALLOCATE(tidft_env%e_states(nstates))
       ALLOCATE(tidft_env%mat_phi_spin(nstates,nstates,nspins))
@@ -758,11 +751,9 @@ CONTAINS
             IF (idet.EQ.1) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
          ENDDO
       ENDDO
-      
-      ! CINDY 29/11/22
-      DEALLOCATE(tidft_env%grad_penalty_coeff)
-      !DEALLOCATED(tidft_env%intrastate_nonorthogonality_penalty_coeff)
-      !DEALLOCATE(tidft_env%interstate_nonorthogonality_penalty_coeff)
+
+      DEALLOCATE(tidft_env%intrastate_nonorthogonality_penalty_coeff)
+      DEALLOCATE(tidft_env%grad_wrt_penalty_coeff)
       DEALLOCATE(tidft_env%mat_phi_inv)
       DEALLOCATE(tidft_env%mat_phi)
       DEALLOCATE(tidft_env%mat_phi_spin)

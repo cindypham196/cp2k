@@ -155,19 +155,18 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: guess_min_excitation_energy
 
       ! penalty related variables
-      REAL(KIND=dp)                                      :: intrastate_nonorthogonality_penalty_coeff
+      REAL(KIND=dp)                                      :: intrastate_penalty_coeff
+      REAL(KIND=dp),  DIMENSION(:), ALLOCATABLE          :: intrastate_nonorthogonality_penalty_coeff
       REAL(KIND=dp)                                      :: interstate_nonorthogonality_penalty_coeff
-      ! CINDY: change Cp to an array to store Cp update on each iteration
-      !REAL(KIND=dp),  DIMENSION(:), ALLOCATABLE           :: intrastate_nonorthogonality_penalty_coeff
-      !REAL(KIND=dp), DIMENSION(:), ALLOCATABLE            :: interstate_nonorthogonality_penalty_coeff
       REAL(KIND=dp)                                      :: penalty_strength_inc_factor
       REAL(KIND=dp)                                      :: allowed_determinant_deviaion
       REAL(KIND=dp)                                      :: initial_guess_random_fraction
       INTEGER                                            :: initial_guess_type
       INTEGER                                            :: initial_guess_random_seed
       ! CINDY
-      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_coeff
-      INTEGER                                            :: max_cp_step
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_wrt_penalty_coeff
+      REAL(KIND=dp)                                      :: grad_wrt_inter_penalty_coeff
+      INTEGER                                            :: nsteps_penalty_strength
       REAL(KIND=dp)                                      :: loose_eps_scf
 
       ! dipole evaluation
