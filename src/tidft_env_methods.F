@@ -842,9 +842,13 @@ CONTAINS
             "an awesome variational method for excited states", REPEAT("-", 3)
          WRITE (unit_nr, '(T2,A)') REPEAT("-", 79)
 
-         ! ROKS or UKS
+         ! RKS, ROKS or UKS
          IF (tidft_env%restricted) THEN
-            WRITE (unit_nr, '(T2,A)') "Restricted open-shell KS method is used"
+            IF (tidft_env%nspins.EQ.2) THEN
+               WRITE (unit_nr, '(T2,A)') "Restricted open-shell KS method is used"
+            ELSE
+               WRITE (unit_nr, '(T2,A)') "Restricted closed-shell KS method is used"
+            ENDIF
          ELSE
             WRITE (unit_nr, '(T2,A)') "Unrestricted KS method is used"
          ENDIF

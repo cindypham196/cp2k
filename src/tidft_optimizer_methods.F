@@ -340,6 +340,12 @@ CONTAINS
                  tidft_env=tidft_env, &
                  optimizer=tidft_env%tidft_optimizer_pcg)
 
+         IF (unit_nr > 0) THEN
+            WRITE (unit_nr, '(T2,A19,F30.10,F30.10)') "CP-DEVIATION:", &
+               tidft_env%interstate_nonorthogonality_penalty_coeff, &
+               ABS(1.0_dp - tidft_env%det_mat_phi)
+         ENDIF
+
          ! INTER term condition: Check whether the determinant of PHI is sufficiently close to 1
          IF ( iteration .GE. tidft_env%nsteps_penalty_strength .AND. &
               ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion &
