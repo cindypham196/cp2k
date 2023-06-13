@@ -447,7 +447,7 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
-! STEP 1: init
+      ! STEP 1: init
       CALL tidft_optimizer_allocate_storage( &
               data_storage = optimizer_storage, &
               nstates = tidft_env%nstates, &
@@ -455,8 +455,7 @@ CONTAINS
               mat_nn_template = tidft_env%mat_s, &
               ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
-! STEP 2: Start iterations
-
+      ! STEP 2: Start iterations
       ! start the outer SCF loop
       outer_max_iter = optimizer%max_iter_outer_loop
       outer_prepare_to_exit = .FALSE.
@@ -511,9 +510,9 @@ CONTAINS
                        ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
             ENDIF
 
-! STEP 3: MAJOR Theta to MOs
-! STEP 4: Obj function
-! STEP 5: Gradient
+            ! STEP 3: Main variable (Theta) to MO coeff
+            ! STEP 4: Loss function
+            ! STEP 5: Gradient
             ! use the main variable to compute aux matrices
             ! compute objective (loss) function
             ! compute the gradient
@@ -524,23 +523,30 @@ CONTAINS
                        tidft_env = tidft_env, &
                        dx = tidft_env%numerical_gradient_dx, &
                        loss_components_out = loss_components, &
-                       gradient_out = optimizer_storage%grad )  
+                       gradient_out = optimizer_storage%grad)
+               ! When the gradient is evaluated numerically, it is also used to
+               ! detect convergence
+               CALL tidft_optimizer_mainvar_copy( &
+                       optimizer_storage%grad_convergence, &
+                       optimizer_storage%grad, &
+                       ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
             ELSE
                CALL mainvar_to_loss_and_gradient( &
                        qs_env = qs_env, &
                        tidft_env = tidft_env, &
                        loss_components_out = loss_components, &
-                       gradient_out = optimizer_storage%grad )   
+                       gradient_out = optimizer_storage%grad, &
+                       gradient_convergence_out = optimizer_storage%grad_convergence )
             ENDIF
 
             energy_function = loss_components(1)
-            penalty_func_new = loss_components(2) + loss_components(3) 
+            penalty_func_new = loss_components(2) + loss_components(3)
             objf_new = SUM(loss_components)
 
-! STEP 6: Convergence
+            ! STEP 6: Convergence
             ! check convergence and other exit criteria
             CALL tidft_optimizer_gradient_norm( &
-                    optimizer_storage%grad, &           
+                    optimizer_storage%grad_convergence, &
                     optimizer%which_gnorm, &
                     grad_norm, &
                     tidft_env%e_states(1)%slater_det(1)%ncols_var, &
@@ -574,7 +580,8 @@ CONTAINS
                      denom = 0.0_dp
                      denom2 = 0.0_dp
 
-! STEP 7: Line-search error    ! add g_phi and g_I by modifying the function tidft_optimizer_mainvar_dot
+                     ! STEP 7: Line-search error
+                     ! add g_phi and g_I by modifying the function tidft_optimizer_mainvar_dot
                      CALL tidft_optimizer_mainvar_dot( &
                              mat_left = optimizer_storage%grad, &
                              mat_right = optimizer_storage%step, &
@@ -590,8 +597,7 @@ CONTAINS
                              mat_right_covariant = .TRUE., &
                              metric_inv = tidft_env%mat_s_inv, &
                              dot_product = denom, &
-                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var, &
-                             eps_filter = tidft_env%eps_filter)
+                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
                      CALL tidft_optimizer_mainvar_dot( &
                              mat_left = optimizer_storage%step, &
@@ -600,8 +606,7 @@ CONTAINS
                              mat_right_covariant = .FALSE., &
                              metric = tidft_env%mat_s, &
                              dot_product = denom2, &
-                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var, &
-                             eps_filter = tidft_env%eps_filter)
+                             ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
                      !DO ispin = 1, nspins
 
@@ -648,8 +653,8 @@ CONTAINS
                           optimizer_storage%step, &
                           ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
-! STEP 8: Grad to step
-                  ! compute the new step                  
+                  ! STEP 8: Grad to step
+                  ! compute the new step
                   CALL tidft_optimizer_grad_to_step( &
                           tidft_env = tidft_env, &
                           precond = optimizer%preconditioner, &
@@ -660,31 +665,16 @@ CONTAINS
                           prev_theta = optimizer_storage%prev_theta, &
                           iteration = iteration)
 
-!tiidft                  CALL nlmo_env_loss_curvature_grad_to_step(nlmo_env=nlmo_env, &
-!tiidft                                                            grad=nlmo_env%grad, &
-!tiidft                                                            step=step, &
-!tiidft                                                            prev_grad=prev_grad, &
-!tiidft                                                            prev_m_theta=prev_m_theta, &
-!tiidft                                                            iteration=iteration)
-
                   ! check whether we need to reset conjugate directions
                   IF (iteration .EQ. 0) THEN
                      reset_conjugator = .TRUE.
                   ENDIF
-! STEP 9: Compute beta
-                  ! compute the conjugation coefficient - beta
+
+                  ! STEP 9: Compute CG update parameter: beta
                   IF (.NOT. reset_conjugator) THEN
-!RZK-WARNING: some fancy tensorially inconsistent conjugators should be eliminated
-!             erase their aux matrices as well
-!tiidft                     CALL compute_cg_beta( &
-!tiidft                        beta=beta, &
-!tiidft                        reset_conjugator=reset_conjugator, &
-!tiidft                        conjugator=optimizer%conjugator, &
-!tiidft                        grad=nlmo_env%grad, &
-!tiidft                        prev_grad=prev_grad, &
-!tiidft                        step=step, &
-!tiidft                        prev_step=prev_step, &
-!tiidft                        prev_minus_prec_grad=prev_minus_prec_grad)
+                  !RZK-WARNING: some fancy tensorially inconsistent conjugators should be eliminated
+                  !             erase their aux matrices as well
+
                      CALL compute_cg_beta( &
                              beta = beta, &
                              reset_conjugator = reset_conjugator, &
@@ -711,16 +701,8 @@ CONTAINS
 
                   ENDIF
 
-! STEP 10: save the preconditioned gradient 
+                  ! STEP 10: save the preconditioned gradient 
                   ! save the preconditioned gradient (useful for beta)
-!tiidft                  DO ispin = 1, nspins
-!tiidft
-!tiidft                     CALL dbcsr_copy(prev_minus_prec_grad(ispin), step(ispin))
-!tiidft
-!tiidft                     ! conjugate the step direction
-!tiidft                     CALL dbcsr_add(step(ispin), prev_step(ispin), 1.0_dp, beta)
-!tiidft
-!tiidft                  ENDDO ! ispin
                   CALL tidft_optimizer_mainvar_copy( &
                           optimizer_storage%prev_minus_prec_grad, &
                           optimizer_storage%step, &
@@ -732,7 +714,8 @@ CONTAINS
                           ncols_var = tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
                ENDIF ! update the step direction
-! STEP 11: Line search code
+
+               ! STEP 11: Line search code
                ! estimate the step size
                IF (.NOT. line_search) THEN
                   ! we just changed the direction and
@@ -824,8 +807,7 @@ CONTAINS
                   next_step_size_guess = next_step_size_guess + step_size
                ENDIF
 
-! STEP 12: Update theta
-               ! update theta
+               ! STEP 12: Update theta
                IF (.NOT. line_search) THEN ! we prepared to perform the first line search
                ! "previous" refers to the previous CG step, not the previous LS step
                   CALL tidft_optimizer_mainvar_copy_from_env( &
@@ -853,10 +835,6 @@ CONTAINS
                   iter_type, iteration, &
                   objf_new, objf_diff, grad_norm, &
                   t2 - t1
-               !WRITE (unit_nr, '(T2,A19,F23.10)') &
-               !   "Energy:", energy_function
-               !WRITE (unit_nr, '(T2,A19,F23.10)') &
-               !   "Orthogonalization:", penalty_func_new
             ENDIF
             t1 = m_walltime()
 
@@ -904,14 +882,14 @@ CONTAINS
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
    SUBROUTINE mainvar_to_loss_and_gradient(qs_env, tidft_env, &
-      loss_components_out, gradient_out, silent)
+      loss_components_out, gradient_out, gradient_convergence_out, silent)
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(tidft_env_type), INTENT(INOUT)                :: tidft_env
       REAL(KIND=dp), DIMENSION(100), INTENT(OUT)         :: loss_components_out
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT)    :: gradient_out
-      !TYPE(dbcsr_type), DIMENSION(:,:,:), OPTIONAL, &
-      !   INTENT(INOUT)                                   :: gradient_components_out
+      TYPE(dbcsr_type), DIMENSION(:,:), INTENT(INOUT), OPTIONAL &
+                                                         :: gradient_convergence_out
       LOGICAL, INTENT(IN), OPTIONAL                      :: silent
 
       CHARACTER(len=*), PARAMETER :: routineN = 'mainvar_to_loss_and_gradient', &
@@ -923,7 +901,8 @@ CONTAINS
                                                             stateI, ivar, nstates, idet, &
                                                             ndets, slaterI, stateJ, &
                                                             nmos_stateJ, first_state
-      LOGICAL                                            :: aspc_guess, my_silent
+      LOGICAL                                            :: aspc_guess, my_silent, &
+                                                            my_grad_conv
       REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
                                                             random_percentile, &
                                                             energy_singlet, energy_triplet, &
@@ -968,6 +947,10 @@ CONTAINS
 
       my_silent=.FALSE.
       IF (PRESENT(silent)) my_silent=silent
+
+      my_grad_conv=.FALSE.
+      IF (PRESENT(gradient_convergence_out)) &
+         my_grad_conv=.TRUE.
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
@@ -1566,6 +1549,7 @@ CONTAINS
          DO ivar = 1, 3
             IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
                CALL dbcsr_set(gradient_out(stateI, ivar), 0.0_dp)
+               IF (my_grad_conv) CALL dbcsr_set(gradient_convergence_out(stateI, ivar), 0.0_dp)
                !IF (gradient_components) THEN
                !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 1), 0.0_dp)
                !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 2), 0.0_dp)
@@ -1819,6 +1803,9 @@ CONTAINS
                      DO ivar = 1, 3
                         IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
                            CALL dbcsr_add(gradient_out(stateI, ivar), gradient_temp(ivar), 1.0_dp, 1.0_dp)
+                           IF (my_grad_conv) &
+                              CALL dbcsr_add(gradient_convergence_out(stateI, ivar), &
+                                      gradient_temp(ivar), 1.0_dp, 1.0_dp)
                            CALL dbcsr_release(gradient_temp(ivar))
                         ENDIF
                      ENDDO ! ivar
@@ -1869,6 +1856,7 @@ CONTAINS
                                 nspins=nspins, &
                                 triplet_correction=tidft_env%triplet_correction, &
                                 energy_term=.FALSE.)
+                        ! Intrastate gradient is not added to gradient_convergence_out
 
                      ENDIF ! only triplet determinant is used in the penalty
 
@@ -1990,8 +1978,15 @@ CONTAINS
                         CALL dbcsr_scale(mat_g_inter(stateI, ispin), & 
                                 -2.0_dp*tidft_env%interstate_nonorthogonality_penalty_coeff)
 
+                        DO ivar = 1, 3
+                           IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
+                              CALL dbcsr_create(gradient_temp(ivar), template=gradient_out(stateI,ivar))
+                              CALL dbcsr_set(gradient_temp(ivar), 0.0_dp)
+                           ENDIF
+                        ENDDO ! ivar
+
                         CALL gradVAR_scale_split_increment( &
-                                mat_g_out=gradient_out(stateI, :), &
+                                mat_g_out=gradient_temp(:), &
                                 ncols_var=tidft_env%e_states(stateI)%slater_det(1)%ncols_var, &
                                 mat_g_in=mat_g_inter(stateI, ispin), &
                                 mat_s=tidft_env%mat_s, &
@@ -2000,6 +1995,17 @@ CONTAINS
                                 nspins=nspins, &
                                 triplet_correction=tidft_env%triplet_correction, &
                                 energy_term=.FALSE.)
+
+                        DO ivar = 1, 3
+                           IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
+                              CALL dbcsr_add(gradient_out(stateI,ivar), &
+                                      gradient_temp(ivar), 1.0_dp, 1.0_dp)
+                              IF (my_grad_conv) &
+                                 CALL dbcsr_add(gradient_convergence_out(stateI,ivar), &
+                                         gradient_temp(ivar), 1.0_dp, 1.0_dp)
+                              CALL dbcsr_release(gradient_temp(ivar))
+                           ENDIF
+                        ENDDO ! ivar
 
                      ENDIF ! only triplet determinant is used in the penalty
 
@@ -2754,6 +2760,7 @@ WRITE(*,*)
       ALLOCATE (data_storage%prev_step(nstates,nvars))
       ALLOCATE (data_storage%step(nstates,nvars))
       ALLOCATE (data_storage%grad(nstates,nvars))
+      ALLOCATE (data_storage%grad_convergence(nstates,nvars))
       ALLOCATE (data_storage%prev_minus_prec_grad(nstates,nvars))
 
       ALLOCATE (data_storage%prec_inv(nstates,nvars))
@@ -2781,6 +2788,9 @@ WRITE(*,*)
                CALL dbcsr_create(data_storage%grad(istate,ivar), &
                                  template=mat_var_template(ivar), &
                                  matrix_type=dbcsr_type_no_symmetry)
+               CALL dbcsr_create(data_storage%grad_convergence(istate,ivar), &
+                                 template=mat_var_template(ivar), &
+                                 matrix_type=dbcsr_type_no_symmetry)
 
                CALL dbcsr_create(data_storage%prec_inv(istate,ivar), &
                                  template=mat_nn_template, &
@@ -2792,6 +2802,7 @@ WRITE(*,*)
                CALL dbcsr_set(data_storage%step(istate,ivar), 0.0_dp)
                CALL dbcsr_set(data_storage%prev_minus_prec_grad(istate,ivar), 0.0_dp)
                CALL dbcsr_set(data_storage%grad(istate,ivar), 0.0_dp)
+               CALL dbcsr_set(data_storage%grad_convergence(istate,ivar), 0.0_dp)
 
                CALL dbcsr_set(data_storage%prec_inv(istate,ivar), 0.0_dp)
 
@@ -2831,6 +2842,7 @@ WRITE(*,*)
                CALL dbcsr_release(data_storage%step(istate,ivar))
                CALL dbcsr_release(data_storage%prev_minus_prec_grad(istate,ivar))
                CALL dbcsr_release(data_storage%grad(istate,ivar))
+               CALL dbcsr_release(data_storage%grad_convergence(istate,ivar))
 
                CALL dbcsr_release(data_storage%prec_inv(istate,ivar))
 
@@ -2843,6 +2855,7 @@ WRITE(*,*)
       DEALLOCATE (data_storage%prev_step)
       DEALLOCATE (data_storage%step)
       DEALLOCATE (data_storage%grad)
+      DEALLOCATE (data_storage%grad_convergence)
       DEALLOCATE (data_storage%prev_minus_prec_grad)
 
       DEALLOCATE (data_storage%prec_inv)

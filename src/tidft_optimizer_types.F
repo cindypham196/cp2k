@@ -26,6 +26,7 @@ MODULE tidft_optimizer_types
    TYPE tidft_optimizer_storage_type
 
       TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: grad
+      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: grad_convergence
       TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: prev_theta
       TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: prev_grad
       TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: prev_step

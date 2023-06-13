@@ -224,7 +224,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE tidft_optimizer_mainvar_dot(mat_left, mat_right, &
       mat_left_covariant, mat_right_covariant, metric, metric_inv, &
-      dot_product, ncols_var, eps_filter)
+      dot_product, ncols_var)
 
       TYPE(dbcsr_type), DIMENSION(:,:), INTENT(IN)       :: mat_left, mat_right
       LOGICAL, INTENT(IN)                                :: mat_left_covariant, &
@@ -233,7 +233,7 @@ CONTAINS
       TYPE(dbcsr_type), OPTIONAL, INTENT(IN)             :: metric_inv
       REAL(KIND=dp), INTENT(OUT)                         :: dot_product
       INTEGER, DIMENSION(3), INTENT(IN)                  :: ncols_var
-      REAL(KIND=dp), OPTIONAL, INTENT(IN)                :: eps_filter
+      !REAL(KIND=dp), OPTIONAL, INTENT(IN)                :: eps_filter
 
       INTEGER                                            :: istate, ivar, &
                                                             nstates, nvars, &

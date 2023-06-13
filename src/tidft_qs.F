@@ -41,7 +41,8 @@ MODULE tidft_qs
         dbcsr_distribution_release, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
         dbcsr_get_block_p, dbcsr_get_info, dbcsr_get_num_blocks, dbcsr_get_stored_coordinates, &
         dbcsr_multiply, dbcsr_nblkcols_total, dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, &
-        dbcsr_reserve_block2d, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_work_create
+        dbcsr_reserve_block2d, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_work_create, &
+        dbcsr_distribution_hold
    USE input_constants,                 ONLY: almo_constraint_ao_overlap,&
                                               almo_constraint_block_diagonal,&
                                               almo_constraint_distance,&
@@ -151,6 +152,7 @@ CONTAINS
       ! obtain distribution from the qs matrix - it might be useful
       ! to get the structure of the AO dimensions
       CALL dbcsr_get_info(matrix_ao_template, distribution=dist_qs)
+      CALL dbcsr_distribution_hold(dist_qs)
 
       DO dimen = 1, 2 ! 1 - row, 2 - column dimension
 
@@ -241,9 +243,10 @@ CONTAINS
       CALL dbcsr_create(matrix_new, name_new, &
                         dist_new, symmetry_new, &
                         row_sizes_new, col_sizes_new, reuse_arrays=.TRUE.)
+      CALL dbcsr_distribution_release(dist_new)
       CALL dbcsr_finalize(matrix_new)
 
-      CALL dbcsr_distribution_release(dist_new)
+      CALL dbcsr_distribution_release(dist_qs)
 
       IF (ASSOCIATED(row_sizes_new)) DEALLOCATE(row_sizes_new)
       IF (ASSOCIATED(row_distr_new)) DEALLOCATE(row_distr_new)
@@ -278,7 +281,7 @@ CONTAINS
                                                             ngroups, diff, best_nblocks, &
                                                             nblocks_suggested, &
                                                             nblocks_delta
-      REAL                                               :: istd2, best_std2
+      REAL(KIND=dp)                                      :: istd2, best_std2
 
 
 !     ! Case 1: the number of orbitals is less than the number of cores

@@ -387,7 +387,7 @@ CONTAINS
       ALLOCATE(next_level_excitation%spin(max_order))
 
       ! copy indices
-      next_level_start_indices = start_orbital_indices
+      next_level_start_indices(:,:) = start_orbital_indices(:,:)
 
       IF (nspins .EQ. 2) THEN
          spin_factor = 1.0_dp
