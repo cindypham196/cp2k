@@ -243,7 +243,10 @@ CONTAINS
       REAL(KIND=dp)                                      :: g_max, beta, &
                                                             g_max_interstate, &
                                                             save_eps_scf, &
-                                                            current_eps_scf
+                                                            current_eps_scf, &
+                                                            interAlpha, interBeta, &
+                                                            interCP1, interCP2, &
+                                                            interDEV1, interDEV2
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_update
@@ -369,13 +372,43 @@ CONTAINS
          ENDDO
 
          ! Update Cp INTER
-         g_max_interstate = 1.0_dp
-         tidft_env%interstate_nonorthogonality_penalty_coeff = &
-            tidft_env%interstate_nonorthogonality_penalty_coeff + &
-            MIN(tidft_env%grad_wrt_inter_penalty_coeff, g_max_interstate)
+
+         ! The additive incremenatal update is too slow to work
+         !g_max_interstate = 1.0_dp
          !tidft_env%interstate_nonorthogonality_penalty_coeff = &
-         !   tidft_env%interstate_nonorthogonality_penalty_coeff * &
-         !   ABS(tidft_env%penalty_strength_inc_factor)
+         !   tidft_env%interstate_nonorthogonality_penalty_coeff + &
+         !   MIN(tidft_env%grad_wrt_inter_penalty_coeff, g_max_interstate)
+
+         ! Try multiplicative updates assuming that log(deviation) depends
+         ! linearly on log(Cp) - dependence confirmed empirically
+         IF (iteration.EQ.1) THEN
+            interCP1 = tidft_env%interstate_nonorthogonality_penalty_coeff
+            interDEV1 = ABS(1.0_dp - tidft_env%det_mat_phi)
+         ELSE
+            IF (iteration.GT.2) THEN
+               interCP1 = interCP2
+               interDEV1 = interDEV2
+            ENDIF
+            interCP2 = tidft_env%interstate_nonorthogonality_penalty_coeff
+            interDEV2 = ABS(1.0_dp - tidft_env%det_mat_phi)
+         ENDIF
+
+         g_max_interstate = 1.0E+3_dp
+         !IF (iteration.GE.2) THEN
+         IF (0.EQ.1) THEN
+            interAlpha = ( LOG(interDEV2/interDEV1) )/( LOG(interCP2/interCP1) )
+            interBeta = LOG(interDEV2) - interAlpha * LOG(interCP2)
+            tidft_env%interstate_nonorthogonality_penalty_coeff = &
+               EXP(( LOG(tidft_env%allowed_determinant_deviaion/2.0_dp) - interBeta ) / interAlpha)
+            ! Limit the multiplicative increase
+            IF (tidft_env%interstate_nonorthogonality_penalty_coeff .GT. interCP2 * g_max_interstate) &
+               tidft_env%interstate_nonorthogonality_penalty_coeff = interCP2 * g_max_interstate
+         ELSE
+            ! Use the user-provided update factor
+            tidft_env%interstate_nonorthogonality_penalty_coeff = &
+               tidft_env%interstate_nonorthogonality_penalty_coeff * &
+               ABS(tidft_env%penalty_strength_inc_factor)
+         ENDIF
 
       ENDDO
       DEALLOCATE(grad_penalty_update)
