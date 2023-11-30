@@ -59,6 +59,7 @@ MODULE tidft_env_methods
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_env_methods'
 
    PUBLIC :: tidft_env_create, tidft_init, tidft_env_deallocate
+   !, tidft_env_safe_deallocate_state, tidft_env_deallocate_remaining
 CONTAINS
 
 ! **************************************************************************************************
@@ -765,6 +766,223 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE tidft_env_deallocate
+
+! **************************************************************************************************
+!> \brief deallocate memory for a selective state I after optimization of that state is finished
+!> \param tidft_env ...
+!> \par History
+!>       2023.08 created [Cindy Pham]
+!> \author Cindy Pham
+! **************************************************************************************************
+   SUBROUTINE tidft_env_safe_deallocate_state(tidft_env, state_I)
+
+      TYPE(tidft_env_type), INTENT(INOUT)             :: tidft_env
+      INTEGER, INTENT(IN)                             :: state_I
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_env_safe_deallocate_state', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: unit_nr
+      TYPE(cp_logger_type), POINTER                      :: logger
+      INTEGER                                            :: handle, ispin, &
+                                                            nstates, idet, &
+                                                            nspins, ivar, &
+                                                            state, ndets, &
+                                                            nmos_stateI, &
+                                                            nmos_stateI_flip, &
+                                                            stateI, stateJ, &
+                                                            nmos_stateJ
+
+      CALL timeset(routineN, handle)
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      ndets = tidft_env%ndets
+      nstates = tidft_env%nstates  ! nstates=tidft_env%nstates=stateI (from tidft_variatonal_optimization)
+      nspins = tidft_env%nspins
+
+      DO idet = 1, ndets
+
+         DO ispin = 1, nspins
+
+            DO stateI = state_I, nstates
+
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+
+               IF ( nmos_stateI .GT. 0) THEN
+
+                  CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin))
+
+                  DO stateJ = stateI, nstates
+
+                     nmos_stateJ = tidft_env%e_states(stateJ)%slater_det(idet)%nelectrons_ab(ispin)
+
+                     IF ( nmos_stateJ .GT. 0) THEN
+
+                     !   CALL dbcsr_release(tidft_env%mat_sigma(stateI, stateJ, idet, ispin))
+                        CALL dbcsr_release(tidft_env%mat_adj_sigma(stateI, stateJ, idet, ispin))
+
+                     ENDIF ! zero MOs for J
+
+                  ENDDO ! stateJ
+
+                  !CALL dbcsr_release(tidft_env%mat_sigma_inv(stateI, idet, ispin))
+
+               ENDIF ! zero MOs
+
+            ENDDO ! stateI
+
+         ENDDO ! ispin
+
+      ENDDO ! idet
+
+      DO stateI = state_I, nstates
+
+         DO ivar = 1, 3
+
+            nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+
+            IF ( nmos_stateI .GT. 0) THEN
+               IF (stateI .EQ. 1) THEN
+                  CALL dbcsr_release(tidft_env%mat_var_sigma(ivar))
+
+               ENDIF
+
+            ENDIF
+
+         ENDDO ! ivar
+
+      ENDDO ! stateI
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_env_safe_deallocate_state
+
+! **************************************************************************************************
+!> \brief deallocate the remaining after calling the selective state cleanup
+!> \param tidft_env ...
+!> \par History
+!>       2023.08 created [Cindy Pham]
+!> \author Cindy Pham
+! **************************************************************************************************
+   SUBROUTINE tidft_env_deallocate_remaining(tidft_env)
+
+      TYPE(tidft_env_type), INTENT(INOUT)             :: tidft_env
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'tidft_env_deallocate', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: unit_nr
+      TYPE(cp_logger_type), POINTER                      :: logger
+      INTEGER                                            :: handle, ispin, &
+                                                            nstates, idet, &
+                                                            nspins, ivar, &
+                                                            stateI, ndets, &
+                                                            nmos_stateI, &
+                                                            nmos_stateI_flip, &
+                                                            stateJ, &
+                                                            nmos_stateJ
+
+      CALL timeset(routineN, handle)
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      ndets = tidft_env%ndets
+      nstates = tidft_env%nstates
+      nspins = tidft_env%nspins
+
+      CALL dbcsr_release(tidft_env%mat_s)
+      CALL dbcsr_release(tidft_env%mat_s_inv)
+
+      DO idet = 1, ndets
+
+         DO ispin = 1, nspins
+
+            DO stateI = 1, nstates
+
+               nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+
+               IF ( nmos_stateI .GT. 0) THEN
+
+                  CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
+
+                  CALL dbcsr_release(tidft_env%mat_sigma(stateI, stateJ, idet, ispin))
+
+                  CALL dbcsr_release(tidft_env%mat_sigma_inv(stateI, idet, ispin))
+
+               ENDIF ! zero MOs
+
+            ENDDO ! stateI
+
+         ENDDO ! ispin
+
+      ENDDO ! idet
+
+      DO stateI = 1, nstates
+
+         DO ivar = 1, 3
+
+            nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
+
+            IF ( nmos_stateI .GT. 0) THEN
+
+               CALL dbcsr_release(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
+
+               IF(unit_nr > 0) THEN
+                  WRITE (unit_nr,'(T2,A49,I11)') "Released 3 mainvar of state", stateI
+               ENDIF
+
+            ENDIF
+
+         ENDDO ! ivar
+
+      ENDDO ! stateI
+
+      !DEALLOCATE(tidft_env%mat_sigma) ! comment out because the job stopped at this step with mem error
+      !DEALLOCATE(tidft_env%mat_adj_sigma)
+      !DEALLOCATE(tidft_env%mat_sigma_inv)
+      DEALLOCATE(tidft_env%mat_var_sigma)
+      DEALLOCATE(tidft_env%mat_sigma_vv)
+
+      DO idet = 1, ndets
+         DO stateI = 1, nstates
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_t)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_v)
+            DEALLOCATE(tidft_env%e_states(stateI)%slater_det(idet)%mat_vo)
+            IF (idet.EQ.1) DEALLOCATE(tidft_env%e_states(stateI)%slater_det(1)%mat_var)
+            IF(unit_nr > 0) THEN
+               WRITE (unit_nr,'(T2,A49,I11)') "Released mat_KS, mat_vm, mat_vo of state", stateI
+            ENDIF
+         ENDDO
+      ENDDO
+      
+      IF(unit_nr > 0) WRITE (*,*) "Start deallocating others"
+      DEALLOCATE(tidft_env%intrastate_nonorthogonality_penalty_coeff)
+      DEALLOCATE(tidft_env%grad_wrt_penalty_coeff)
+      DEALLOCATE(tidft_env%mat_phi_inv)
+      DEALLOCATE(tidft_env%mat_phi)
+      DEALLOCATE(tidft_env%mat_phi_spin)
+      DEALLOCATE(tidft_env%e_states)
+
+      CALL cp_para_env_release(tidft_env%para_env)
+      CALL cp_blacs_env_release(tidft_env%blacs_env)
+
+      CALL timestop(handle)
+
+   END SUBROUTINE tidft_env_deallocate_remaining
 
 ! **************************************************************************************************
 !> \brief Initializes the TIDFT SCF copy of the AO overlap matrix

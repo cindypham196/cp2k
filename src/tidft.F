@@ -52,6 +52,7 @@ MODULE tidft
                                               dbcsr_set_element
    USE tidft_env_methods,               ONLY: tidft_env_deallocate,&
                                               tidft_init
+!                                             tidft_env_deallocate_remaining
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks,&
                                               matrix_layout
    USE atomic_kind_types,               ONLY: atomic_kind_type
@@ -176,6 +177,12 @@ CONTAINS
 
       CALL tidft_env_deallocate(tidft_env)
 
+      ! CINDY: deallocate memory for selective state if optimize them state by state
+!      IF (tidft_env%state_by_state) THEN
+!         CALL tidft_env_deallocate_remaining(tidft_env)
+!      ELSE
+!         CALL tidft_env_deallocate(tidft_env)
+!      ENDIF
       CALL timestop(handle)
 
    END SUBROUTINE tidft_entry
@@ -201,6 +208,7 @@ CONTAINS
                                                             stateI, ivar, nstates, idet, &
                                                             ndets, slaterI, stateJ, &
                                                             nmos_stateJ
+!                                                           naos, alpha_pos, beta_pos
       INTEGER, DIMENSION(2)                              :: nelectron_spin
       LOGICAL                                            :: aspc_guess, has_unit_metric
       REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
@@ -211,6 +219,7 @@ CONTAINS
                                                             intrastate_nonorthogonality_penalty, &
                                                             DetDiagonalSigma, penalty_stateI, &
                                                             determinant_spd
+!                                                           overlap_element
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(cp_para_env_type), POINTER                    :: para_env
@@ -342,19 +351,84 @@ CONTAINS
 !WRITE(*,*) "STATE: ", stateI
 !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
 !!CALL dbcsr_print(tidft_env%mat_s)
+! CINDY: modified hack for He with DZVP BS
+!                     CALL dbcsr_set(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), 0.0_dp)
+!                     CALL dbcsr_get_info(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), nfullrows_total = naos )
+!                     IF (stateI .GT. naos*naos) CPABORT("Number of excites states ecxceed the array capacity")
+!                     ! Manually assign alpha and beta e- position for 15ES based on DZV2P BS
+!                     SELECT CASE(stateI)
+!                     CASE(2,20,21,22)
+!                        alpha_pos= 0
+!                     CASE(3,19,23,24,25)
+!                        alpha_pos= 1
+!                     CASE(4,15,16,17,18)
+!                        alpha_pos= 2
+!                     CASE(5,11,12,13,14)
+!                        alpha_pos= 3
+!                     CASE(6,7,8,9,10)
+!                        alpha_pos= 4
+!                     END SELECT
+!                     SELECT CASE(stateI)
+!                     CASE(10,11,18,19)
+!                        beta_pos= 0
+!                     CASE(9,12,17,25,20)
+!                        beta_pos= 1
+!                     CASE(8,13,16,21,24)
+!                        beta_pos= 2
+!                     CASE(7,14,15,22,23)
+!                        beta_pos= 3
+!                     CASE(2,3,4,5,6)
+!                        beta_pos= 4
+!                     END SELECT
+
+                     ! Get overlap element to express T~_2s in term of T_1s and T_2s: -(S_11)^-1*S_12
+                     ! for the orthogonality between 1s and 2s in T~
+                     !CALL dbcsr_print(tidft_env%mat_s) ! S11 = 1.0967 S12=-1.0734
+!                     overlap_element= 0.9788_dp !-(-1.0734_dp/1.0967_dp)
+!                     IF (ivar.EQ.2) THEN
+!                        CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!                                 1.0_dp, &
+!                                 1, alpha_pos+1, 1, 1)
+                        ! Combine with the projection to 1st ES T~_2s
+!                        IF (alpha_pos.EQ.1) THEN
+!                           CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!                                 overlap_element, &
+!                                 1, 1, 1, 1)
+!                        ENDIF
+!                     ENDIF
+!                     IF (ivar.EQ.3) THEN
+!                        CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!                                 1.0_dp, &
+!                                 1, beta_pos+1, 1, 1)
+!                        IF (beta_pos.EQ.1) THEN
+!                           CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
+!                                 overlap_element, &
+!                                 1, 1, 1, 1)
+!                        ENDIF
+!                     ENDIF
                      ! the percent of the random component in the guess
                      random_percentile = tidft_env%initial_guess_random_fraction
                      ! Obtain ES by slightly perturbing generated GS orbitals
                      CALL dbcsr_add(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
                         tidft_env%e_states(1)%slater_det(1)%mat_var(ivar), &
                         random_percentile, 1.0_dp - random_percentile)
-                  ENDIF
+                  ENDIF ! MOs
 
                ENDIF ! non-zero columns
 
             ENDDO ! end ivar
             CALL dbcsr_release(mat_proj_var1)
 
+            ! CINDY: print info
+!            IF (stateI .GE. 2) THEN
+!               WRITE(*,*) "N and ES #", naos, stateI
+!               WRITE(*,*) "alpha position", alpha_pos+1
+!               WRITE(*,*) "T_alpha matrix:"
+!               CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(2))
+!               WRITE(*,*) "beta position", beta_pos+1
+!               WRITE(*,*) "T_beta matrix:"
+!               CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
+!            ENDIF
          ENDDO  ! end stateI
 
       CASE (restart_guess)

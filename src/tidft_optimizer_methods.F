@@ -85,6 +85,7 @@ MODULE tidft_optimizer_methods
    USE dm_ls_scf_types,                 ONLY: ls_scf_env_type
    USE cp_para_types,                   ONLY: cp_para_env_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
+!   USE tidft_env_methods,               ONLY: tidft_env_safe_deallocate_state
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -123,7 +124,7 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: save_initial_intra
-      REAL(KIND=dp)                                      :: save_initial_inter
+      REAL(KIND=dp)                                      :: save_initial_inter, new_det_deviation
       LOGICAL, DIMENSION(:), ALLOCATABLE                 :: save_component_flags
 
       ! get a useful output_unit
@@ -147,6 +148,20 @@ CONTAINS
          DO current_no_of_states = 1, nstates
 
             tidft_env%nstates = current_no_of_states
+
+            ! CINDY: Hack to optimize 2s2s being orthogonal with simultaneously 1s2s, 2s1s and GS
+!            IF (current_no_of_states .EQ. 19 .OR. current_no_of_states .EQ. 20) THEN
+!               new_det_deviation = tidft_env%allowed_determinant_deviaion/10.0_dp
+!               tidft_env%allowed_determinant_deviaion = new_det_deviation
+!               WRITE(*,*) "Current state:",current_no_of_states
+!               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion 
+!            ELSE
+!               WRITE(*,*) "Current state:",current_no_of_states
+!               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion
+!               IF (tidft_env%allowed_determinant_deviaion .LT. 0.0001_dp) THEN
+!                  tidft_env%allowed_determinant_deviaion = 0.0001_dp
+!               ENDIF
+!            ENDIF
 
             IF (current_no_of_states .GE. 2 .AND. tidft_env%pre_orthogonalize_states) THEN
             ! For excited states, first inter-orthogonalize the current state to
@@ -206,6 +221,13 @@ CONTAINS
             tidft_env%interstate_nonorthogonality_penalty_coeff = &
                save_initial_inter
 
+            ! CINDY: clean mem after each state
+!            IF (current_no_of_states .GE. 2) THEN
+!               CALL tidft_env_safe_deallocate_state(tidft_env, current_no_of_states)
+!               IF (unit_nr > 0) THEN
+!                  WRITE (unit_nr,'(T2,A49,I11)') "Clean mem after state", current_no_of_states
+!               ENDIF
+!            ENDIF
          ENDDO
 
       ELSE

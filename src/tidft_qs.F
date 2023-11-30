@@ -408,6 +408,7 @@ CONTAINS
 
       END DO
 
+      !RZK WARNING: Using pointers and deallocation?
       ! Find blk_distr()
       ALLOCATE(blk_distr(best_nblocks))
       I = 0
