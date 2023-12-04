@@ -78,6 +78,7 @@ MODULE tidft_guess_methods
                                               gradVAR_scale_split_increment, &
                                               precMO_to_precVAR_increment
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
+   USE util,                            ONLY: sort
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -86,7 +87,8 @@ MODULE tidft_guess_methods
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'tidft_guess_methods'
 
-   PUBLIC :: construct_canonical_orbitals
+   PUBLIC :: construct_canonical_orbitals, &
+             guess_excited_states_orbitals
 
    LOGICAL, PARAMETER :: debug_mode = .TRUE.
    LOGICAL, PARAMETER :: safe_mode = .FALSE.
@@ -135,6 +137,25 @@ CONTAINS
          unit_nr = -1
       ENDIF
 
+      ! RZK TODO:
+      !   * Create an input section within &TIDFT called &WF_GUESS
+      !     It should contain controls for this procedure:
+      !       MAX_EXC_ENERGY - maximum allowed excitation energy for the guess (pre-SCF)
+      !       MIN_EXC_ENERGY - minimum allowed excitation energy for the guess (pre-SCF)
+      !       MAX_EXC_ORDER  - maximum allowed number of excitations from the ground state
+      !     The corresponding variables for these input keywords are:
+      !       tidft_env%guess_max_excitation_energy (to be created)
+      !       tidft_env%guess_min_excitation_energy (already implemented)
+      !       tidft_env%guess_max_excitation_order (to be created)
+      !     More controls will be added later
+      !   * Test this procedure for UKS and RKS for He crystal (fast, login node) to see whether
+      !     excitation pairs are correctly generated. That is, the test run should only print
+      !     occupied-virtual pairs generated for each excited state guess. It is not necessary to
+      !     create the guess orbitals yet.
+      !   * NExt test is to do the same for ROKS singlet and ROKS triplet (with triplet correction FALSE).
+      !   * Next text: same system ROKS singlet with triplet correction TRUE.
+      !   * Repeat the test for another simple system (fast, login node). F3B..NH3 with small cell can be used.
+
       ! MAJOR STEP: Obtain canonical orbital energies and info on orbital location in matrices
       ! RZK-WARNING: make mainvar consistent with canonical orbitals - alternatively:
       ! Do not modify the orbitals in tidft_env, only get the energy (orbitals are needed later here though)
@@ -177,11 +198,11 @@ CONTAINS
       CALL construct_canonical_orbitals(tidft_env, estate = 1, orbital_set = orbital_set)
 
       ! MAJOR STEP: Find out what orbitals are doubly and singly occupied
-      ! For virtual orbitals, find out whether they can contain two or one electron(s)
+      ! For virtual orbitals, find out whether they CAN contain two or one electron(s)
       ! RZK-WARNING: This primitive algorithm only compares energies of alpha-beta orbitals
       ! In the future, norms of Delta T = T_alpha - T_beta should be analyzed
 
-      ! This procedure is irrelevant for RKS and UKS because enforcing 
+      ! This procedure is irrelevant for RKS and UKS because enforcing
       ! the correct number of unpairings is not required.
       ! Perform only for the case of ROKS
       count_unpairings = -1
@@ -233,7 +254,7 @@ CONTAINS
          ! occupied are looped from top to bottom
          start_orbital_indices(ispin, 1) = &
             orbital_set%orbital_list(ispin, 1)%norbs
-         ! virtuals are loped from bottom to top
+         ! virtuals are looped from bottom to top
          start_orbital_indices(ispin, 2) = 1
       ENDDO ! ispin
 
@@ -300,7 +321,7 @@ CONTAINS
       !indexGS = index_true(1)
 
       ! MAJOR STEP: Swap mainvar matrix columns
-!Change tidft_env%nstates
+      ! RZK-WARNING: Change tidft_env%nstates
       DO istate = 1, generated_nstates
 
          state_index = index_true(istate)
@@ -346,6 +367,8 @@ CONTAINS
       DEALLOCATE(start_orbital_indices)
       DEALLOCATE(orbital_set%orbital_list)
 
+      CPABORT("EXCITED STATE GUESS WF HAS BEEN GENERATED")
+
    END SUBROUTINE guess_excited_states_orbitals
 
    RECURSIVE SUBROUTINE generate_single_excitations(current_order, excitation_list, &
@@ -377,7 +400,7 @@ CONTAINS
                                                             deeper_level
 
       nspins = SIZE(orbital_set%orbital_list, 1)
-      max_order = excitation_list%max_order 
+      max_order = excitation_list%max_order
 
       ALLOCATE(next_level_start_indices(nspins, 2))
 
@@ -437,11 +460,13 @@ CONTAINS
                !   unpairings no. requirement (ROKS)
                !   RZK_WARNING: NYI - spin symmetry requirement (in some cases alpha excitations are equivalent to beta)
                add_to_excitation_list = .TRUE.
+
+               ! energy filter requirement
                IF (SUM(next_level_excitation%delta_epsilon) .LT. min_excitation_energy) THEN
                   add_to_excitation_list = .FALSE.
                ENDIF
 
-               ! No need to check if previous ADD criteria failed
+               ! No need to check if the previous ADD criteria failed
                IF (check_unpairings .AND. add_to_excitation_list) THEN
 
                   incr_unpairings = 0
@@ -484,7 +509,7 @@ CONTAINS
 
                   IF (next_level_excitation%unpairings_count .GT. max_allowed_unpairings) &
                      add_to_excitation_list = .FALSE.
-                  
+
                ENDIF ! check unpairings
 
                IF (add_to_excitation_list) THEN

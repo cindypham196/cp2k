@@ -711,7 +711,7 @@ CONTAINS
 
       nspins = SIZE(matrix_ks)
 
-      ! get KS matrix from the QS env and convert to the ALMO format
+      ! get KS matrix from the QS env and convert to the correct format
       CALL get_qs_env(qs_env, matrix_ks=matrix_qs_ks)
       DO ispin = 1, nspins
          CALL dbcsr_copy(matrix_ks(ispin), matrix_qs_ks(ispin)%matrix)

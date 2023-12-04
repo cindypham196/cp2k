@@ -55,7 +55,7 @@ MODULE tidft_guess_types
       LOGICAL, DIMENSION(:), ALLOCATABLE                 :: orb_has_spin_double
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: index_within_matrix ! position within matrix
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: block_within_matrix
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: index_within_block ! position witihn block
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: index_within_block ! position within block
 
    END TYPE orbital_list_type
 
