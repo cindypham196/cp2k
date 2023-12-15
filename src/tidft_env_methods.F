@@ -123,7 +123,7 @@ CONTAINS
       LOGICAL                                            :: explicit
       TYPE(section_vals_type), POINTER                   :: tidft_pcg_optimizer_section, &
                                                             tidft_section, &
-                                                            penalty_section
+                                                            penalty_section, WF_guess_section
 
       CALL timeset(routineN, handle)
 
@@ -150,14 +150,6 @@ CONTAINS
       CALL section_vals_val_get(tidft_section, &
               "MO_GUESS_RANDOM_SEED", &
               i_val=tidft_env%initial_guess_random_seed)
-      CALL section_vals_val_get(tidft_section, &
-              "MO_GUESS_MAX_EXC_ORDER", &
-              i_val=tidft_env%guess_max_excitation_order)
-      CALL section_vals_val_get(tidft_section, &
-              "MO_GUESS_MIN_EXC_ENERGY", &
-              r_val=tidft_env%guess_min_excitation_energy)
-      tidft_env%guess_min_excitation_energy = cp_unit_to_cp2k( &
-         tidft_env%guess_min_excitation_energy, "eV")
       CALL section_vals_val_get(tidft_section, &
               "ENERGY_COMPONENT", &
               l_val=tidft_env%loss_function_components(1))
@@ -254,6 +246,20 @@ CONTAINS
       CALL section_vals_val_get(penalty_section, &
                                 "LOOSE_EPS_SCF", &
                                 r_val=tidft_env%loose_eps_scf)
+      
+      ! CINDY: Pass input from WF_GUESS section
+      WF_guess_section => section_vals_get_subs_vals(tidft_section, "WF_GUESS")
+
+      CALL section_vals_val_get(WF_guess_section, "MAX_EXC_ORDER", &
+                              i_val=tidft_env%guess_max_excitation_order)
+      CALL section_vals_val_get(WF_guess_section, "MAX_EXC_ENERGY", &
+                              r_val=tidft_env%guess_max_excitation_energy)
+      tidft_env%guess_max_excitation_energy = cp_unit_to_cp2k( &
+                              tidft_env%guess_max_excitation_energy, "eV")
+      CALL section_vals_val_get(WF_guess_section, "MIN_EXC_ENERGY", &
+                              r_val=tidft_env%guess_min_excitation_energy)
+      tidft_env%guess_min_excitation_energy = cp_unit_to_cp2k( &
+                              tidft_env%guess_min_excitation_energy, "eV")
 
       ! check for conflicts between options
 

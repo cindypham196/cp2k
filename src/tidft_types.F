@@ -153,6 +153,7 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: numerical_gradient_dx
       INTEGER                                            :: guess_max_excitation_order
       REAL(KIND=dp)                                      :: guess_min_excitation_energy
+      REAL(KIND=dp)                                      :: guess_max_excitation_energy
 
       ! penalty related variables
       REAL(KIND=dp)                                      :: intrastate_penalty_coeff

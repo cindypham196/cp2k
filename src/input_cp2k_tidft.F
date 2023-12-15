@@ -140,23 +140,6 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS_MAX_EXC_ORDER", &
-                          description="If ground-state MOs are used to generate initial "// &
-                          "excited-state MOs, this keyword specifies the maximum number of "// &
-                          "excitations from occupied ground-state orbitals to unoccupied orbitals.", &
-                          usage="MO_GUESS_MAX_EXC_ORDER 2", default_i_val=1)
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
-      CALL keyword_create(keyword, __LOCATION__, name="MO_GUESS_MIN_EXC_ENERGY", &
-                          description="If ground-state MOs are used to generate initial "// &
-                          "excited-state MOs, this keyword specifies the minimum energy of "// &
-                          "excitations from occupied ground-state orbitals to unoccupied orbitals. "// &
-                          "Set to positive non-zero value to eliminate low-energy excitations.", &
-                          usage="MO_GUESS_MIN_EXC_ENERGY 5.0", default_r_val=0.0_dp, unit_str='eV')
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
       CALL keyword_create(keyword, __LOCATION__, name="ENERGY_COMPONENT", &
                           description="Turn on the energy component of the loss function.", &
                           usage="ENERGY_COMPONENT .FALSE.", default_l_val=.TRUE., &
@@ -235,6 +218,12 @@ CONTAINS
 
       NULLIFY (subsection)
       CALL create_penalty_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      !CINDY: create WF_GUESS section
+      NULLIFY (subsection)
+      CALL create_WF_guess_section(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
@@ -511,5 +500,52 @@ CONTAINS
       CALL keyword_release(keyword)
 
    END SUBROUTINE create_penalty_section
+
+! **************************************************************************************************
+!> \brief The section controls WF guess generation for excited states
+!> \param section ...
+!> \par History
+!>       2023.12 created [Hanh D.M. Pham]
+!> \author Hanh D.M. Pham
+! **************************************************************************************************
+   SUBROUTINE create_WF_guess_section(section)
+
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      NULLIFY (section)
+
+      CALL section_create(section, __LOCATION__, name="WF_GUESS", &
+                          description="Control the generation of initial guess for all possible excited states.", &
+                          n_keywords=3, n_subsections=0, repeats=.FALSE.)
+
+      NULLIFY (keyword)
+ 
+      CALL keyword_create(keyword, __LOCATION__, name="MAX_EXC_ENERGY", &
+                          description="maximum allowed excitation energy for the guess (pre-SCF)", &
+                          usage="MAX_EXC_ENERGY 100", default_r_val=1000.00_dp, unit_str='eV')
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MIN_EXC_ENERGY", &
+                          description="If ground-state MOs are used to generate initial "// &
+                          "excited-state MOs, this keyword specifies the minimum energy of "// &
+                          "excitations from occupied ground-state orbitals to unoccupied orbitals. "// &
+                          "Set to positive non-zero value to eliminate low-energy excitations.", &
+                          usage="MIN_EXC_ENERGY 5.0", default_r_val=0.0_dp, unit_str='eV')
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MAX_EXC_ORDER", &
+                          description="If ground-state MOs are used to generate initial "// &
+                          "excited-state MOs, this keyword specifies the maximum number of "// &
+                          "excitations from occupied ground-state orbitals to unoccupied orbitals.", &
+                          usage="MAX_EXC_ORDER 2", default_i_val=1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+   END SUBROUTINE create_WF_guess_section
 
 END MODULE input_cp2k_tidft

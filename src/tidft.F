@@ -357,27 +357,27 @@ CONTAINS
 !                     IF (stateI .GT. naos*naos) CPABORT("Number of excites states ecxceed the array capacity")
 !                     ! Manually assign alpha and beta e- position for 15ES based on DZV2P BS
 !                     SELECT CASE(stateI)
-!                     CASE(2,20,21,22)
+!                     CASE(2,5,6,7) !(2,20,21,22) for DZVP ! 
 !                        alpha_pos= 0
-!                     CASE(3,19,23,24,25)
+!                     CASE(3,4,8,9,10) !(3,19,23,24,25) FOR DZVP !
 !                        alpha_pos= 1
-!                     CASE(4,15,16,17,18)
+!                     CASE(11,12,13,14,15)
 !                        alpha_pos= 2
-!                     CASE(5,11,12,13,14)
+!                     CASE(16,17,18,19,20)
 !                        alpha_pos= 3
-!                     CASE(6,7,8,9,10)
+!                     CASE(21,22,23,34,25)
 !                        alpha_pos= 4
 !                     END SELECT
 !                     SELECT CASE(stateI)
-!                     CASE(10,11,18,19)
+!                     CASE(3,11,16,21) !(10,11,18,19) FOR DZVP ! 
 !                        beta_pos= 0
-!                     CASE(9,12,17,25,20)
+!                     CASE(2,4,12,17,22) !(9,12,17,25,20) FOR DZVP !
 !                        beta_pos= 1
-!                     CASE(8,13,16,21,24)
+!                     CASE(5,8,13,18,23)
 !                        beta_pos= 2
-!                     CASE(7,14,15,22,23)
+!                     CASE(6,9,14,19,24)
 !                        beta_pos= 3
-!                     CASE(2,3,4,5,6)
+!                     CASE(7,10,15,20,25)
 !                        beta_pos= 4
 !                     END SELECT
 

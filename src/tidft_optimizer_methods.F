@@ -140,6 +140,9 @@ CONTAINS
 
       ALLOCATE(save_component_flags(SIZE(tidft_env%loss_function_components)))
       ALLOCATE(save_initial_intra(nstates))
+      
+      ! CINDY: tighten the convergence of 1s2s and 2s1s
+      new_det_deviation = tidft_env%allowed_determinant_deviaion/10.0_dp
 
       IF (tidft_env%state_by_state) THEN
 
@@ -151,17 +154,16 @@ CONTAINS
             tidft_env%nstates = current_no_of_states
 
             ! CINDY: Hack to optimize 2s2s being orthogonal with simultaneously 1s2s, 2s1s and GS
-!            IF (current_no_of_states .EQ. 19 .OR. current_no_of_states .EQ. 20) THEN
-!               new_det_deviation = tidft_env%allowed_determinant_deviaion/10.0_dp
+!            IF (current_no_of_states .EQ. 2 .OR. current_no_of_states .EQ. 3) THEN
 !               tidft_env%allowed_determinant_deviaion = new_det_deviation
 !               WRITE(*,*) "Current state:",current_no_of_states
 !               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion 
 !            ELSE
-!               WRITE(*,*) "Current state:",current_no_of_states
-!               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion
 !               IF (tidft_env%allowed_determinant_deviaion .LT. 0.0001_dp) THEN
 !                  tidft_env%allowed_determinant_deviaion = 0.0001_dp
 !               ENDIF
+!               WRITE(*,*) "Current state:",current_no_of_states
+!               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion
 !            ENDIF
 
             IF (current_no_of_states .GE. 2 .AND. tidft_env%pre_orthogonalize_states) THEN

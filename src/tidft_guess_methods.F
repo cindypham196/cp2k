@@ -191,6 +191,25 @@ CONTAINS
                ENDIF
             ENDIF
 
+            ! CINDY: print info on the occupied-virtual pairs generated for each excited state guess
+            WRITE (*,*) "ispin, ivirtual:", ispin, ivirtual
+            
+            IF (ispin .EQ. 1) THEN ! alpha
+
+               IF( ivirtual .EQ. 1) THEN ! occupied
+                  WRITE (*,*) "occ. alpha orbital:", orbital_set%orbital_list(ispin, ivirtual)%norbs
+               ELSE                      ! unoccupied
+                  WRITE (*,*) "unocc. alpha orbital:", orbital_set%orbital_list(ispin, ivirtual)%ivirtual
+               ENDIF
+
+            ELSE  ! beta
+               IF( ivirtual .EQ. 1) THEN ! occupied
+                  WRITE (*,*) "occ. beta orbital:", orbital_set%orbital_list(ispin, ivirtual)%norbs
+               ELSE                      ! unoccupied
+                  WRITE (*,*) "unocc. beta orbital:", orbital_set%orbital_list(ispin, ivirtual)%ivirtual
+               ENDIF
+            ENDIF
+
          ENDDO
 
       ENDDO
