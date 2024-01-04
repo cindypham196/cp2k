@@ -140,9 +140,9 @@ CONTAINS
 
       ALLOCATE(save_component_flags(SIZE(tidft_env%loss_function_components)))
       ALLOCATE(save_initial_intra(nstates))
-      
+
       ! CINDY: tighten the convergence of 1s2s and 2s1s
-      new_det_deviation = tidft_env%allowed_determinant_deviaion/10.0_dp
+      !new_det_deviation = tidft_env%allowed_determinant_deviaion/10.0_dp
 
       IF (tidft_env%state_by_state) THEN
 
@@ -809,7 +809,7 @@ CONTAINS
                            ! CINDY: modification-trust previous step, confident to make more aggressive step
                            !step_size = next_step_size_guess*1.05_dp
                            ! CHANGE BACK TO PREVIOUS SETTING BELOW AFTER THE O3 TEST
-                           step_size = optimizer%lin_search_step_size_guess  
+                           step_size = optimizer%lin_search_step_size_guess
                         ENDIF
                      ENDIF
                   ELSE IF (linear_search_type .EQ. 2) THEN ! this is cautious LS

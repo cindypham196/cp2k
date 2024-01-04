@@ -855,6 +855,10 @@ CONTAINS
       dest%order = source%order
       dest%excitation_energy = source%excitation_energy
       dest%unpairings_count = source%unpairings_count
+WRITE(*,*) "SIZE sour: ", SIZE(source%delta_epsilon)
+WRITE(*,*) "SIZE dest: ", SIZE(dest%delta_epsilon)
+WRITE(*,*) "|", source%delta_epsilon(:), "|"
+WRITE(*,*) "|", dest%delta_epsilon(:), "|"
       dest%delta_epsilon(:) = source%delta_epsilon(:)
       dest%occupied(:) = source%occupied(:)
       dest%virtual(:) = source%virtual(:)
