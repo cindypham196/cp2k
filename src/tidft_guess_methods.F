@@ -341,9 +341,11 @@ CONTAINS
 
       ! MAJOR STEP: Swap mainvar matrix columns
       ! RZK-WARNING: Change tidft_env%nstates
+WRITE(*,*) "GENERATED EXCITATIONS"
       DO istate = 1, generated_nstates
 
          state_index = index_true(istate)
+WRITE(*,'(T2,2I3,F20.10)') istate, state_index, excitation_list%excitations(state_index)%excitation_energy
          !Process data from excitation_list%excitations(state_index) to swap columns
          !Convert orbital numbers to mainvar column numbers
          !Swap
@@ -579,7 +581,6 @@ CONTAINS
                           min_excitation_energy = min_excitation_energy, &
                           check_unpairings = check_unpairings, &
                           max_allowed_unpairings = max_allowed_unpairings)
-
 
                ENDIF
 
@@ -827,8 +828,8 @@ CONTAINS
 
    SUBROUTINE get_orbital_indices(matrix, block_within_matrix, index_within_block)
 
-      TYPE(dbcsr_type), INTENT(IN)                       :: matrix 
-      INTEGER, DIMENSION(:), INTENT(OUT)                 :: block_within_matrix, &
+      TYPE(dbcsr_type), INTENT(IN)                       :: matrix
+      INTEGER, DIMENSION(:), INTENT(INOUT)               :: block_within_matrix, &
                                                             index_within_block
 
       INTEGER, DIMENSION(:), POINTER                     :: blk_sizes
@@ -847,18 +848,14 @@ CONTAINS
    SUBROUTINE copy_excitation(dest, source)
 
       TYPE(tidft_excitation_type), INTENT(IN)             :: source
-      TYPE(tidft_excitation_type), INTENT(OUT)            :: dest
+      TYPE(tidft_excitation_type), INTENT(INOUT)            :: dest
 
       CPASSERT(SIZE(source%delta_epsilon).EQ.SIZE(dest%delta_epsilon))
 
-      ! copy data 
+      ! copy data
       dest%order = source%order
       dest%excitation_energy = source%excitation_energy
       dest%unpairings_count = source%unpairings_count
-WRITE(*,*) "SIZE sour: ", SIZE(source%delta_epsilon)
-WRITE(*,*) "SIZE dest: ", SIZE(dest%delta_epsilon)
-WRITE(*,*) "|", source%delta_epsilon(:), "|"
-WRITE(*,*) "|", dest%delta_epsilon(:), "|"
       dest%delta_epsilon(:) = source%delta_epsilon(:)
       dest%occupied(:) = source%occupied(:)
       dest%virtual(:) = source%virtual(:)
