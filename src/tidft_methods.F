@@ -976,27 +976,44 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief Swap columns of two dbcsr matrices
 !>        The row blocks and distribution of the the matrices has to be the same.
+!>        The columns to swap can be specified using either:
+!>        1) global indices of the columns (1,...,n_total_columns) OR
+!>        2) block numbers and indices within blocks,
+!>        but not both.
 !> \par History
 !>       2022.06 created [Rustam Z Khaliullin]
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
-   SUBROUTINE swap_columns(matrix_A, matrix_B, blk_cols_A, blk_indx_A, &
-      blk_cols_B, blk_indx_B, AtoB, BtoA)
+   SUBROUTINE swap_columns(matrix_A, matrix_B, global_indx_A, blk_cols_A, blk_indx_A, &
+      global_indx_B, blk_cols_B, blk_indx_B, AtoB, BtoA)
 
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix_A, matrix_B
-      INTEGER, DIMENSION(:), INTENT(IN)                  :: blk_cols_A, blk_indx_A, &
-                                                            blk_cols_B, blk_indx_B
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL        :: blk_cols_A, blk_indx_A, &
+                                                            blk_cols_B, blk_indx_B, &
+                                                            global_indx_A, &
+                                                            global_indx_B
       LOGICAL, INTENT(IN), OPTIONAL                      :: AtoB, BtoA
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'swap_columns'
 
-      INTEGER                                            :: handle, n_A, n_B, nmos, I, &
+      INTEGER                                            :: handle, n_A, n_B, nmos, &
                                                             imo, iblock_row, iblock_col, &
-                                                            unit_nr
+                                                            unit_nr, &
+                                                            current_sum, &
+                                                            iblock, &
+                                                            nblocks
       TYPE(cp_logger_type), POINTER                      :: logger
       LOGICAL                                            :: AtoB_local, BtoA_local, &
-                                                            found
+                                                            found, &
+                                                            global_indx_A_convert, &
+                                                            blk_indx_A_complete, &
+                                                            global_indx_B_convert, &
+                                                            blk_indx_B_complete
       TYPE(dbcsr_distribution_type)                      :: dist_new, dist_qs
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: blk_cols_A_local, &
+                                                            blk_indx_A_local, &
+                                                            blk_cols_B_local, &
+                                                            blk_indx_B_local
       INTEGER, DIMENSION(:), POINTER                     :: blk_distr, blk_sizes, &
                                                             col_distr_new, col_sizes_new, &
                                                             row_distr_new, row_sizes_new
@@ -1027,6 +1044,34 @@ CONTAINS
       BtoA_local = .TRUE.
       IF (PRESENT(BtoA)) BtoA_local = BtoA
 
+      ! Check that only one type of indices is specified
+      global_indx_A_convert = .FALSE.
+      blk_indx_A_complete = .FALSE.
+      IF (PRESENT(global_indx_A)) global_indx_A_convert = .TRUE.
+      IF (PRESENT(blk_cols_A) .AND. PRESENT(blk_indx_A)) blk_indx_A_complete = .TRUE.
+      IF (PRESENT(global_indx_A) .AND. ( PRESENT(blk_cols_A) .OR. PRESENT(blk_indx_A) )) THEN
+         CPABORT("Cannot specify global and block indices")
+      ENDIF
+      IF ( .NOT. PRESENT(global_indx_A) ) THEN
+         IF ( .NOT. blk_indx_A_complete ) THEN
+            CPABORT("Specify global or 2 block indices for matrixA")
+         ENDIF
+      ENDIF
+
+      ! Check that only one type of indices is specified
+      global_indx_B_convert = .FALSE.
+      blk_indx_B_complete = .FALSE.
+      IF (PRESENT(global_indx_B)) global_indx_B_convert = .TRUE.
+      IF (PRESENT(blk_cols_B) .AND. PRESENT(blk_indx_B)) blk_indx_B_complete = .TRUE.
+      IF (PRESENT(global_indx_B) .AND. ( PRESENT(blk_cols_B) .OR. PRESENT(blk_indx_B) )) THEN
+         CPABORT("Cannot specify global and block indices")
+      ENDIF
+      IF ( .NOT. PRESENT(global_indx_B) ) THEN
+         IF ( .NOT. blk_indx_B_complete ) THEN
+            CPABORT("Specify global or 2 block indices for matrixB")
+         ENDIF
+      ENDIF
+
       CALL dbcsr_get_info(matrix_A, nblkrows_total=n_A)
       CALL dbcsr_get_info(matrix_B, nblkrows_total=n_B)
       CPASSERT(n_B.EQ.n_A)
@@ -1035,14 +1080,85 @@ CONTAINS
       CALL dbcsr_get_info(matrix_B, nfullrows_total=n_B)
       CPASSERT(n_B.EQ.n_A)
 
-      CPASSERT(SIZE(blk_cols_A).EQ.SIZE(blk_cols_B))
-      CPASSERT(SIZE(blk_cols_A).EQ.SIZE(blk_indx_A))
-      CPASSERT(SIZE(blk_cols_A).EQ.SIZE(blk_indx_B))
+      ! Create block column indices for A
+      IF (global_indx_A_convert) THEN
 
-      nmos = SIZE(blk_cols_A)
+         nmos = SIZE(global_indx_A)
+
+         ALLOCATE(blk_cols_A_local(nmos))
+         ALLOCATE(blk_indx_A_local(nmos))
+
+         CALL dbcsr_get_info(matrix_A, row_blk_size=blk_sizes)
+
+         ! Convert global indices to block indices
+         MOloopA: DO imo = 1, nmos
+            current_sum = 0
+            DO iblock = 1, nblocks
+               current_sum = current_sum + blk_sizes(iblock)
+               IF (global_indx_A(imo) .LE. current_sum) THEN
+                  blk_cols_A_local(imo) = iblock
+                  blk_indx_A_local(imo) = global_indx_A(imo) - (current_sum - blk_sizes(iblock))
+                  CYCLE MOloopA
+               ENDIF
+            ENDDO
+            CPABORT("Global index not converted for A")
+         ENDDO MOloopA
+
+      ELSE
+
+         CPASSERT(SIZE(blk_cols_A).EQ.SIZE(blk_indx_A))
+         nmos = SIZE(blk_cols_A)
+
+         ALLOCATE(blk_cols_A_local(nmos))
+         ALLOCATE(blk_indx_A_local(nmos))
+
+         blk_cols_A_local(:) = blk_cols_A(:)
+         blk_indx_A_local(:) = blk_indx_A(:)
+
+      ENDIF
+
+      ! Create block column indices for B
+      IF (global_indx_B_convert) THEN
+
+         nmos = SIZE(global_indx_B)
+
+         ALLOCATE(blk_cols_B_local(nmos))
+         ALLOCATE(blk_indx_B_local(nmos))
+
+         CALL dbcsr_get_info(matrix_B, row_blk_size=blk_sizes)
+
+         ! Convert global indices to block indices
+         MOloopB: DO imo = 1, nmos
+            current_sum = 0
+            DO iblock = 1, nblocks
+               current_sum = current_sum + blk_sizes(iblock)
+               IF (global_indx_B(imo) .LE. current_sum) THEN
+                  blk_cols_B_local(imo) = iblock
+                  blk_indx_B_local(imo) = global_indx_B(imo) - (current_sum - blk_sizes(iblock))
+                  CYCLE MOloopB
+               ENDIF
+            ENDDO
+            CPABORT("Global index not converted for B")
+         ENDDO MOloopB
+
+      ELSE
+
+         CPASSERT(SIZE(blk_cols_B).EQ.SIZE(blk_indx_B))
+         nmos = SIZE(blk_cols_B)
+
+         ALLOCATE(blk_cols_B_local(nmos))
+         ALLOCATE(blk_indx_B_local(nmos))
+
+         blk_cols_B_local(:) = blk_cols_B(:)
+         blk_indx_B_local(:) = blk_indx_B(:)
+
+      ENDIF
+
+      CPASSERT(SIZE(blk_cols_A_local).EQ.SIZE(blk_cols_B_local))
+      CPASSERT(SIZE(blk_indx_A_local).EQ.SIZE(blk_indx_B_local))
 
       CALL dbcsr_get_info(matrix_A, distribution=dist_qs)
-      
+
       ! structure of the AO dimension can be copied from one of the matrices
       CALL dbcsr_distribution_get(dist_qs, row_dist=blk_distr)
       CALL dbcsr_get_info(matrix_A, row_blk_size=blk_sizes)
@@ -1054,12 +1170,12 @@ CONTAINS
       ! structure for the MO dimension is created from scratch for each matrix
       ALLOCATE (col_sizes_new(nmos))
       ALLOCATE (col_distr_new(nmos))
-      col_sizes_new = (/ (1, I = 1, nmos) /) ! array of 1s, length nmos
+      col_sizes_new = (/ (1, imo = 1, nmos) /) ! array of 1s, length nmos
 
       ! now, data specific to matrix_A
       !col_distr_new = (cores1D of all swapped columns) - use get_stored_coordinates for each MO block
       DO imo = 1, nmos
-         CALL dbcsr_get_stored_coordinates(matrix_A, 1, blk_cols_A(imo), col_distr_new(imo))
+         CALL dbcsr_get_stored_coordinates(matrix_A, 1, blk_cols_A_local(imo), col_distr_new(imo))
       ENDDO
 
       ! Create the distribution and then the matrix of selected columns
@@ -1074,7 +1190,7 @@ CONTAINS
 
       ! now, data specific to matrix_B
       DO imo = 1, nmos
-         CALL dbcsr_get_stored_coordinates(matrix_B, 1, blk_cols_B(imo), col_distr_new(imo))
+         CALL dbcsr_get_stored_coordinates(matrix_B, 1, blk_cols_B_local(imo), col_distr_new(imo))
       ENDDO
 
       ! Create the distribution and then the matrix of selected columns
@@ -1105,13 +1221,13 @@ CONTAINS
 
             DO imo = 1, nmos
 
-               IF (blk_cols_A(imo) .EQ. iblock_col) THEN
+               IF (blk_cols_A_local(imo) .EQ. iblock_col) THEN
                ! this block contains needed info
 
                   NULLIFY (p_new_block)
                   CALL dbcsr_reserve_block2d(matrix_A_selected_cols, iblock_row, imo, p_new_block)
                   CPASSERT(ASSOCIATED(p_new_block))
-                  p_new_block(:,1) = data_p(:,blk_indx_A(imo))
+                  p_new_block(:,1) = data_p(:,blk_indx_A_local(imo))
 
                ENDIF ! mynode
 
@@ -1133,13 +1249,13 @@ CONTAINS
 
             DO imo = 1, nmos
 
-               IF (blk_cols_B(imo) .EQ. iblock_col) THEN
+               IF (blk_cols_B_local(imo) .EQ. iblock_col) THEN
                ! this block contains needed info
 
                   NULLIFY (p_new_block)
                   CALL dbcsr_reserve_block2d(matrix_B_selected_cols, iblock_row, imo, p_new_block)
                   CPASSERT(ASSOCIATED(p_new_block))
-                  p_new_block(:,1) = data_p(:,blk_indx_B(imo))
+                  p_new_block(:,1) = data_p(:,blk_indx_B_local(imo))
 
                ENDIF ! mynode
 
@@ -1173,21 +1289,21 @@ CONTAINS
 
             CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)
 
-            CALL dbcsr_get_block_p(matrix_B, iblock_row, blk_cols_B(iblock_col), p_block, found)
+            CALL dbcsr_get_block_p(matrix_B, iblock_row, blk_cols_B_local(iblock_col), p_block, found)
 
             IF (found) THEN
-               p_block(:, blk_indx_B(iblock_col)) = data_p(:, 1)
+               p_block(:, blk_indx_B_local(iblock_col)) = data_p(:, 1)
             ELSE
                ! block does not exist
                !CALL dbcsr_work_create(mat, work_mutable=.TRUE.)
                NULLIFY (p_new_block)
-               CALL dbcsr_reserve_block2d(matrix_B, iblock_row, blk_cols_B(iblock_col), p_new_block)
+               CALL dbcsr_reserve_block2d(matrix_B, iblock_row, blk_cols_B_local(iblock_col), p_new_block)
                CPASSERT(ASSOCIATED(p_new_block))
                p_new_block(:,:) = 0.0_dp
-               p_new_block(:, blk_indx_B(iblock_col)) = data_p(:, 1)
+               p_new_block(:, blk_indx_B_local(iblock_col)) = data_p(:, 1)
                !CALL dbcsr_finalize(mat)
             ENDIF
-   
+
          ENDDO
          CALL dbcsr_iterator_stop(iter)
          CALL dbcsr_finalize(matrix_B)
@@ -1212,26 +1328,31 @@ CONTAINS
 
             CALL dbcsr_iterator_next_block(iter, iblock_row, iblock_col, data_p)
 
-            CALL dbcsr_get_block_p(matrix_A, iblock_row, blk_cols_A(iblock_col), p_block, found)
+            CALL dbcsr_get_block_p(matrix_A, iblock_row, blk_cols_A_local(iblock_col), p_block, found)
 
             IF (found) THEN
-               p_block(:, blk_indx_A(iblock_col)) = data_p(:, 1)
+               p_block(:, blk_indx_A_local(iblock_col)) = data_p(:, 1)
             ELSE
                ! block does not exist
                !CALL dbcsr_work_create(mat, work_mutable=.TRUE.)
                NULLIFY (p_new_block)
-               CALL dbcsr_reserve_block2d(matrix_A, iblock_row, blk_cols_A(iblock_col), p_new_block)
+               CALL dbcsr_reserve_block2d(matrix_A, iblock_row, blk_cols_A_local(iblock_col), p_new_block)
                CPASSERT(ASSOCIATED(p_new_block))
                p_new_block(:,:) = 0.0_dp
-               p_new_block(:, blk_indx_A(iblock_col)) = data_p(:, 1)
+               p_new_block(:, blk_indx_A_local(iblock_col)) = data_p(:, 1)
                !CALL dbcsr_finalize(mat)
             ENDIF
-   
+
          ENDDO
          CALL dbcsr_iterator_stop(iter)
          CALL dbcsr_finalize(matrix_A)
 
       ENDIF ! BtoA
+
+      DEALLOCATE(blk_cols_A_local)
+      DEALLOCATE(blk_indx_A_local)
+      DEALLOCATE(blk_cols_B_local)
+      DEALLOCATE(blk_indx_B_local)
 
       CALL dbcsr_release(matrix_A_selected_cols)
       CALL dbcsr_release(matrix_B_selected_cols)
