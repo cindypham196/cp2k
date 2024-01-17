@@ -199,9 +199,13 @@ CONTAINS
             ENDIF
 
             IF (current_no_of_states .EQ. 2) THEN
+            ! CINDY: put back init value for tidft_env%nstates
+               tidft_env%nstates = nstates
             ! Done with the ground state
             ! Generate MO-based guess for the excited states
                CALL guess_excited_states_orbitals(tidft_env)
+            ! CINDY: keep going with state-by-state optimization
+               tidft_env%nstates = current_no_of_states
             ENDIF
 
             IF (current_no_of_states .EQ. 1) THEN
