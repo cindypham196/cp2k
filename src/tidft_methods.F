@@ -96,7 +96,8 @@ MODULE tidft_methods
           dbcsr_set_element, &
           project_out, &
           tidft_optimizer_gradient_norm, &
-          tidft_mainvar_orthonormalize
+          tidft_mainvar_orthonormalize, &
+          swap_columns
 
 CONTAINS
 
@@ -1090,6 +1091,8 @@ CONTAINS
 
          CALL dbcsr_get_info(matrix_A, row_blk_size=blk_sizes)
 
+         nblocks = SIZE(blk_sizes)
+
          ! Convert global indices to block indices
          MOloopA: DO imo = 1, nmos
             current_sum = 0
@@ -1126,6 +1129,8 @@ CONTAINS
          ALLOCATE(blk_indx_B_local(nmos))
 
          CALL dbcsr_get_info(matrix_B, row_blk_size=blk_sizes)
+         
+         nblocks = SIZE(blk_sizes)
 
          ! Convert global indices to block indices
          MOloopB: DO imo = 1, nmos
@@ -1188,6 +1193,24 @@ CONTAINS
       CALL dbcsr_finalize(matrix_A_selected_cols)
       CALL dbcsr_distribution_release(dist_new)
 
+!WRITE(*,*)"DONE CREATE MATRIX OF THE SLECTED COLUMNS MAT_A (mat_T)"
+!CALL dbcsr_print(matrix_A_selected_cols)
+
+      !CINDY: add the AO copy from mat_B
+      ! structure of the AO dimension can be copied from one of the matrices
+      CALL dbcsr_distribution_get(dist_qs, row_dist=blk_distr)
+      CALL dbcsr_get_info(matrix_B, row_blk_size=blk_sizes)
+      ALLOCATE(row_sizes_new(SIZE(blk_sizes)))
+      ALLOCATE(row_distr_new(SIZE(blk_distr)))
+      row_sizes_new(:) = blk_sizes(:)
+      row_distr_new(:) = blk_distr(:)
+
+      !CINDY: add the MO for mat_B 
+      ! structure for the MO dimension is created from scratch for each matrix
+      ALLOCATE(col_sizes_new(nmos))
+      ALLOCATE(col_distr_new(nmos))
+      col_sizes_new = (/ (1, imo = 1, nmos) /) ! array of 1s, length nmos
+
       ! now, data specific to matrix_B
       DO imo = 1, nmos
          CALL dbcsr_get_stored_coordinates(matrix_B, 1, blk_cols_B_local(imo), col_distr_new(imo))
@@ -1203,10 +1226,14 @@ CONTAINS
       CALL dbcsr_finalize(matrix_B_selected_cols)
       CALL dbcsr_distribution_release(dist_new)
 
-      DEALLOCATE(row_sizes_new)
-      DEALLOCATE(row_distr_new)
-      DEALLOCATE(col_sizes_new)
-      DEALLOCATE(col_distr_new)
+!WRITE(*,*)"DONE CREATE MATRIX OF THE SLECTED COLUMNS MAT_B (mat_V)"
+!CALL dbcsr_print(matrix_B_selected_cols)
+
+! CINDY: Here if I deallocate these arrays there will be segmentation error?!
+!      DEALLOCATE(row_sizes_new)
+!      DEALLOCATE(row_distr_new)
+!      DEALLOCATE(col_sizes_new)
+!      DEALLOCATE(col_distr_new)
 
       ! copy data into the newly created matrix of selected columns (same dist as the source)
       ! then redistribute into the other matrix of selected columns (same dist as the destination)
@@ -1269,6 +1296,8 @@ CONTAINS
                  template = matrix_B_selected_cols)
          CALL dbcsr_copy(matrix_B_selected_cols_copy, matrix_B_selected_cols)
 
+!WRITE(*,*) "DONE COPY DATA INTO THE NEW MAT_B (mat_V)"   
+!CALL dbcsr_print(matrix_B_selected_cols_copy)
       ENDIF ! BtoA
 
       ! REturn to the next step of the AtoB process
@@ -1346,6 +1375,7 @@ CONTAINS
          ENDDO
          CALL dbcsr_iterator_stop(iter)
          CALL dbcsr_finalize(matrix_A)
+!WRITE(*,*)"DONE SWAPPING VIRTUAL COLS MAT_V TO OCCUPIED COLS MAT_T"
 
       ENDIF ! BtoA
 

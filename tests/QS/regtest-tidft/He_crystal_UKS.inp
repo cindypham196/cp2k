@@ -33,7 +33,7 @@
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              20
+      N_EXCITED_STATES              4 !20
       SUGGESTED_MO_BLOCK_SIZE       1000000000
       EPS_FILTER                    1.0E-10
       SPIN_PURE                     F
@@ -69,11 +69,11 @@
         LOOSE_EPS_SCF                     1E-2
       &END PENALTY
 
-!      &WF_GUESS
-!        MAX_EXC_ENERGY    80
-!        MIN_EXC_ENERGY    0.00
-!        MAX_EXC_ORDER     2 !10
-!      &END WF_GUESS
+      &WF_GUESS
+        MAX_EXC_ENERGY    80
+        MIN_EXC_ENERGY    0.00
+        MAX_EXC_ORDER     2
+      &END WF_GUESS
 
     &END TIDFT
 

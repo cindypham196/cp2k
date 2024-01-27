@@ -76,7 +76,8 @@ MODULE tidft_guess_methods
                                               determinant_local, &
                                               matrix_invert_local, &
                                               gradVAR_scale_split_increment, &
-                                              precMO_to_precVAR_increment
+                                              precMO_to_precVAR_increment, &
+                                              swap_columns
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
    USE util,                            ONLY: sort
 #include "./base/base_uses.f90"
@@ -120,7 +121,7 @@ CONTAINS
                                                             iexcitation, &
                                                             generated_nstates, &
                                                             istate, state_index
-      INTEGER                                            :: max_order
+      INTEGER                                            :: max_order, spin_excitation, iorder
       INTEGER, DIMENSION(:,:), ALLOCATABLE               :: start_orbital_indices
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: index_true
       LOGICAL                                            :: check_unpairings
@@ -128,6 +129,9 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: delta, energies_temp
       TYPE(orbital_set_type)                             :: orbital_set
       TYPE(tidft_excitation_type)                        :: current_excitation
+
+      INTEGER, DIMENSION(:,:), ALLOCATABLE               :: alpha_occupied_indx, alpha_virtual_indx
+      INTEGER, DIMENSION(:,:), ALLOCATABLE               :: beta_occupied_indx, beta_virtual_indx
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
@@ -188,25 +192,6 @@ CONTAINS
                   orbital_set%orbital_list(ispin, ivirtual)%orb_has_spin_double(:) = .TRUE.
                ELSE ! UKS and ROKS
                   orbital_set%orbital_list(ispin, ivirtual)%orb_has_spin_double(:) = .FALSE.
-               ENDIF
-            ENDIF
-
-            ! CINDY: print info on the occupied-virtual pairs generated for each excited state guess
-            WRITE (*,*) "ispin, ivirtual:", ispin, ivirtual
-            
-            IF (ispin .EQ. 1) THEN ! alpha
-
-               IF( ivirtual .EQ. 1) THEN ! occupied
-                  WRITE (*,*) "occ. alpha orbital:", orbital_set%orbital_list(ispin, ivirtual)%norbs
-               ELSE                      ! unoccupied
-                  WRITE (*,*) "unocc. alpha orbital:", orbital_set%orbital_list(ispin, ivirtual)%ivirtual
-               ENDIF
-
-            ELSE  ! beta
-               IF( ivirtual .EQ. 1) THEN ! occupied
-                  WRITE (*,*) "occ. beta orbital:", orbital_set%orbital_list(ispin, ivirtual)%norbs
-               ELSE                      ! unoccupied
-                  WRITE (*,*) "unocc. beta orbital:", orbital_set%orbital_list(ispin, ivirtual)%ivirtual
                ENDIF
             ENDIF
 
@@ -341,20 +326,134 @@ CONTAINS
 
       ! MAJOR STEP: Swap mainvar matrix columns
       ! RZK-WARNING: Change tidft_env%nstates
-WRITE(*,*) "GENERATED EXCITATIONS"
-      DO istate = 1, generated_nstates
+      ! CINDY: printout info for each excitation
+      IF (unit_nr > 0) THEN
 
+         WRITE (unit_nr,'(T2,A)') REPEAT("-", 60)
+
+         DO istate = 1, generated_nstates
+
+            state_index = index_true(istate)
+
+            WRITE(unit_nr,'(T3, A10, I5, A3, A13, F5.2, A5)') "EXCITATION", istate, ":", "Guess energy", &
+                  excitation_list%excitations(state_index)%excitation_energy, "(eV)"
+            
+            DO iorder=1, max_order
+               ! determines if the spin is alpha or beta
+               spin_excitation = excitation_list%excitations(state_index)%spin(iorder)
+
+               IF(spin_excitation .GT. 0) THEN ! electron is being promoted
+               
+                  IF (spin_excitation .EQ. 1) THEN ! alpha e-
+                     WRITE(unit_nr,'(T2, A24, A, I2, A8, A12, A, I2, A8)') "HOMO", "-", &
+                           excitation_list%excitations(state_index)%occupied(iorder) - 1, &
+                           "(alpha)", "--->  LUMO", "+", &
+                           excitation_list%excitations(state_index)%virtual(iorder) - 1, "(alpha)"
+                  ELSE ! beta e-
+                     WRITE(unit_nr,'(T2, A24, A, I2, A8, A12, A, I2, A7)') "HOMO", "-", &
+                           excitation_list%excitations(state_index)%occupied(iorder) - 1, &
+                           "(beta)", "--->  LUMO", "+", &
+                           excitation_list%excitations(state_index)%virtual(iorder) - 1, "(beta)"
+                  ENDIF
+               ENDIF
+            ENDDO
+            
+            WRITE (unit_nr,'(T2,A)') REPEAT("-", 60)
+
+         ENDDO
+      ENDIF
+
+      !Process data from excitation_list%excitations(state_index) to swap columns
+      !Convert orbital numbers to mainvar column numbers
+      !Swap
+
+      !CINDY: obtain occ. and vir. orbital indices separately for alpha and beta
+      ALLOCATE(alpha_virtual_indx(generated_nstates, max_order))
+      ALLOCATE(alpha_occupied_indx(generated_nstates, max_order))
+      ALLOCATE(beta_virtual_indx(generated_nstates, max_order))
+      ALLOCATE(beta_occupied_indx(generated_nstates, max_order))
+      DO istate=1, generated_nstates
+         
          state_index = index_true(istate)
-WRITE(*,'(T2,2I3,F20.10)') istate, state_index, excitation_list%excitations(state_index)%excitation_energy
-         !Process data from excitation_list%excitations(state_index) to swap columns
-         !Convert orbital numbers to mainvar column numbers
-         !Swap
+!WRITE(*,*) "SPIN exc array:", excitation_list%excitations(state_index)%spin(:)
 
+         DO iorder=1, max_order
+            ! determines if the spin is alpha or beta
+            spin_excitation = excitation_list%excitations(state_index)%spin(iorder)
+
+            IF(spin_excitation .GT. 0) THEN ! electron is being promoted
+            
+               IF (spin_excitation .EQ. 1) THEN ! alpha e-
+
+                  alpha_occupied_indx(state_index,iorder) = excitation_list%excitations(state_index)%occupied(iorder)
+                  alpha_virtual_indx(state_index,iorder) = excitation_list%excitations(state_index)%virtual(iorder)
+                  beta_occupied_indx(state_index, iorder) = 0
+                  beta_virtual_indx(state_index, iorder) = 0
+               ELSE !beta e-
+
+                  beta_occupied_indx(state_index, iorder) = excitation_list%excitations(state_index)%occupied(iorder)
+                  beta_virtual_indx(state_index, iorder) = excitation_list%excitations(state_index)%virtual(iorder)
+                  alpha_occupied_indx(state_index,iorder) = 0
+                  alpha_virtual_indx(state_index, iorder) = 0
+               ENDIF
+            ELSE ! set 0 if no electrons being promoted
+               alpha_occupied_indx(state_index,iorder) = 0
+               alpha_virtual_indx(state_index, iorder) = 0
+               beta_occupied_indx(state_index, iorder) = 0
+               beta_virtual_indx(state_index, iorder) = 0 
+            ENDIF
+
+         ENDDO ! max_order
+!WRITE(*,*) "state:",state_index, "|| ALPHA occupied indx:", alpha_occupied_indx(state_index,:)
+!WRITE(*,*) "state:",state_index, "|| ALPHA virtual indx:", alpha_virtual_indx(state_index,:)
+!Write(*,*) "state:",state_index, "|| BETA occupied indx:", beta_occupied_indx(state_index,:)
+!Write(*,*) "state:",state_index, "|| BETA virtual indx:", beta_virtual_indx(state_index,:)
       ENDDO
+      
+      DO istate=1, generated_nstates 
+         
+         state_index = index_true(istate)
+
+         DO ispin=1, nspins
+            
+            WRITE(*,*) "BEFORE SWAP: STATE", state_index
+            WRITE(*,*) "MAT_T of spin:", ispin
+            CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_t(ispin))
+
+            Write(*,*) "MAT_V of spin:", ispin
+            CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin))
+
+            ! CINDY: Call swap column
+            IF (ispin .EQ. 1) THEN ! alpha e-
+
+               CALL swap_columns(matrix_A = tidft_env%e_states(1)%slater_det(idet)%mat_t(ispin), & ! mat_t
+                        matrix_B = tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin), &  ! mat_v
+                        global_indx_A = alpha_occupied_indx(state_index, :), &
+                        global_indx_B = alpha_virtual_indx(state_index, :), &
+                        AtoB = .FALSE., BtoA = .TRUE.)
+            ELSE
+
+                CALL swap_columns(matrix_A = tidft_env%e_states(1)%slater_det(idet)%mat_t(ispin), & ! mat_t
+                        matrix_B = tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin), &  ! mat_v
+                        global_indx_A = beta_occupied_indx(state_index, :), &
+                        global_indx_B = beta_virtual_indx(state_index, :), &
+                        AtoB = .FALSE., BtoA = .TRUE.)
+            ENDIF
+
+            ! CINDY: print swapped matrix for debugg
+            WRITE(*,*) "AFTER SWAP: STATE", state_index
+            WRITE(*,*) "MAT_T of spin:", ispin
+            CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_t(ispin))
+         ENDDO ! spin
+      ENDDO ! states
 
       ! MAJOR STEP: Clean up
       DEALLOCATE(index_true)
       DEALLOCATE(energies_temp)
+      DEALLOCATE(alpha_occupied_indx)
+      DEALLOCATE(beta_occupied_indx)
+      DEALLOCATE(alpha_virtual_indx)
+      DEALLOCATE(beta_virtual_indx)
 
       DO iexcitation = 1, nexcitations
          DEALLOCATE(excitation_list%excitations(iexcitation)%delta_epsilon)
