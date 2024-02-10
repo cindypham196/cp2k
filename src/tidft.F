@@ -284,8 +284,7 @@ CONTAINS
                     nspins, nelectron_spin, unit_nr, para_env)
          ENDIF
 
-         ! matrices of independent variables
-         ! unrestricted case: no. of electron pairs is zero
+         ! Create matrices of independent variables
          DO stateI = 1, nstates
 
             CALL dbcsr_create(mat_proj_var1, template=tidft_env%mat_s)
@@ -294,6 +293,7 @@ CONTAINS
 
                nmos_stateI = tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar)
 
+               ! unrestricted case: no. of electron pairs is zero
                IF ( nmos_stateI .GT. 0 ) THEN
 
                   ! Generate random matrix
@@ -304,6 +304,12 @@ CONTAINS
 
                      !CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
 
+                     ! Converts guess DM into matrices of independent variables
+                     ! RZK-WARNING: It is important to put unpaired orbitals into ivar=2
+                     ! This procedure does not guarantee this at all
+                     ! As a result, it will be impossible to generate
+                     ! properly unpaired guess for even-electron
+                     ! open-shell systems
                      CALL dbcsr_create(tempNO1, &
                         template=tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
 

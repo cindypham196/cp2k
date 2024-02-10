@@ -28,7 +28,7 @@ MODULE tidft_guess_methods
         dbcsr_norm_maxabsnorm, dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, &
         dbcsr_type_no_symmetry, dbcsr_distribution_type, dbcsr_get_info, dbcsr_get_diag, &
         dbcsr_transposed, dbcsr_print, dbcsr_set_diag, dbcsr_dot, dbcsr_desymmetrize, &
-        dbcsr_init_random
+        dbcsr_init_random, dbcsr_type_symmetric
    !USE dbcsr_api,                       ONLY: &
    !     dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
    !     dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
@@ -71,6 +71,7 @@ MODULE tidft_guess_methods
                                               tidft_optimizer_mainvar_set, &
                                               tidft_mainvar_orthonormalize, &
                                               dbcsr_set_element, &
+                                              copy_columns, &
                                               stitch_columns, &
                                               split_columns, &
                                               determinant_local, &
@@ -961,6 +962,353 @@ CONTAINS
       dest%spin(:) = source%spin(:)
 
    END SUBROUTINE copy_excitation
+
+! **************************************************************************************************
+!> \brief Convert MOs to independent variables
+!> \param
+!> \par History
+!>       2024.02 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE MO2Var(mat_t, mat_var, ncols_var, mat_s, mat_oo_template, &
+      eps_filter)
+
+      TYPE(dbcsr_type), DIMENSION(:), INTENT(IN)      :: mat_t
+      TYPE(dbcsr_type), DIMENSION(3), INTENT(INOUT)   :: mat_var
+      INTEGER, DIMENSION(3), INTENT(IN)               :: ncols_var
+      TYPE(dbcsr_type), INTENT(IN)                    :: mat_s
+      TYPE(dbcsr_type), DIMENSION(:), INTENT(IN)      :: mat_oo_template
+      REAL(KIND=dp), INTENT(IN)                       :: eps_filter
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'MO2Var', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: unit_nr, &
+                                                            nspins, &
+                                                            NPaired, &
+                                                            ispin, &
+                                                            iorb, &
+                                                            copied_counter, &
+                                                            empty_counter, &
+                                                            orbital_index, &
+                                                            isearch
+      TYPE(dbcsr_type)                                   :: temp_t, temp_varB
+      INTEGER, DIMENSION(2)                              :: NUnpaired
+      INTEGER, DIMENSION(:,:), ALLOCATABLE               :: unpaired
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: orbitals_to_copy, &
+                                                            where_to_copy, &
+                                                            orbitals_to_copy_short, &
+                                                            where_to_copy_short
+      LOGICAL                                            :: paired_orb
+      TYPE(cp_logger_type), POINTER                      :: logger
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      nspins = SIZE(mat_t)
+      NPaired = ncols_var(1)
+      DO ispin = 1, 2
+         NUnpaired(ispin) = ncols_var(ispin+1)
+      ENDDO
+
+      IF ( nspins .EQ. 1 ) THEN
+      ! This is fully restricted case
+      ! Simply copy MOs to VAR(1)
+
+         CALL dbcsr_copy(mat_var(1), mat_t(1))
+
+      ELSE ! two spins
+
+         IF ( NPaired .EQ. 0 ) THEN
+         ! No electron pairs (could be UKS)
+         ! Simply copy MOs to VAR(2) and VAR(3)
+
+            IF (NUnpaired(1) .GT. 0) &
+               CALL dbcsr_copy(mat_var(2), mat_t(1))
+            IF (NUnpaired(2) .GT. 0) &
+               CALL dbcsr_copy(mat_var(3), mat_t(2))
+
+         ELSE
+         ! This is restricted open-shell case
+
+            ! First determine which orbitals are paired
+            ! and which are unpaired
+            ALLOCATE(unpaired( MAX(NUnpaired(1),NUnpaired(2)), 2 ))
+            unpaired(:,:) = 0
+            CALL PairedUnpaired( mat_t = mat_t, &
+                    mat_var = mat_var, &
+                    mat_s = mat_s, &
+                    unpaired = unpaired, &
+                    mat_oo_template = mat_oo_template, &
+                    eps_filter = eps_filter)
+
+            ! Collect mat_t collumns to appropriate mat_var 
+            DO ispin = 1, 2
+
+               IF (NUnpaired(ispin).GT.0) THEN
+
+                  ALLOCATE(orbitals_to_copy(NUnpaired(ispin)))
+                  ALLOCATE(where_to_copy(NUnpaired(ispin)))
+
+                  ! Copy unpaired columns directly to mat_var
+                  DO iorb = 1, NUnpaired(ispin)
+
+                     orbitals_to_copy(iorb) = unpaired(iorb, ispin)
+                     where_to_copy(iorb) = iorb
+
+                  ENDDO ! iorb
+
+                  CALL copy_columns(matrix_dest = mat_var(ispin+1), &
+                          matrix_source = mat_t(ispin), &
+                          cols_dest = where_to_copy, &
+                          cols_source = orbitals_to_copy)
+
+                  DEALLOCATE(orbitals_to_copy)
+                  DEALLOCATE(where_to_copy)
+
+               ENDIF
+
+            ENDDO ! ispin
+
+            IF (NPaired.GT.0) THEN
+
+               ! Use paired alpha orbtials and hope beta are the same
+               ispin = 1
+               IF (NUnpaired(ispin) .EQ. 0) ispin = 2
+
+               ALLOCATE(orbitals_to_copy(NUnpaired(ispin)))
+               ALLOCATE(where_to_copy(NUnpaired(ispin)))
+
+               ! Do not copy paired columns directly to mat_var - too
+               ! many columns, will be slow.
+               ! Instead, copy all paired orbitals to the leftmost
+               ! columns of mat_t and then split mat_t.
+               ! This is much faster than copying all paired orbitals
+               ! into the corresponding mat_var(1)
+
+               ! find and record all paired orbitals in the rightmost
+               ! columns of mat_t
+               copied_counter = 0
+               empty_counter = 0
+               DO iorb = 1, NUnpaired(ispin)
+
+                  orbital_index = iorb + NPaired
+
+                  paired_orb = .TRUE.
+                  DO isearch = 1, NUnpaired(ispin)
+                     IF (orbital_index .EQ. unpaired(isearch, ispin)) &
+                        paired_orb = .FALSE.
+                  ENDDO
+
+                  IF (paired_orb) THEN
+
+                     copied_counter = copied_counter + 1
+                     orbitals_to_copy(copied_counter) = orbital_index
+
+                  ENDIF
+
+                  ! determine orbitals to overwrite in the leftmost columns
+                  IF ( unpaired(iorb,ispin) .LE. NPaired ) THEN
+
+                     empty_counter = empty_counter + 1
+                     where_to_copy(empty_counter) = unpaired(iorb,ispin)
+
+                  ENDIF
+
+               ENDDO ! iorb
+
+               CPASSERT(empty_counter.EQ.copied_counter)
+
+               ALLOCATE(orbitals_to_copy_short(copied_counter))
+               ALLOCATE(where_to_copy_short(copied_counter))
+
+               DO iorb = 1, copied_counter
+                  orbitals_to_copy_short(iorb) = orbitals_to_copy(iorb)
+                  where_to_copy_short(iorb) = where_to_copy(iorb)
+               ENDDO
+
+               DEALLOCATE(orbitals_to_copy)
+               DEALLOCATE(where_to_copy)
+
+               CALL dbcsr_create(temp_t, template = mat_t(ispin))
+               CALL dbcsr_copy(temp_t, mat_t(ispin))
+               CALL copy_columns(matrix_dest = temp_t, &
+                       matrix_source = mat_t(ispin), &
+                       cols_dest = where_to_copy_short, &
+                       cols_source = orbitals_to_copy_short)
+               CALL dbcsr_create(temp_varB, template = mat_var(ispin+1))
+               CALL split_columns( &
+                       temp_t, &
+                       mat_var(1), &
+                       temp_varB )
+
+               CALL dbcsr_release(temp_t)
+               CALL dbcsr_release(temp_varB)
+
+               DEALLOCATE(orbitals_to_copy_short)
+               DEALLOCATE(where_to_copy_short)
+
+            ENDIF ! NPaired == 0
+
+            DEALLOCATE(unpaired)
+      
+         ENDIF ! UKS or ROKS
+
+      ENDIF ! RKS or (UKS, ROKS)
+
+   END SUBROUTINE MO2Var
+
+! **************************************************************************************************
+!> \brief Given two sets of orbitals (mat_t) determine which orbitals are paired.
+!>        The required number of paired and unpaired orbitals
+!>        is given by the number of columns of mat_var
+!>        ASSUMPTION: orthonormalized orbitals in mat_t
+!> \param
+!> \par History
+!>       2024.02 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE PairedUnpaired(mat_t, mat_var, mat_s, unpaired, &
+      mat_oo_template, eps_filter)
+
+      TYPE(dbcsr_type), DIMENSION(2), INTENT(IN)      :: mat_t
+      TYPE(dbcsr_type), DIMENSION(3), INTENT(IN)      :: mat_var
+      TYPE(dbcsr_type), INTENT(IN)                    :: mat_s
+      INTEGER, DIMENSION(:,:), INTENT(INOUT)          :: unpaired
+      TYPE(dbcsr_type), DIMENSION(2), INTENT(IN)      :: mat_oo_template
+      REAL(KIND=dp), INTENT(IN)                       :: eps_filter
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'PairedUnpaired', &
+         routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: unit_nr, ispin, &
+                                                            NOrbs, nspins, &
+                                                            jspin, &
+                                                            NUnpaired, &
+                                                            ival, orb_index
+      TYPE(dbcsr_type)                                   :: tempNN_symm,&
+                                                            tempNO_ispin, &
+                                                            tempNO_ispin_2, &
+                                                            tempOO_ispin
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: true_position
+      REAL(KIND=dp)                                      :: warning_threshold, &
+                                                            norm_of_next
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: norms
+      TYPE(cp_logger_type), POINTER                      :: logger
+
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      nspins = 2 ! This procedure is required only for open-shell systems
+
+      DO ispin = 1, nspins
+
+         ! Spin of the projector
+         jspin = 2
+         IF (ispin .EQ. 2) jspin = 1
+
+         CALL dbcsr_get_info(mat_var(ispin+1), nfullrows_total=NUnpaired)
+         CALL dbcsr_get_info(mat_t(ispin), nfullrows_total=NOrbs)
+
+         ! Compute norms of the projected orbitals
+         ! norm_proj = diag [ Ti^t S Tj sig_inv_j Tj^t S Ti ]
+         ! norm = [ Ti^t S Ti ]
+         CALL dbcsr_create(tempNN_symm, &
+                           template=mat_s, &
+                           matrix_type=dbcsr_type_symmetric)
+         CALL dbcsr_create(tempNO_ispin, &
+                           template=mat_t(ispin), &
+                           matrix_type=dbcsr_type_no_symmetry)
+         CALL dbcsr_create(tempNO_ispin_2, &
+                           template=mat_t(ispin), &
+                           matrix_type=dbcsr_type_no_symmetry)
+         CALL dbcsr_create(tempOO_ispin, &
+                           template=mat_oo_template(ispin), &
+                           matrix_type=dbcsr_type_no_symmetry)
+
+         ! R = Tj.(sigma_inv_j).Tj^t
+         ! For orthogonal orbitals R = Tj.Tj^t
+         ! It is safe to assume orthonormalized orbitals
+         CALL dbcsr_multiply("N", "T", 1.0_dp, &
+                             mat_t(jspin), &
+                             mat_t(jspin), &
+                             0.0_dp, tempNN_symm, &
+                             filter_eps=eps_filter)
+
+         ! norms = diag(Ti^t.S.R.S.Ti)
+         CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                             mat_s, &
+                             mat_t(ispin), &
+                             0.0_dp, tempNO_ispin, &
+                             filter_eps=eps_filter)
+         CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                             tempNN_symm, &
+                             tempNO_ispin, &
+                             0.0_dp, tempNO_ispin_2, &
+                             filter_eps=eps_filter)
+         CALL dbcsr_multiply("T", "N", 1.0_dp, &
+                             tempNO_ispin, &
+                             tempNO_ispin_2, &
+                             0.0_dp, tempOO_ispin, &
+                             filter_eps=eps_filter)
+
+         ALLOCATE(norms(NOrbs))
+         CALL dbcsr_get_diag(tempOO_ispin, norms)
+
+         CALL dbcsr_release(tempNN_symm)
+         CALL dbcsr_release(tempNO_ispin)
+         CALL dbcsr_release(tempNO_ispin_2)
+         CALL dbcsr_release(tempOO_ispin)
+
+         ALLOCATE(true_position(NOrbs))
+         CALL sort(norms, NOrbs, true_position)
+
+         DO ival = 1, NOrbs
+
+            orb_index = true_position(ival)
+
+            IF ( ival .LE. NUnpaired ) THEN
+
+               unpaired(ival, ispin) = orb_index
+
+            !ELSE
+
+            !   paired(ival - NUnpaired, ispin) = orb_index
+
+            ENDIF
+
+         ENDDO
+
+         ! Perform simple checks before selecting orbitals
+         ! Allowed deviation from the perfect 1.0 norm for paired orbitals
+         warning_threshold = 0.05_dp
+         norm_of_next = norms(true_position(NUnpaired+1))
+         IF ( norm_of_next .LT. (1.0_dp - warning_threshold) ) THEN
+
+            WRITE(unit_nr, '(T2,F10.5,2I6)') norm_of_next, " norm for orbital ", NUnpaired+1, &
+               "(spin ", ispin ,") is too low to be considered spin paired."
+            CPWARN("Unpaired orbitals will be forced to pair up!")
+
+         ENDIF
+
+         ! It is OK for formally upaired orbitals to be paired
+
+         DEALLOCATE(norms)
+         DEALLOCATE(true_position)
+
+         ENDDO ! ispin
+
+   END SUBROUTINE PairedUnpaired
 
 END MODULE tidft_guess_methods
 
