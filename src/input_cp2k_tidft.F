@@ -522,7 +522,7 @@ CONTAINS
                           n_keywords=3, n_subsections=0, repeats=.FALSE.)
 
       NULLIFY (keyword)
- 
+
       CALL keyword_create(keyword, __LOCATION__, name="MAX_EXC_ENERGY", &
                           description="maximum allowed excitation energy for the guess (pre-SCF)", &
                           usage="MAX_EXC_ENERGY 100", default_r_val=1000.00_dp, unit_str='eV')
