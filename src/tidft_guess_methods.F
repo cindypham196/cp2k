@@ -416,48 +416,42 @@ CONTAINS
 
          ENDDO ! iorder
 
+
 WRITE(*,*) "============== STATE: ", state_index
-         IF ( orbital_counters(1) .GT. 0) THEN
-
-WRITE(*,*) "MAT_V alpha"
-CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_v(1))
+         DO ispin = 1, nspins
 
             CALL dbcsr_copy( &
-                    tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(1), &
-                    tidft_env%e_states(1)%slater_det(idet)%mat_t(1))
-WRITE(*,*) "Old MAT_T alpha"
-CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(1))
-            CALL copy_columns( &
-                    matrix_dest = tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(1), &
-                    matrix_source = tidft_env%e_states(1)%slater_det(idet)%mat_v(1), &
-                    cols_dest = alph_indx_occ, &
-                    cols_source = alph_indx_vir)
+                    tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin), &
+                    tidft_env%e_states(1)%slater_det(idet)%mat_t(ispin))
 
-WRITE(*,*) "New MAT_T alpha"
-CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(1))
+            IF ( orbital_counters(ispin) .GT. 0) THEN
 
-         ENDIF
+WRITE(*,*) "MAT_V spin:", ispin
+CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin))
 
-         IF ( orbital_counters(2) .GT. 0 .AND. nspins .GT. 1) THEN
+WRITE(*,*) " Old MAT_T:", ispin
+CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
 
-WRITE(*,*) "MAT_V beta"
-CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_v(2))
+               IF (ispin .EQ. 1) THEN
+                  CALL copy_columns( &
+                          matrix_dest = tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin), &
+                          matrix_source = tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin), &
+                          cols_dest = alph_indx_occ, &
+                          cols_source = alph_indx_vir)
+               ELSE ! beta
+                  CALL copy_columns( &
+                          matrix_dest = tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin), &
+                          matrix_source = tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin), &
+                          cols_dest = beta_indx_occ, &
+                          cols_source = beta_indx_vir)
+               ENDIF
 
-            CALL dbcsr_copy( &
-                    tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(2), &
-                    tidft_env%e_states(1)%slater_det(idet)%mat_t(2))
-WRITE(*,*) "Old MAT_T beta"
-CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(2))
-            CALL copy_columns( &
-                    matrix_dest = tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(2), &
-                    matrix_source = tidft_env%e_states(1)%slater_det(idet)%mat_v(2), &
-                    cols_dest = beta_indx_occ, &
-                    cols_source = beta_indx_vir)
+WRITE(*,*) " New MAT_T:", ispin
+CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
 
-WRITE(*,*) "New MAT_T beta"
-CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(2))
+            ENDIF
 
-         ENDIF
+         ENDDO ! ispin
 
          DEALLOCATE(orbital_counters)
 
@@ -470,6 +464,22 @@ CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(2))
             DEALLOCATE(beta_indx_vir)
          ENDIF
 
+         CALL MO2Var( &
+                 mat_t = tidft_env%e_states(istate+1)%slater_det(idet)%mat_t, &
+                 mat_var = tidft_env%e_states(istate+1)%slater_det(idet)%mat_var, &
+                 ncols_var = tidft_env%e_states(istate+1)%slater_det(idet)%ncols_var, &
+                 mat_s = tidft_env%mat_s, &
+                 mat_oo_template = tidft_env%mat_sigma(istate+1,istate+1,idet,:), &
+                 eps_filter = tidft_env%eps_filter)
+
+DO iorder=1, 3
+   IF (tidft_env%e_states(istate+1)%slater_det(idet)%ncols_var(iorder).GT.0) THEN
+      WRITE(*,*) "VARIABLE", iorder
+      CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_var(iorder))
+   ELSE
+      WRITE(*,*) "NO INDEPENDENT VARIABLE: ", iorder
+   ENDIF
+ENDDO
       ENDDO ! istate
 
       ! MAJOR STEP: Clean up
@@ -508,7 +518,7 @@ CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(2))
       DEALLOCATE(start_orbital_indices)
       DEALLOCATE(orbital_set%orbital_list)
 
-      CPABORT("EXCITED STATE GUESS WF HAS BEEN GENERATED")
+      !CPABORT("EXCITED STATE GUESS WF HAS BEEN GENERATED")
 
    END SUBROUTINE guess_excited_states_orbitals
 
@@ -1176,7 +1186,7 @@ CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(2))
             ENDIF ! NPaired == 0
 
             DEALLOCATE(unpaired)
-      
+
          ENDIF ! UKS or ROKS
 
       ENDIF ! RKS or (UKS, ROKS)

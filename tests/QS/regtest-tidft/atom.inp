@@ -31,7 +31,7 @@
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              20
+      N_EXCITED_STATES              4
       SUGGESTED_MO_BLOCK_SIZE       10
       EPS_FILTER                    1.0E-10
       SPIN_PURE                     F
@@ -59,8 +59,8 @@
 
       &PENALTY
         INTRASTATE_NON_PENALTY_STRENGTH    1.0E-5
-        INTERSTATE_NON_PENALTY_STRENGTH    0.01
-        PENALTY_STRENGTH_INCREASE_FACTOR   16 !1.414213562373095
+        INTERSTATE_NON_PENALTY_STRENGTH    1.0
+        PENALTY_STRENGTH_INCREASE_FACTOR   2 !1.414213562373095
         ALLOWED_DETERMINANT_DEVIATION      1.0E-5
         MAX_CP_STEP                        1
         LOOSE_EPS_SCF                      1.0E-3

@@ -166,6 +166,8 @@ CONTAINS
 !               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion
 !            ENDIF
 
+            ! RZK-WARNING: This should not be necessary with 
+            ! the canonical excited-state guess (orthogonal by construction)
             IF (current_no_of_states .GE. 2 .AND. tidft_env%pre_orthogonalize_states) THEN
             ! For excited states, first inter-orthogonalize the current state to
             ! those that are already converged
