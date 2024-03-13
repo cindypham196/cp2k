@@ -78,7 +78,8 @@ MODULE tidft
    USE cp_para_env,                     ONLY: cp_para_env_release,&
                                               cp_para_env_retain
    USE cp_para_types,                   ONLY: cp_para_env_type
-   USE dbcsr_local,                     ONLY: dbcsr_init_random
+! CINDY: avoid using dbcsr_local
+!   USE dbcsr_local,                     ONLY: dbcsr_init_random
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
         dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
@@ -87,7 +88,7 @@ MODULE tidft
         dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_nblkcols_total, &
         dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, dbcsr_reserve_block2d, dbcsr_scale, &
         dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create, &
-        dbcsr_print, dbcsr_get_diag, dbcsr_set_diag, dbcsr_transposed, dbcsr_binary_write
+        dbcsr_print, dbcsr_get_diag, dbcsr_set_diag, dbcsr_transposed, dbcsr_binary_write, dbcsr_init_random
    USE domain_submatrix_methods,        ONLY: init_submatrices,&
                                               release_submatrices
    USE input_constants,                 ONLY: &

@@ -205,6 +205,8 @@ CONTAINS
                tidft_env%nstates = nstates
             ! Done with the ground state
             ! Generate MO-based guess for the excited states
+!CINDY
+WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
                CALL guess_excited_states_orbitals(tidft_env)
             ! CINDY: keep going with state-by-state optimization
                tidft_env%nstates = current_no_of_states

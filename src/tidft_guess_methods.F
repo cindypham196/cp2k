@@ -204,7 +204,11 @@ CONTAINS
 
       ENDDO
 
+!CINDY
+WRITE(*,*) "INIT. GUESS GENERATION: BEFORE CREATING CANONICAL ORBITALS"
       CALL construct_canonical_orbitals(tidft_env, estate = 1, orbital_set = orbital_set)
+!CINDY
+WRITE(*,*) "INIT. GUESS GENERATION: AFTER CREATING CANONICAL ORBITALS"
 
       ! MAJOR STEP: Find out what orbitals are doubly and singly occupied
       ! For virtual orbitals, find out whether they CAN contain two or one electron(s)
@@ -302,6 +306,8 @@ CONTAINS
       current_excitation%virtual(:) = -1
       current_excitation%spin(:) = -1
 
+!CINDY
+WRITE(*,*) "INIT. GUESS GENERATION: START GENERATING GUESS EXCITATIONS"
       ! recursive subroutine for generaing multiple single excitations
       CALL generate_single_excitations( &
               current_order = 1, &
@@ -855,8 +861,21 @@ ENDDO
                               matrix_type=dbcsr_type_no_symmetry)
 
             ! Generate random virtual matrix
-            CALL dbcsr_init_random(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+!CINDY
+WRITE(*,*) "INSIDE CONSTRUCT_CANONICAL_ORBS SUBROUTINE: "
+WRITE(*,*) "BEFORE CALLING INIT_RND - RANDOM VIRTUAL MAT. IS: "
+CALL dbcsr_print(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin))
+            ! CINDY: Check if virtual orbs is empty (if yes try larger BS)
+            CALL dbcsr_get_info(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                 nfullcols_total=norbs)
+            IF (norbs .GT. 0) THEN
+               CALL dbcsr_init_random(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
                                    keep_sparsity=.FALSE.)
+            ELSE
+               CPABORT("NO VIRTUAL ORBITALS. TRY LARGER BASIS SET.")
+            ENDIF
+WRITE(*,*) "AFTER CALLING INIT_RND - RANDOM VIRTUAL MAT. IS:"
+CALL dbcsr_print(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin))
 
             ! Project the orbital subspace out
             CALL dbcsr_multiply("N", "N", 1.0_dp, &
@@ -898,6 +917,8 @@ ENDDO
             !                    0.0_dp, tempVV1, &
             !                    filter_eps=tidft_env%eps_filter)
 
+!CINDY
+WRITE(*,*) "ORTHOGONALIZE MOS after creating virtual matrix mat_v "
             CALL orthogonalize_mos(ket=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
                                    overlap=tempVV1, &
                                    metric=tidft_env%mat_s, &
@@ -909,6 +930,7 @@ ENDDO
                                    eps_lanczos=tidft_env%eps_lanczos, &
                                    max_iter_lanczos=tidft_env%max_iter_lanczos)
 
+WRITE(*,*) "DONE ORTHOGONALIZING MOS"
             ! compute VxV block of the KS matrix
             CALL dbcsr_multiply("N", "N", 1.0_dp, &
                                 tidft_env%e_states(estate)%slater_det(idet)%mat_ks(ispin), &
@@ -922,6 +944,8 @@ ENDDO
                                 0.0_dp, tempVV1, &
                                 filter_eps=tidft_env%eps_filter)
 
+WRITE(*,*) "DONE COMPUTING VIRTUAL BLK OF KS MATRIX"
+WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
             !CALL dbcsr_get_info(tempVV1, nfullrows_total=n)
             CALL cp_dbcsr_syevd(tempVV1, tempVV2, &
                                 orbital_set%orbital_list(ispin, 2)%orb_energy, &

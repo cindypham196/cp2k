@@ -1,0 +1,146 @@
+&GLOBAL
+  PROJECT                           FORMALDEHYDE
+  RUN_TYPE                          ENERGY
+  PRINT_LEVEL                       MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+
+  METHOD QS
+
+!&PROPERTIES
+!  &TDDFPT
+!     NSTATES     20             # number of excited states
+!     MAX_ITER    500             # maximum number of Davidson iterations
+!     CONVERGENCE [eV] 1.0e-6    # convergence on maximum energy change between iterations
+!     &MGRID
+!        CUTOFF 200 !300              # separate cutoff for TDDFPT calc
+!     &END
+!  &END TDDFPT
+!&END PROPERTIES
+
+  &DFT
+    POTENTIAL_FILE_NAME             GTH_POTENTIALS
+    BASIS_SET_FILE_NAME             GTH_BASIS_SETS
+    MULTIPLICITY                    3
+    !ROKS                            TRUE
+    UKS                             TRUE
+    &QS
+      TIDFT                         T !F
+      EPS_DEFAULT                   1.0E-11
+    &END QS
+
+    &TIDFT
+      N_EXCITED_STATES              4
+      SUGGESTED_MO_BLOCK_SIZE       10
+      EPS_FILTER                    1.0E-12
+      SPIN_PURE                     F
+      MAX_UNPAIR                    1
+      MO_GUESS_RANDOM_FRAC          0.1
+      MO_GUESS_RANDOM_SEED          301
+      STATE_BY_STATE                TRUE ! FALSE !
+      PRE_ORTHOGONALIZE_STATES      FALSE
+      NUMERICAL_GRADIENT            FALSE !TRUE !
+      NUMERICAL_GRADIENT_DX         1E-6
+      ENERGY_COMPONENT              TRUE
+      INTRASTATE_COMPONENT          TRUE
+      INTERSTATE_COMPONENT          TRUE
+
+      &TIDFT_OPTIMIZER_PCG
+        PRECONDITIONER             QHQ_S
+        PREC_WEIGHT_OVERLAP        0.85 !0.5
+        EPS_ERROR                  1.0E-6
+        WHICH_GRADIENT_NORM        RMS
+        MAX_ITER                   50
+        MAX_ITER_OUTER_LOOP        20
+        LIN_SEARCH_EPS_ERROR       0.2
+        LIN_SEARCH_STEP_SIZE_GUESS 0.05
+        CONJUGATOR                 FLETCHER
+      &END TIDFT_OPTIMIZER_PCG
+
+      &PENALTY
+        INTRASTATE_NON_PENALTY_STRENGTH    1.0E-5
+        INTERSTATE_NON_PENALTY_STRENGTH    10 !1.0E-1 !1.0E-3
+        PENALTY_STRENGTH_INCREASE_FACTOR   2.0
+        ALLOWED_DETERMINANT_DEVIATION      1E-4
+        MAX_CP_STEP                         1 !4
+        LOOSE_EPS_SCF                     1E-2
+      &END PENALTY
+
+      &WF_GUESS
+        MAX_EXC_ENERGY    80
+        MIN_EXC_ENERGY    0.00
+        MAX_EXC_ORDER     1 !10
+      &END WF_GUESS
+
+    &END TIDFT
+
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+      &OT ON
+        !ALGORITHM IRAC
+        !MINIMIZER DIIS
+        PRECONDITIONER FULL_SINGLE !FULL_ALL !NONE
+        ROTATION T
+      &END OT
+      &OUTER_SCF
+         EPS_SCF 1.0E-6
+         MAX_SCF 20
+      &END
+      &PRINT
+        &RESTART OFF
+        &END
+      &END
+    &END SCF
+
+    &POISSON
+      PERIODIC NONE
+      PSOLVER  WAVELET
+    &END POISSON
+
+    &MGRID
+      CUTOFF 300
+      NGRIDS 5
+    &END MGRID
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+      !&XC_GRID
+      !  XC_DERIV SPLINE2_SMOOTH      # this is needed for the 2nd derivatives of the XC functional
+      !&END XC_GRID
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC  9 9 9
+      MULTIPLE_UNIT_CELL 1 1 1
+      PERIODIC NONE
+    &END CELL
+    &TOPOLOGY
+      &CENTER_COORDINATES
+      &END CENTER_COORDINATES
+      MULTIPLE_UNIT_CELL 1 1 1
+    &END
+    &COORD
+      H      -0.9378502980  0.0000000000   1.1119778829
+      C       0.0000000000  0.0000000000   0.5216047349
+      H       0.9378502980  0.0000000000   1.1119778829
+      O       0.0000000999  0.0000000000  -0.6813412007
+    &END COORD
+    &KIND H
+      BASIS_SET DZVP-GTH !SZV-GTH  !TZVP-GTH !
+      POTENTIAL GTH-BLYP-q1
+    &END KIND
+    &KIND C
+      BASIS_SET DZVP-GTH
+      POTENTIAL GTH-BLYP-q4
+    &END KIND
+    &KIND O
+      BASIS_SET DZVP-GTH   !aug-TZV2P-GTH !
+      POTENTIAL GTH-BLYP-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+
