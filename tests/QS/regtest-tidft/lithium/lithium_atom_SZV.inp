@@ -31,7 +31,7 @@
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              4
+      N_EXCITED_STATES              1 ! Cannot have more than one with SZV basis
       SUGGESTED_MO_BLOCK_SIZE       10
       EPS_FILTER                    1.0E-10
       SPIN_PURE                     F

@@ -1020,6 +1020,8 @@ CONTAINS
                                                             col_distr_new, col_sizes_new, &
                                                             row_distr_new, row_sizes_new, &
                                                             blk_distr2, blk_sizes2, &
+                                                            blk_distr_cols, &
+                                                            blk_distr2_cols, &
                                                             col_distr_new2, col_sizes_new2, &
                                                             row_distr_new2, row_sizes_new2
       TYPE(dbcsr_type)                                   :: matrix_source_selected_cols
@@ -1074,6 +1076,15 @@ CONTAINS
       CPASSERT(n_dest.EQ.n_source)
 
       ! Create block column indices for A
+      IF (cols_source_convert .AND. cols_dest_convert) THEN
+
+         n_source = SIZE(cols_source)
+         n_dest = SIZE(cols_dest)
+         CPASSERT(n_dest.EQ.n_source)
+
+      ENDIF
+
+      ! Create block column indices for A
       IF (cols_source_convert) THEN
 
          nmos = SIZE(cols_source)
@@ -1081,7 +1092,7 @@ CONTAINS
          ALLOCATE(blk_cols_source_local(nmos))
          ALLOCATE(blk_indx_source_local(nmos))
 
-         CALL dbcsr_get_info(matrix_source, row_blk_size=blk_sizes)
+         CALL dbcsr_get_info(matrix_source, col_blk_size=blk_sizes)
 
          nblocks = SIZE(blk_sizes)
 
@@ -1120,7 +1131,7 @@ CONTAINS
          ALLOCATE(blk_cols_dest_local(nmos))
          ALLOCATE(blk_indx_dest_local(nmos))
 
-         CALL dbcsr_get_info(matrix_dest, row_blk_size=blk_sizes)
+         CALL dbcsr_get_info(matrix_dest, col_blk_size=blk_sizes)
 
          nblocks = SIZE(blk_sizes)
 
@@ -1137,7 +1148,6 @@ CONTAINS
             ENDDO
             CPABORT("Global index not converted for B")
          ENDDO MOloopB
-
       ELSE
 
          CPASSERT(SIZE(blk_cols_dest).EQ.SIZE(blk_indx_dest))
@@ -1156,7 +1166,8 @@ CONTAINS
 
       ! structure of the AO dimension can be copied from one of the matrices
       CALL dbcsr_get_info(matrix_source, distribution=dist_qs)
-      CALL dbcsr_distribution_get(dist_qs, row_dist=blk_distr)
+      CALL dbcsr_distribution_get(dist_qs, row_dist=blk_distr, &
+              col_dist=blk_distr_cols)
       CALL dbcsr_get_info(matrix_source, row_blk_size=blk_sizes)
       ALLOCATE (row_sizes_new(SIZE(blk_sizes)))
       ALLOCATE (row_distr_new(SIZE(blk_distr)))
@@ -1169,9 +1180,10 @@ CONTAINS
       col_sizes_new = (/ (1, imo = 1, nmos) /) ! array of 1s, length nmos
 
       ! now, data specific to matrix_source
-      ! col_distr_new = (cores1D of all swapped columns) - use get_stored_coordinates for each MO block
       DO imo = 1, nmos
-         CALL dbcsr_get_stored_coordinates(matrix_source, 1, blk_cols_source_local(imo), col_distr_new(imo))
+         ! column 1D-proc for the column block containing the orbital
+         col_distr_new(imo) = blk_distr_cols( blk_cols_source_local(imo) )
+         !CALL dbcsr_get_stored_coordinates(matrix_source, 1, blk_cols_source_local(imo), col_distr_new(imo))
       ENDDO
 
       ! Create the distribution and then the matrix of selected columns
@@ -1191,7 +1203,8 @@ CONTAINS
 
       ! now, data specific to matrix_dest
       CALL dbcsr_get_info(matrix_dest, distribution=dist_qs2)
-      CALL dbcsr_distribution_get(dist_qs2, row_dist=blk_distr2)
+      CALL dbcsr_distribution_get(dist_qs2, row_dist=blk_distr2, &
+              col_dist=blk_distr2_cols)
       CALL dbcsr_get_info(matrix_dest, row_blk_size=blk_sizes2)
       ALLOCATE(row_sizes_new2(SIZE(blk_sizes2)))
       ALLOCATE(row_distr_new2(SIZE(blk_distr2)))
@@ -1204,13 +1217,16 @@ CONTAINS
       col_sizes_new2 = (/ (1, imo = 1, nmos) /) ! array of 1s, length nmos
 
       DO imo = 1, nmos
-         CALL dbcsr_get_stored_coordinates(matrix_dest, 1, blk_cols_dest_local(imo), col_distr_new2(imo))
+         ! column 1D-proc for the column block containing the orbital
+         col_distr_new2(imo) = blk_distr2_cols( blk_cols_dest_local(imo) )
+         !CALL dbcsr_get_stored_coordinates(matrix_dest, 1, blk_cols_dest_local(imo), col_distr_new2(imo))
       ENDDO
 
       ! Create the distribution and then the matrix of selected columns
       CALL dbcsr_distribution_new(dist_new2, template=dist_qs2, &
                                   row_dist=row_distr_new2, col_dist=col_distr_new2, &
                                   reuse_arrays=.FALSE.)
+
       CALL dbcsr_create(matrix_dest_selected_cols, "M_dest_cols", &
                         dist_new2, dbcsr_type_no_symmetry, &
                         row_sizes_new2, col_sizes_new2, reuse_arrays=.FALSE.)

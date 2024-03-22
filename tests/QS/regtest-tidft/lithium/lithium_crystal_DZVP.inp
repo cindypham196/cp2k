@@ -48,7 +48,7 @@
 
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             QHQ_S
-        PREC_WEIGHT_OVERLAP        0.85 !0.5
+        PREC_WEIGHT_OVERLAP        0.5 !0.5
         EPS_ERROR                  1.0E-6  !1.0E-8 !
         WHICH_GRADIENT_NORM        RMS
         MAX_ITER                   50

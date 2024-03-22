@@ -79,6 +79,8 @@ MODULE tidft_types
       INTEGER                                            :: desired_multip
       ! Number of alpha and beta electrons (no. of cols in mat_t)
       INTEGER, DIMENSION(2)                              :: nelectrons_ab
+      ! Number of alpha and beta virtual states (no. of cols in mat_v)
+      INTEGER, DIMENSION(2)                              :: nvirtuals_ab
       ! Number of doubly and singly occupied states (no. of cols in mat_var)
       INTEGER, DIMENSION(3)                              :: ncols_var
 
@@ -88,7 +90,7 @@ MODULE tidft_types
       ! Occupied MO coefficients NxOCC(spin)
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_t
 
-      ! Virtual MO coefficients NxOCC(spin)
+      ! Virtual MO coefficients NxVIRT(spin)
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_v
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_vo
 

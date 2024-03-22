@@ -73,11 +73,11 @@
 
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             QHQ_S
-        PREC_WEIGHT_OVERLAP        0.85
+        PREC_WEIGHT_OVERLAP        0.5
         EPS_ERROR                  1.0E-6
         WHICH_GRADIENT_NORM        RMS
-        MAX_ITER                   150
-        MAX_ITER_OUTER_LOOP        200
+        MAX_ITER                   50
+        MAX_ITER_OUTER_LOOP        10
         LIN_SEARCH_EPS_ERROR       0.2
         LIN_SEARCH_STEP_SIZE_GUESS 0.05
         CONJUGATOR                 FLETCHER
@@ -143,13 +143,13 @@
     &END
     &COORD ! opted coords
     B        11.7866666600        4.0000000000        3.7195398800
+    F        11.3928637963        5.1573912077        3.0241214051
+    F        11.3915632644        4.0000121326        5.0657859779
+    F        11.3928169878        2.8426231008        3.0241234493
     N        13.3666666600        4.0000000000        3.7195398800
     H        13.7286684764        3.1676506933        4.2134497818
     H        13.7189409387        3.9867673634        2.7481770184
     H        13.7266590842        4.8465654658        4.1902833705
-    F        11.3928637963        5.1573912077        3.0241214051
-    F        11.3915632644        4.0000121326        5.0657859779
-    F        11.3928169878        2.8426231008        3.0241234493
 ! before opted coords
 ! B                  3.91285714    4.00000000    4.00000000
 ! N                  5.49285714    4.00000000    4.00000000

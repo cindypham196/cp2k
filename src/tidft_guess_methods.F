@@ -28,7 +28,7 @@ MODULE tidft_guess_methods
         dbcsr_norm_maxabsnorm, dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, &
         dbcsr_type_no_symmetry, dbcsr_distribution_type, dbcsr_get_info, dbcsr_get_diag, &
         dbcsr_transposed, dbcsr_print, dbcsr_set_diag, dbcsr_dot, dbcsr_desymmetrize, &
-        dbcsr_init_random, dbcsr_type_symmetric
+        dbcsr_type_symmetric, dbcsr_init_random
    !USE dbcsr_api,                       ONLY: &
    !     dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
    !     dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
@@ -52,7 +52,8 @@ MODULE tidft_guess_methods
    USE iterate_matrix,                  ONLY: determinant
    USE kinds,                           ONLY: default_path_length,&
                                               dp
-   USE machine,                         ONLY: m_walltime
+   USE machine,                         ONLY: m_flush,&
+                                              m_walltime
    USE message_passing,                 ONLY: mp_sum
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -79,6 +80,7 @@ MODULE tidft_guess_methods
                                               gradVAR_scale_split_increment, &
                                               precMO_to_precVAR_increment, &
                                               swap_columns
+   USE physcon,                         ONLY: evolt
    USE tidft_qs,                        ONLY: tidft_dm_to_tidft_ks
    USE util,                            ONLY: sort
 #include "./base/base_uses.f90"
@@ -204,11 +206,9 @@ CONTAINS
 
       ENDDO
 
-!CINDY
-WRITE(*,*) "INIT. GUESS GENERATION: BEFORE CREATING CANONICAL ORBITALS"
+      !WRITE(*,*) "INIT. GUESS GENERATION: BEFORE CREATING CANONICAL ORBITALS"
       CALL construct_canonical_orbitals(tidft_env, estate = 1, orbital_set = orbital_set)
-!CINDY
-WRITE(*,*) "INIT. GUESS GENERATION: AFTER CREATING CANONICAL ORBITALS"
+      !WRITE(*,*) "INIT. GUESS GENERATION: AFTER CREATING CANONICAL ORBITALS"
 
       ! MAJOR STEP: Find out what orbitals are doubly and singly occupied
       ! For virtual orbitals, find out whether they CAN contain two or one electron(s)
@@ -306,8 +306,6 @@ WRITE(*,*) "INIT. GUESS GENERATION: AFTER CREATING CANONICAL ORBITALS"
       current_excitation%virtual(:) = -1
       current_excitation%spin(:) = -1
 
-!CINDY
-WRITE(*,*) "INIT. GUESS GENERATION: START GENERATING GUESS EXCITATIONS"
       ! recursive subroutine for generaing multiple single excitations
       CALL generate_single_excitations( &
               current_order = 1, &
@@ -333,11 +331,11 @@ WRITE(*,*) "INIT. GUESS GENERATION: START GENERATING GUESS EXCITATIONS"
          energies_temp(istate) = excitation_list%excitations(istate)%excitation_energy
       ENDDO
       CALL sort(energies_temp, generated_nstates, index_true)
-      !indexGS = index_true(1)
 
       ! RZK-WARNING: Change tidft_env%nstates
       !              if fewer excitations generated
       !              than requested
+
       ! CINDY: printout info for each excitation
       IF (unit_nr > 0) &
          WRITE (unit_nr,'(T2,A)') REPEAT("-", 78)
@@ -347,9 +345,9 @@ WRITE(*,*) "INIT. GUESS GENERATION: START GENERATING GUESS EXCITATIONS"
          state_index = index_true(istate)
 
          IF (unit_nr > 0) &
-            WRITE(unit_nr,'(T3, A10, I5, A3, A13, F5.2, A5)') &
-               "EXCITATION", istate, ":", "Guess energy", &
-               excitation_list%excitations(state_index)%excitation_energy, &
+            WRITE(unit_nr,'(T3, A10, I5, A13, F8.3, A5)') &
+               "EXCITATION", istate, "Guess energy", &
+               evolt*excitation_list%excitations(state_index)%excitation_energy, &
                "(eV)"
 
          ! Arrays of appropriate lengths to feed into copy_columns
@@ -372,8 +370,9 @@ WRITE(*,*) "INIT. GUESS GENERATION: START GENERATING GUESS EXCITATIONS"
             ENDIF
 
             IF (unit_nr > 0) &
-               WRITE(unit_nr,'(T2, A24, A, I2, A8, A12, A, I2, A8)') "HOMO", "-", &
-                  excitation_list%excitations(state_index)%occupied(iorder) - 1, &
+               WRITE(unit_nr,'(T2, A24, A, I3.3, A8, A12, A, I3.3, A8)') "HOMO", "-", &
+                  orbital_set%orbital_list(current_spin, 1)%norbs - &
+                     excitation_list%excitations(state_index)%occupied(iorder), &
                   spin_string, "--->  LUMO", "+", &
                   excitation_list%excitations(state_index)%virtual(iorder) - 1, &
                   spin_string
@@ -422,8 +421,6 @@ WRITE(*,*) "INIT. GUESS GENERATION: START GENERATING GUESS EXCITATIONS"
 
          ENDDO ! iorder
 
-
-WRITE(*,*) "============== STATE: ", state_index
          DO ispin = 1, nspins
 
             CALL dbcsr_copy( &
@@ -432,11 +429,11 @@ WRITE(*,*) "============== STATE: ", state_index
 
             IF ( orbital_counters(ispin) .GT. 0) THEN
 
-WRITE(*,*) "MAT_V spin:", ispin
-CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin))
+               !WRITE(*,*) "MAT_V spin:", ispin
+               !CALL dbcsr_print(tidft_env%e_states(1)%slater_det(idet)%mat_v(ispin))
 
-WRITE(*,*) " Old MAT_T:", ispin
-CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
+               !WRITE(*,*) " Old MAT_T:", ispin
+               !CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
 
                IF (ispin .EQ. 1) THEN
                   CALL copy_columns( &
@@ -452,8 +449,8 @@ CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
                           cols_source = beta_indx_vir)
                ENDIF
 
-WRITE(*,*) " New MAT_T:", ispin
-CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
+               !WRITE(*,*) " New MAT_T:", ispin
+               !CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
 
             ENDIF
 
@@ -478,14 +475,15 @@ CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_t(ispin))
                  mat_oo_template = tidft_env%mat_sigma(istate+1,istate+1,idet,:), &
                  eps_filter = tidft_env%eps_filter)
 
-DO iorder=1, 3
-   IF (tidft_env%e_states(istate+1)%slater_det(idet)%ncols_var(iorder).GT.0) THEN
-      WRITE(*,*) "VARIABLE", iorder
-      CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_var(iorder))
-   ELSE
-      WRITE(*,*) "NO INDEPENDENT VARIABLE: ", iorder
-   ENDIF
-ENDDO
+         !DO iorder=1, 3
+         !   IF (tidft_env%e_states(istate+1)%slater_det(idet)%ncols_var(iorder).GT.0) THEN
+         !      WRITE(*,*) "VARIABLE", iorder
+         !      CALL dbcsr_print(tidft_env%e_states(istate+1)%slater_det(idet)%mat_var(iorder))
+         !   ELSE
+         !      WRITE(*,*) "NO INDEPENDENT VARIABLE: ", iorder
+         !   ENDIF
+         !ENDDO
+
       ENDDO ! istate
 
       ! MAJOR STEP: Clean up
@@ -505,10 +503,10 @@ ENDDO
 
          DO ivirtual = 1, 2
 
-            IF (unit_nr > 0) THEN
-               WRITE(unit_nr, *) "Orbital energies for spin, virt: ", ispin, ivirtual
-               WRITE(unit_nr, *) orbital_set%orbital_list(ispin, ivirtual)%orb_energy(:)
-            ENDIF
+            !IF (unit_nr > 0) THEN
+            !   WRITE(unit_nr, *) "Orbital energies for spin, virt: ", ispin, ivirtual
+            !   WRITE(unit_nr, *) orbital_set%orbital_list(ispin, ivirtual)%orb_energy(:)
+            !ENDIF
 
             IF ( orbital_set%orbital_list(ispin, ivirtual)%norbs .GT. 0 ) THEN
                DEALLOCATE(orbital_set%orbital_list(ispin, ivirtual)%orb_energy)
@@ -523,8 +521,6 @@ ENDDO
       ENDDO
       DEALLOCATE(start_orbital_indices)
       DEALLOCATE(orbital_set%orbital_list)
-
-      !CPABORT("EXCITED STATE GUESS WF HAS BEEN GENERATED")
 
    END SUBROUTINE guess_excited_states_orbitals
 
@@ -754,8 +750,9 @@ ENDDO
 
       INTEGER                                            :: unit_nr, ispin, &
                                                             idet, ivirtual, &
-                                                            norbs, ndets, nspins, &
-                                                            nmos_stateI
+                                                            ndets, nspins, &
+                                                            nmos_stateI, &
+                                                            nmos_stateV
       TYPE(dbcsr_type)                                   :: tempNV1, tempVOcc1, &
                                                             tempVOcc2, tempVV1, &
                                                             tempVV2, tempNO1, &
@@ -843,136 +840,109 @@ ENDDO
             CALL dbcsr_release(tempOO1)
             CALL dbcsr_release(tempOO2)
 
-            ! Virtual orbitals
-            CALL dbcsr_create(tempNV1, &
-                              template=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                              matrix_type=dbcsr_type_no_symmetry)
-            CALL dbcsr_create(tempVOcc1, &
-                              template=tidft_env%e_states(estate)%slater_det(idet)%mat_vo(ispin), &
-                              matrix_type=dbcsr_type_no_symmetry)
-            CALL dbcsr_create(tempVOcc2, &
-                              template=tidft_env%e_states(estate)%slater_det(idet)%mat_vo(ispin), &
-                              matrix_type=dbcsr_type_no_symmetry)
-            CALL dbcsr_create(tempVV1, &
-                              template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
-                              matrix_type=dbcsr_type_no_symmetry)
-            CALL dbcsr_create(tempVV2, &
-                              template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
-                              matrix_type=dbcsr_type_no_symmetry)
+            nmos_stateV = tidft_env%e_states(estate)%slater_det(idet)%nvirtuals_ab(ispin)
 
-            ! Generate random virtual matrix
-!CINDY
-WRITE(*,*) "INSIDE CONSTRUCT_CANONICAL_ORBS SUBROUTINE: "
-WRITE(*,*) "BEFORE CALLING INIT_RND - RANDOM VIRTUAL MAT. IS: "
-CALL dbcsr_print(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin))
-            ! CINDY: Check if virtual orbs is empty (if yes try larger BS)
-            CALL dbcsr_get_info(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                 nfullcols_total=norbs)
-            IF (norbs .GT. 0) THEN
+            IF ( nmos_stateV .GT. 0) THEN
+
+               ! Virtual orbitals
+               CALL dbcsr_create(tempNV1, &
+                                 template=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                 matrix_type=dbcsr_type_no_symmetry)
+               CALL dbcsr_create(tempVOcc1, &
+                                 template=tidft_env%e_states(estate)%slater_det(idet)%mat_vo(ispin), &
+                                 matrix_type=dbcsr_type_no_symmetry)
+               CALL dbcsr_create(tempVOcc2, &
+                                 template=tidft_env%e_states(estate)%slater_det(idet)%mat_vo(ispin), &
+                                 matrix_type=dbcsr_type_no_symmetry)
+               CALL dbcsr_create(tempVV1, &
+                                 template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
+                                 matrix_type=dbcsr_type_no_symmetry)
+               CALL dbcsr_create(tempVV2, &
+                                 template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
+                                 matrix_type=dbcsr_type_no_symmetry)
+
+               ! If there are virtual orbitals, generate random virtual matrix
                CALL dbcsr_init_random(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                   keep_sparsity=.FALSE.)
-            ELSE
-               CPABORT("NO VIRTUAL ORBITALS. TRY LARGER BASIS SET.")
-            ENDIF
-WRITE(*,*) "AFTER CALLING INIT_RND - RANDOM VIRTUAL MAT. IS:"
-CALL dbcsr_print(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin))
+                       mini_seed=estate+ispin*2+tidft_env%initial_guess_random_seed)
 
-            ! Project the orbital subspace out
-            CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                tidft_env%mat_s, &
-                                tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                0.0_dp, tempNV1, &
-                                filter_eps=tidft_env%eps_filter)
+               ! Project the orbital subspace out
+               CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                   tidft_env%mat_s, &
+                                   tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                   0.0_dp, tempNV1, &
+                                   filter_eps=tidft_env%eps_filter)
 
-            CALL dbcsr_multiply("T", "N", 1.0_dp, &
-                                tempNV1, &
-                                tidft_env%e_states(estate)%slater_det(idet)%mat_t(ispin), &
-                                0.0_dp, tempVOcc1, &
-                                filter_eps=tidft_env%eps_filter)
+               CALL dbcsr_multiply("T", "N", 1.0_dp, &
+                                   tempNV1, &
+                                   tidft_env%e_states(estate)%slater_det(idet)%mat_t(ispin), &
+                                   0.0_dp, tempVOcc1, &
+                                   filter_eps=tidft_env%eps_filter)
 
-            CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                tempVOcc1, &
-                                tidft_env%mat_sigma_inv(estate,idet,ispin), &
-                                0.0_dp, tempVOcc2, &
-                                filter_eps=tidft_env%eps_filter)
+               CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                   tempVOcc1, &
+                                   tidft_env%mat_sigma_inv(estate,idet,ispin), &
+                                   0.0_dp, tempVOcc2, &
+                                   filter_eps=tidft_env%eps_filter)
 
-            CALL dbcsr_multiply("N", "T", 1.0_dp, &
-                                tidft_env%e_states(estate)%slater_det(idet)%mat_t(ispin), &
-                                tempVOcc2, &
-                                0.0_dp, tempNV1, &
-                                filter_eps=tidft_env%eps_filter)
+               CALL dbcsr_multiply("N", "T", 1.0_dp, &
+                                   tidft_env%e_states(estate)%slater_det(idet)%mat_t(ispin), &
+                                   tempVOcc2, &
+                                   0.0_dp, tempNV1, &
+                                   filter_eps=tidft_env%eps_filter)
 
-            CALL dbcsr_add(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1, 1.0_dp, -1.0_dp)
+               CALL dbcsr_add(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1, 1.0_dp, -1.0_dp)
 
-            ! compute VxV overlap
-            !CALL dbcsr_multiply("N", "N", 1.0_dp, &
-            !                    tidft_env%mat_s, &
-            !                    tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-            !                    0.0_dp, tempNV1, &
-            !                    filter_eps=tidft_env%eps_filter)
+               CALL orthogonalize_mos(ket=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                      overlap=tempVV1, &
+                                      metric=tidft_env%mat_s, &
+                                      retain_locality=.FALSE., &
+                                      only_normalize=.FALSE., &
+                                      nocc_of_domain=fake_e_per_block, &
+                                      eps_filter=tidft_env%eps_filter, &
+                                      order_lanczos=tidft_env%order_lanczos, &
+                                      eps_lanczos=tidft_env%eps_lanczos, &
+                                      max_iter_lanczos=tidft_env%max_iter_lanczos)
 
-            !CALL dbcsr_multiply("T", "N", 1.0_dp, &
-            !                    tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-            !                    tempNV1, &
-            !                    0.0_dp, tempVV1, &
-            !                    filter_eps=tidft_env%eps_filter)
+               ! compute VxV block of the KS matrix
+               CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                   tidft_env%e_states(estate)%slater_det(idet)%mat_ks(ispin), &
+                                   tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                   0.0_dp, tempNV1, &
+                                   filter_eps=tidft_env%eps_filter)
 
-!CINDY
-WRITE(*,*) "ORTHOGONALIZE MOS after creating virtual matrix mat_v "
-            CALL orthogonalize_mos(ket=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                   overlap=tempVV1, &
-                                   metric=tidft_env%mat_s, &
-                                   retain_locality=.FALSE., &
-                                   only_normalize=.FALSE., &
-                                   nocc_of_domain=fake_e_per_block, &
-                                   eps_filter=tidft_env%eps_filter, &
-                                   order_lanczos=tidft_env%order_lanczos, &
-                                   eps_lanczos=tidft_env%eps_lanczos, &
-                                   max_iter_lanczos=tidft_env%max_iter_lanczos)
+               CALL dbcsr_multiply("T", "N", 1.0_dp, &
+                                   tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                   tempNV1, &
+                                   0.0_dp, tempVV1, &
+                                   filter_eps=tidft_env%eps_filter)
 
-WRITE(*,*) "DONE ORTHOGONALIZING MOS"
-            ! compute VxV block of the KS matrix
-            CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                tidft_env%e_states(estate)%slater_det(idet)%mat_ks(ispin), &
-                                tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                0.0_dp, tempNV1, &
-                                filter_eps=tidft_env%eps_filter)
+               CALL cp_dbcsr_syevd(tempVV1, tempVV2, &
+                                   orbital_set%orbital_list(ispin, 2)%orb_energy, &
+                                   para_env=tidft_env%para_env, &
+                                   blacs_env=tidft_env%blacs_env)
 
-            CALL dbcsr_multiply("T", "N", 1.0_dp, &
-                                tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                tempNV1, &
-                                0.0_dp, tempVV1, &
-                                filter_eps=tidft_env%eps_filter)
+               CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                   tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                   tempVV2, &
+                                   0.0_dp, tempNV1, &
+                                   filter_eps=tidft_env%eps_filter)
 
-WRITE(*,*) "DONE COMPUTING VIRTUAL BLK OF KS MATRIX"
-WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
-            !CALL dbcsr_get_info(tempVV1, nfullrows_total=n)
-            CALL cp_dbcsr_syevd(tempVV1, tempVV2, &
-                                orbital_set%orbital_list(ispin, 2)%orb_energy, &
-                                !v_eigenvalues(:,ispin), &
-                                para_env=tidft_env%para_env, &
-                                blacs_env=tidft_env%blacs_env)
+               CALL dbcsr_copy(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1)
 
-            CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                tempVV2, &
-                                0.0_dp, tempNV1, &
-                                filter_eps=tidft_env%eps_filter)
+               ! Obtain info on the position of orbitals within the matrix
+               CALL get_orbital_indices(tempNV1, &
+                       orbital_set%orbital_list(ispin, 2)%block_within_matrix, &
+                       orbital_set%orbital_list(ispin, 2)%index_within_block)
 
-            CALL dbcsr_copy(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1)
+               CALL dbcsr_release(tempNV1)
+               CALL dbcsr_release(tempVOcc1)
+               CALL dbcsr_release(tempVOcc2)
+               CALL dbcsr_release(tempVV1)
+               CALL dbcsr_release(tempVV2)
 
-            ! Obtain info on the position of orbitals within the matrix
-            CALL get_orbital_indices(tempNV1, &
-                    orbital_set%orbital_list(ispin, 2)%block_within_matrix, &
-                    orbital_set%orbital_list(ispin, 2)%index_within_block)
+            ENDIF ! non-zero virtuals
 
-            CALL dbcsr_release(tempNV1)
-            CALL dbcsr_release(tempVOcc1)
-            CALL dbcsr_release(tempVOcc2)
-            CALL dbcsr_release(tempVV1)
-            CALL dbcsr_release(tempVV2)
-
-         ENDIF
+         ENDIF ! non-zero occupied
 
       ENDDO
 
@@ -989,7 +959,7 @@ WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
       INTEGER, DIMENSION(:), POINTER                     :: blk_sizes
       INTEGER                                            :: mo_start, iblock, imo
 
-      CALL dbcsr_get_info(matrix, row_blk_size=blk_sizes)
+      CALL dbcsr_get_info(matrix, col_blk_size=blk_sizes)
       mo_start = 1
       DO iblock = 1, SIZE(blk_sizes)
          block_within_matrix(mo_start:mo_start+blk_sizes(iblock)-1) = iblock
@@ -1079,7 +1049,7 @@ WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
       ELSE ! two spins
 
          IF ( NPaired .EQ. 0 ) THEN
-         ! No electron pairs (could be UKS)
+         ! No electron pairs are required (could be UKS)
          ! Simply copy MOs to VAR(2) and VAR(3)
 
             IF (NUnpaired(1) .GT. 0) &
@@ -1101,7 +1071,7 @@ WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
                     mat_oo_template = mat_oo_template, &
                     eps_filter = eps_filter)
 
-            ! Collect mat_t collumns to appropriate mat_var 
+            ! Collect mat_t collumns to appropriate mat_var
             DO ispin = 1, 2
 
                IF (NUnpaired(ispin).GT.0) THEN
@@ -1263,7 +1233,8 @@ WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
          unit_nr = -1
       ENDIF
 
-      nspins = 2 ! This procedure is required only for open-shell systems
+      nspins = 2 ! This procedure should not be called for closed-shell
+      CPASSERT(SIZE(mat_t).EQ.2)
 
       DO ispin = 1, nspins
 
@@ -1271,8 +1242,8 @@ WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
          jspin = 2
          IF (ispin .EQ. 2) jspin = 1
 
-         CALL dbcsr_get_info(mat_var(ispin+1), nfullrows_total=NUnpaired)
-         CALL dbcsr_get_info(mat_t(ispin), nfullrows_total=NOrbs)
+         CALL dbcsr_get_info(mat_var(ispin+1), nfullcols_total=NUnpaired)
+         CALL dbcsr_get_info(mat_t(ispin), nfullcols_total=NOrbs)
 
          ! Compute norms of the projected orbitals
          ! norm_proj = diag [ Ti^t S Tj sig_inv_j Tj^t S Ti ]
@@ -1349,9 +1320,13 @@ WRITE(*,*) "END CONSTRUCT_CANONICAL_ORBS SUBROUTINE"
          norm_of_next = norms(true_position(NUnpaired+1))
          IF ( norm_of_next .LT. (1.0_dp - warning_threshold) ) THEN
 
-            WRITE(unit_nr, '(T2,F10.5,2I6)') norm_of_next, " norm for orbital ", NUnpaired+1, &
-               "(spin ", ispin ,") is too low to be considered spin paired."
-            CPWARN("Unpaired orbitals will be forced to pair up!")
+            IF (unit_nr > 0) THEN
+               WRITE(unit_nr, '(T2,F10.5,2I6)') norm_of_next, &
+                  " norm for orbital ", NUnpaired+1, &
+                  "(spin ", ispin , &
+                  ") is too low to be considered spin paired."
+               CPWARN("Unpaired orbitals will be forced to pair up!")
+            ENDIF
 
          ENDIF
 

@@ -334,85 +334,7 @@ CONTAINS
                      CALL dbcsr_release(tempNO1)
 
                   ELSE ! excited states
-! RZK-Warning: This is a hack to excite He atom electrons
-!CALL dbcsr_set(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), 0.0_dp)
-!IF (stateI.LT.7) THEN
-!   IF (ivar.EQ.2) THEN
-!    CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!            1.0_dp, &
-!            1, stateI, 1, 1)
-!   ELSE
-!    CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!            tidft_env%e_states(1)%slater_det(1)%mat_var(ivar))
-!   ENDIF
-!ELSE IF (stateI.LT.12) THEN
-!   IF (ivar.EQ.2) THEN
-!    CALL dbcsr_copy(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!            tidft_env%e_states(1)%slater_det(1)%mat_var(ivar))
-!   ELSE
-!    CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!            1.0_dp, &
-!            1, stateI-5, 1, 1)
-!   ENDIF
-!ENDIF
-!WRITE(*,*) "STATE: ", stateI
-!CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar))
-!!CALL dbcsr_print(tidft_env%mat_s)
-! CINDY: modified hack for He with DZVP BS
-!                     CALL dbcsr_set(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), 0.0_dp)
-!                     CALL dbcsr_get_info(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), nfullrows_total = naos )
-!                     IF (stateI .GT. naos*naos) CPABORT("Number of excites states ecxceed the array capacity")
-!                     ! Manually assign alpha and beta e- position for 15ES based on DZV2P BS
-!                     SELECT CASE(stateI)
-!                     CASE(2,5,6,7) !(2,20,21,22) for DZVP ! 
-!                        alpha_pos= 0
-!                     CASE(3,4,8,9,10) !(3,19,23,24,25) FOR DZVP !
-!                        alpha_pos= 1
-!                     CASE(11,12,13,14,15)
-!                        alpha_pos= 2
-!                     CASE(16,17,18,19,20)
-!                        alpha_pos= 3
-!                     CASE(21,22,23,34,25)
-!                        alpha_pos= 4
-!                     END SELECT
-!                     SELECT CASE(stateI)
-!                     CASE(3,11,16,21) !(10,11,18,19) FOR DZVP ! 
-!                        beta_pos= 0
-!                     CASE(2,4,12,17,22) !(9,12,17,25,20) FOR DZVP !
-!                        beta_pos= 1
-!                     CASE(5,8,13,18,23)
-!                        beta_pos= 2
-!                     CASE(6,9,14,19,24)
-!                        beta_pos= 3
-!                     CASE(7,10,15,20,25)
-!                        beta_pos= 4
-!                     END SELECT
 
-                     ! Get overlap element to express T~_2s in term of T_1s and T_2s: -(S_11)^-1*S_12
-                     ! for the orthogonality between 1s and 2s in T~
-                     !CALL dbcsr_print(tidft_env%mat_s) ! S11 = 1.0967 S12=-1.0734
-!                     overlap_element= 0.9788_dp !-(-1.0734_dp/1.0967_dp)
-!                     IF (ivar.EQ.2) THEN
-!                        CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!                                 1.0_dp, &
-!                                 1, alpha_pos+1, 1, 1)
-                        ! Combine with the projection to 1st ES T~_2s
-!                        IF (alpha_pos.EQ.1) THEN
-!                           CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!                                 overlap_element, &
-!                                 1, 1, 1, 1)
-!                        ENDIF
-!                     ENDIF
-!                     IF (ivar.EQ.3) THEN
-!                        CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!                                 1.0_dp, &
-!                                 1, beta_pos+1, 1, 1)
-!                        IF (beta_pos.EQ.1) THEN
-!                           CALL dbcsr_set_element(tidft_env%e_states(stateI)%slater_det(1)%mat_var(ivar), &
-!                                 overlap_element, &
-!                                 1, 1, 1, 1)
-!                        ENDIF
-!                     ENDIF
                      ! the percent of the random component in the guess
                      random_percentile = tidft_env%initial_guess_random_fraction
                      ! Obtain ES by slightly perturbing generated GS orbitals
@@ -426,16 +348,6 @@ CONTAINS
             ENDDO ! end ivar
             CALL dbcsr_release(mat_proj_var1)
 
-            ! CINDY: print info
-!            IF (stateI .GE. 2) THEN
-!               WRITE(*,*) "N and ES #", naos, stateI
-!               WRITE(*,*) "alpha position", alpha_pos+1
-!               WRITE(*,*) "T_alpha matrix:"
-!               CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(2))
-!               WRITE(*,*) "beta position", beta_pos+1
-!               WRITE(*,*) "T_beta matrix:"
-!               CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(1)%mat_var(3))
-!            ENDIF
          ENDDO  ! end stateI
 
       CASE (restart_guess)

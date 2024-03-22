@@ -384,16 +384,22 @@ CONTAINS
       tidft_env%intrastate_nonorthogonality_penalty_coeff(:) = &
          ABS(tidft_env%intrastate_penalty_coeff)
 
+      ! Number of basis set functions
+      CALL dbcsr_get_info(matrix_s(1)%matrix, nfullrows_total=naos)
+
       ALLOCATE(tidft_env%e_states(nstates))
       ALLOCATE(tidft_env%mat_phi_spin(nstates,nstates,nspins))
       ALLOCATE(tidft_env%mat_phi(nstates,nstates))
       ALLOCATE(tidft_env%mat_phi_inv(nstates,nstates))
       DO stateI = 1, nstates
+
          tidft_env%e_states(stateI)%nslater = nslater
          ALLOCATE(tidft_env%e_states(stateI)%slater_det(nslater))
          tidft_env%e_states(stateI)%slater_det(1)%desired_multip = tidft_env%desired_multip
+
          IF (tidft_env%triplet_correction) tidft_env%e_states(stateI)%slater_det(2)%desired_multip = &
             tidft_env%desired_multip + 2
+
          ! calculate the number of alpha and beta occupied orbitals from
          ! the number of electrons and multiplicity
          ! Na + Nb = Ne
@@ -401,13 +407,25 @@ CONTAINS
          ! Na = (Ne + Mult - 1)/2
          ! Nb = (Ne - Mult + 1)/2
          DO slaterI = 1, nslater
+
             ! set the number of alpha/beta electrons
             tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1) = &
                ( tidft_env%nelectrons + tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip - 1 ) / 2
             tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2) = &
                ( tidft_env%nelectrons - tidft_env%e_states(stateI)%slater_det(slaterI)%desired_multip + 1 ) / 2
-            tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(:)=0
+
+            ! set the number of alpha/beta virtual orbitals
+            tidft_env%e_states(stateI)%slater_det(slaterI)%nvirtuals_ab(1) = &
+               naos - tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(1)
+            tidft_env%e_states(stateI)%slater_det(slaterI)%nvirtuals_ab(2) = &
+               naos - tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
+            IF ((tidft_env%e_states(stateI)%slater_det(slaterI)%nvirtuals_ab(1) + &
+                 tidft_env%e_states(stateI)%slater_det(slaterI)%nvirtuals_ab(2)) .EQ. 0) THEN
+               CPABORT("There are no virtual states")
+            ENDIF
+
             ! set the number of independent variable matrices
+            tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(:)=0
             IF (tidft_env%restricted) THEN
                ! 1st entry: doubly occupied orbitals: (ne-(mult-1))/2-unpair
                IF (tidft_env%triplet_correction .AND. slaterI.EQ.2) THEN
@@ -436,10 +454,12 @@ CONTAINS
                tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(3) = &
                   tidft_env%e_states(stateI)%slater_det(slaterI)%nelectrons_ab(2)
             ENDIF
+
             IF ( (tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(1) + &
                   tidft_env%e_states(stateI)%slater_det(slaterI)%ncols_var(2)) .EQ. 0) THEN
                CPABORT("There are no alpha electrons")
             ENDIF
+
          ENDDO ! slaterI
       ENDDO ! stateI
 
@@ -528,16 +548,7 @@ CONTAINS
 
                nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
 
-               IF ( nmos_stateI .GT. 0) THEN
-
-                  CALL matrix_layout( &
-                          matrix_ao_template = matrix_s0, &
-                          matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
-                          name_new = 'm_T_Ia', &
-                          orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
-                          suggested_mo_blk_size = suggested_blk_size, &
-                          symmetry_new = dbcsr_type_no_symmetry, &
-                          nmos = (/-1, nmos_stateI/) )
+               IF ( (naos - nmos_stateI) .GT. 0) THEN ! non-zero virtuals
 
                   CALL matrix_layout( &
                           matrix_ao_template = matrix_s0, &
@@ -565,6 +576,19 @@ CONTAINS
                           suggested_mo_blk_size = suggested_blk_size, &
                           symmetry_new = dbcsr_type_no_symmetry, &
                           nmos = (/naos - nmos_stateI, naos - nmos_stateI/) )
+
+               ENDIF ! non-zero virtuals
+
+               IF ( nmos_stateI .GT. 0) THEN ! non-zero occupied
+
+                  CALL matrix_layout( &
+                          matrix_ao_template = matrix_s0, &
+                          matrix_new = tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
+                          name_new = 'm_T_Ia', &
+                          orbital_type_new = (/almo_mat_dim_aobasis, almo_mat_dim_occ/), &
+                          suggested_mo_blk_size = suggested_blk_size, &
+                          symmetry_new = dbcsr_type_no_symmetry, &
+                          nmos = (/-1, nmos_stateI/) )
 
                   CALL dbcsr_create(tidft_env%e_states(stateI)%slater_det(idet)%mat_ks(ispin), template=tidft_env%mat_s)
 
