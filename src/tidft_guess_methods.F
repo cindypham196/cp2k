@@ -752,12 +752,14 @@ CONTAINS
                                                             idet, ivirtual, &
                                                             ndets, nspins, &
                                                             nmos_stateI, &
-                                                            nmos_stateV
+                                                            nmos_stateV, &
+                                                            ndiag
       TYPE(dbcsr_type)                                   :: tempNV1, tempVOcc1, &
                                                             tempVOcc2, tempVV1, &
                                                             tempVV2, tempNO1, &
                                                             tempOO1, tempOO2
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: fake_e_per_block
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: diagonal
       TYPE(cp_logger_type), POINTER                      :: logger
 
       ! get a useful output_unit
@@ -828,8 +830,20 @@ CONTAINS
                                 0.0_dp, tempNO1, &
                                 filter_eps=tidft_env%eps_filter)
 
-            ! RZK-WARNING: this makes T inconsistent with mainvar
             CALL dbcsr_copy(tidft_env%e_states(estate)%slater_det(idet)%mat_t(ispin), tempNO1)
+
+            ! update occ overlap
+            CALL dbcsr_get_info(tidft_env%mat_sigma(estate,estate,idet,ispin), nfullrows_total=ndiag)
+            ALLOCATE (diagonal(ndiag))
+            diagonal(:) = 1.0_dp
+            CALL dbcsr_set(tidft_env%mat_sigma(estate,estate,idet,ispin), 0.0_dp)
+            CALL dbcsr_set_diag(tidft_env%mat_sigma(estate,estate,idet,ispin), diagonal)
+            CALL dbcsr_filter(tidft_env%mat_sigma(estate,estate,idet,ispin), tidft_env%eps_filter)
+            ! update occ inverse overlap
+            CALL dbcsr_set(tidft_env%mat_sigma_inv(estate,idet,ispin), 0.0_dp)
+            CALL dbcsr_set_diag(tidft_env%mat_sigma_inv(estate,idet,ispin), diagonal)
+            CALL dbcsr_filter(tidft_env%mat_sigma_inv(estate,idet,ispin), tidft_env%eps_filter)
+            DEALLOCATE (diagonal)
 
             ! Obtain info on the position of orbitals within the matrix
             CALL get_orbital_indices(tempNO1, &
@@ -945,6 +959,16 @@ CONTAINS
          ENDIF ! non-zero occupied
 
       ENDDO
+
+      ! Update main variables so they are consistent with canonical
+      ! occupied orbitals
+      CALL MO2Var( &
+              mat_t = tidft_env%e_states(estate)%slater_det(idet)%mat_t, &
+              mat_var = tidft_env%e_states(estate)%slater_det(idet)%mat_var, &
+              ncols_var = tidft_env%e_states(estate)%slater_det(idet)%ncols_var, &
+              mat_s = tidft_env%mat_s, &
+              mat_oo_template = tidft_env%mat_sigma(estate,estate,idet,:), &
+              eps_filter = tidft_env%eps_filter)
 
       DEALLOCATE(fake_e_per_block)
 
