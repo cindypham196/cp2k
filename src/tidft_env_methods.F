@@ -250,6 +250,8 @@ CONTAINS
       ! CINDY: Pass input from WF_GUESS section
       WF_guess_section => section_vals_get_subs_vals(tidft_section, "WF_GUESS")
 
+      CALL section_vals_val_get(WF_guess_section, "EXCITE_ALPHA_ONLY", &
+                              l_val=tidft_env%guess_excite_alpha_only)
       CALL section_vals_val_get(WF_guess_section, "MAX_EXC_ORDER", &
                               i_val=tidft_env%guess_max_excitation_order)
       CALL section_vals_val_get(WF_guess_section, "MAX_EXC_ENERGY", &

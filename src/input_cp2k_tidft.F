@@ -546,6 +546,13 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="EXCITE_ALPHA_ONLY", &
+                          description="Special case: Generate singlet guesses that excite alpha electrons only.", &
+                          usage="EXCITE_ALPHA_ONLY .TRUE.", default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword) 
+
    END SUBROUTINE create_WF_guess_section
 
 END MODULE input_cp2k_tidft

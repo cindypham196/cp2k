@@ -1,0 +1,184 @@
+&GLOBAL
+  PROJECT PYRROLE-PYRAZINE-STACK
+  RUN_TYPE ENERGY  !GEO_OPT !
+!  TRACE TRUE
+!  TRACE_ROUTINES 
+  PRINT_LEVEL MEDIUM !LOW
+&END GLOBAL
+
+!&MOTION
+!  &GEO_OPT
+!     OPTIMIZER  LBFGS
+!     MAX_ITER  2000
+!     MAX_DR     3.000000000000000E-03
+!     MAX_FORCE     4.5000000000000000E-04
+!     RMS_DR     1.5000000000000000E-03
+!     RMS_FORCE    3.00000000000000E-04
+!  &END GEO_OPT
+!  
+!  &CONSTRAINT
+!    &FIXED_ATOMS
+!      !COMPONENTS_TO_FIX X
+!      LIST 1 2 3
+!    &END
+!  &END
+!
+! &END MOTION
+
+&FORCE_EVAL
+  METHOD QS
+!  STRESS_TENSOR  ANALYTICAL
+
+!  &PROPERTIES
+!    &TDDFPT
+!      NSTATES     5 !10             # number of excited states
+!      MAX_ITER    50             # maximum number of Davidson iterations
+!      CONVERGENCE [eV] 1.0e-6    # convergence on maximum energy change between iterations
+!      &MGRID
+!          CUTOFF 300              # separate cutoff for TDDFPT calc
+!      &END
+!    &END TDDFPT
+!  &END PROPERTIES
+
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT 
+    POTENTIAL_FILE_NAME POTENTIAL
+
+
+    UKS                 T    ! == LSD?  RZK: UKS - compare to OT.
+    !ROKS                T   ! RZK: Also, perform ROKS with TIDFT (same multiplicities)
+
+    &MGRID
+      CUTOFF 300
+      NGRIDS 4
+    &END MGRID
+
+    &QS
+      TIDFT  T !F
+      EPS_DEFAULT 1.0E-11
+    &END QS
+
+    &TIDFT
+      N_EXCITED_STATES           15
+      SUGGESTED_MO_BLOCK_SIZE    8
+      EPS_FILTER                 1.0E-8
+      SPIN_PURE                  FALSE
+      MAX_UNPAIR                 1
+      MO_GUESS_RANDOM_FRAC       0.05
+      MO_GUESS_RANDOM_SEED       30304
+      STATE_BY_STATE             TRUE
+      PRE_ORTHOGONALIZE_STATES   FALSE
+      NUMERICAL_GRADIENT         FALSE
+      NUMERICAL_GRADIENT_DX      1E-6
+      ENERGY_COMPONENT           TRUE
+      INTRASTATE_COMPONENT       TRUE
+      INTERSTATE_COMPONENT       TRUE
+
+      &TIDFT_OPTIMIZER_PCG
+        PRECONDITIONER             QHQ_S
+        PREC_WEIGHT_OVERLAP       0.85
+        EPS_ERROR                  1.0E-6
+        WHICH_GRADIENT_NORM        RMS
+        MAX_ITER                   150
+        MAX_ITER_OUTER_LOOP        200
+        LIN_SEARCH_EPS_ERROR       0.2
+        LIN_SEARCH_STEP_SIZE_GUESS 0.05
+        CONJUGATOR                 FLETCHER
+      &END TIDFT_OPTIMIZER_PCG
+
+      &PENALTY
+        INTRASTATE_NON_PENALTY_STRENGTH    1.0E-5
+        INTERSTATE_NON_PENALTY_STRENGTH    10
+        PENALTY_STRENGTH_INCREASE_FACTOR   2.0
+        ALLOWED_DETERMINANT_DEVIATION      1E-4
+        MAX_CP_STEP                         1 !4
+        LOOSE_EPS_SCF                     1E-2
+      &END PENALTY
+
+      &WF_GUESS
+        MAX_EXC_ENERGY    1000.00
+        MIN_EXC_ENERGY    0.00
+        MAX_EXC_ORDER     2
+      &END WF_GUESS
+
+    &END TIDFT
+
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+      &OT ON
+        !ALGORITHM IRAC
+        !MINIMIZER DIIS
+        PRECONDITIONER FULL_SINGLE_INVERSE !FULL_ALL
+        ROTATION T
+      &END OT
+      &OUTER_SCF
+         EPS_SCF 1.0E-6
+         MAX_SCF 20
+      &END
+      &PRINT
+        &RESTART OFF !ON
+        &END
+      &END
+    &END SCF
+
+    &POISSON
+      PERIODIC NONE
+      PSOLVER  MULTIPOLE !WAVELET
+    &END POISSON
+
+    &XC
+      &XC_FUNCTIONAL PBE !BLYP
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 8.0 30.0 8.0 !25.0  8.0  8.0 ! 
+      MULTIPLE_UNIT_CELL 1 1 1
+      PERIODIC NONE
+    &END CELL
+    &TOPOLOGY
+      MULTIPLE_UNIT_CELL 1 1 1
+      &CENTER_COORDINATES T
+      &END
+    &END
+    &COORD
+H     2.068365      -1.554770     -1.258236
+H     -2.068564     -1.553940     -1.258236
+H     2.068365      -1.554770     1.258236
+H     -2.068564     -1.553940     1.258236
+C     1.135821      -1.554583     -0.697884
+C     -1.136020     -1.554127     -0.697884
+C     1.135821      -1.554583     0.697884
+C     -1.136020     -1.554127     0.697884
+N     -0.000100     -1.554355     -1.417402
+N     -0.000100     -1.554355     1.417402
+H     -0.770304     6.300000      -2.114612
+H     -0.770304     6.300000      2.114612
+H     1.850809      6.300000      -1.358585
+H     1.850809      6.300000      1.358585
+H     -2.130086     6.300000      0.000000
+C     -0.333285     6.300000      -1.125828
+C     -0.333285     6.300000      1.125828
+C     0.985374      6.300000      -0.709235
+C     0.985374      6.300000      0.709235
+N     -1.119278     6.300000      0.000000
+
+    &END COORD
+    &KIND N
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-BLYP-q5
+    &END KIND
+    &KIND C
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-BLYP-q4
+    &END KIND
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-BLYP-q1
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+

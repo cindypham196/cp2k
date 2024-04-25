@@ -31,7 +31,7 @@
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              4
+      N_EXCITED_STATES              10
       SUGGESTED_MO_BLOCK_SIZE       10
       EPS_FILTER                    1.0E-10
       SPIN_PURE                     F
@@ -51,7 +51,7 @@
         PREC_WEIGHT_OVERLAP         0.85  !0.65 use 0.85 to avoid precond failure
         EPS_ERROR                   1.0E-6
         MAX_ITER                    50
-        MAX_ITER_OUTER_LOOP         20
+        MAX_ITER_OUTER_LOOP         150 !20
         LIN_SEARCH_EPS_ERROR        0.5
         LIN_SEARCH_STEP_SIZE_GUESS  0.01
         CONJUGATOR                  FLETCHER
@@ -67,16 +67,17 @@
       &END PENALTY
 
       &WF_GUESS
-        MAX_EXC_ENERGY   1000.0
-        MIN_EXC_ENERGY   0.0
-        MAX_EXC_ORDER    6
+      !  EXCITE_ALPHA_ONLY TRUE 
+        MAX_EXC_ENERGY   500.0
+        MIN_EXC_ENERGY   250.0
+        MAX_EXC_ORDER    1
       &END WF_GUESS
 
     &END TIDFT
 
     &SCF
       SCF_GUESS ATOMIC
-      EPS_SCF 1.0E-8
+      EPS_SCF 1.0E-6 !1.0E-8
       MAX_SCF 30
       &OT ON
         !ALGORITHM IRAC
@@ -85,7 +86,7 @@
         ROTATION T
       &END OT
       &OUTER_SCF
-         EPS_SCF 1.0E-8
+         EPS_SCF 1.0E-6 !1.0E-8
          MAX_SCF 5
       &END
       &PRINT
@@ -131,7 +132,7 @@
       POTENTIAL GTH-BLYP-q1
     &END KIND
     &KIND He
-      BASIS_SET DZVP-GTH !SZV-GTH !TZVP-GTH !
+      BASIS_SET QZV3P-GTH !DZVP-GTH !SZV-GTH !TZVP-GTH !
       POTENTIAL GTH-BLYP-q2
       &BS
         &ALPHA

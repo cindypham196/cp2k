@@ -315,7 +315,8 @@ CONTAINS
               start_orbital_indices = start_orbital_indices, &
               min_excitation_energy = tidft_env%guess_min_excitation_energy, &
               check_unpairings = check_unpairings, &
-              max_allowed_unpairings = tidft_env%unpairings)
+              max_allowed_unpairings = tidft_env%unpairings, &
+              excite_alpha_only = tidft_env%guess_excite_alpha_only)
 
       DEALLOCATE(current_excitation%delta_epsilon)
       DEALLOCATE(current_excitation%occupied)
@@ -526,7 +527,7 @@ CONTAINS
 
    RECURSIVE SUBROUTINE generate_single_excitations(current_order, excitation_list, &
       current_excitation, orbital_set, start_orbital_indices, min_excitation_energy, &
-      check_unpairings, max_allowed_unpairings)
+      check_unpairings, max_allowed_unpairings, excite_alpha_only)
 
       INTEGER, INTENT(IN)                                :: current_order
       TYPE(tidft_excitation_list_type), INTENT(INOUT)    :: excitation_list
@@ -551,6 +552,8 @@ CONTAINS
                                                             goes_to_doubly_occupied_virtual, &
                                                             max_order_condition, &
                                                             deeper_level
+      ! CINDY: add keyword to excite alpha electron only
+      LOGICAL, INTENT(IN)                                ::  excite_alpha_only
 
       nspins = SIZE(orbital_set%orbital_list, 1)
       max_order = excitation_list%max_order
@@ -573,6 +576,9 @@ CONTAINS
 
       DO ispin = 1, nspins
 
+         IF (excite_alpha_only .AND. ispin .EQ. 2) THEN
+            CYCLE
+         ENDIF
          opposite_spin = 1
          IF (nspins .EQ. 2) THEN
             IF (ispin .EQ. 1) THEN
@@ -712,7 +718,8 @@ CONTAINS
                           start_orbital_indices = next_level_start_indices, &
                           min_excitation_energy = min_excitation_energy, &
                           check_unpairings = check_unpairings, &
-                          max_allowed_unpairings = max_allowed_unpairings)
+                          max_allowed_unpairings = max_allowed_unpairings,&
+                          excite_alpha_only = excite_alpha_only)
 
                ENDIF
 
@@ -1345,7 +1352,7 @@ CONTAINS
          IF ( norm_of_next .LT. (1.0_dp - warning_threshold) ) THEN
 
             IF (unit_nr > 0) THEN
-               WRITE(unit_nr, '(T2,F10.5,2I6)') norm_of_next, &
+               WRITE(unit_nr, '(T2,F10.5,T50, 2I6)') norm_of_next, &
                   " norm for orbital ", NUnpaired+1, &
                   "(spin ", ispin , &
                   ") is too low to be considered spin paired."
