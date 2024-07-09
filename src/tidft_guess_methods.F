@@ -125,8 +125,10 @@ CONTAINS
                                                             iexcitation, &
                                                             generated_nstates, &
                                                             istate, state_index, &
-                                                            current_order, &
-                                                            current_spin
+                                                            current_order, estate, &
+                                                            current_spin, &
+                                                            nmos_stateI, &
+                                                            nmos_stateV
       INTEGER                                            :: max_order, spin_excitation, iorder
       INTEGER, DIMENSION(:,:), ALLOCATABLE               :: start_orbital_indices
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: index_true, orbital_counters
@@ -168,8 +170,6 @@ CONTAINS
       !   * Repeat the test for another simple system (fast, login node). F3B..NH3 with small cell can be used.
 
       ! MAJOR STEP: Obtain canonical orbital energies and info on orbital location in matrices
-      ! RZK-WARNING: make mainvar consistent with canonical orbitals - alternatively:
-      ! Do not modify the orbitals in tidft_env, only get the energy (orbitals are needed later here though)
       nspins = tidft_env%nspins
       idet = 1 ! Use the "mixed" state to produce canonical orbitals
 
@@ -206,9 +206,45 @@ CONTAINS
 
       ENDDO
 
-      !WRITE(*,*) "INIT. GUESS GENERATION: BEFORE CREATING CANONICAL ORBITALS"
-      CALL construct_canonical_orbitals(tidft_env, estate = 1, orbital_set = orbital_set)
-      !WRITE(*,*) "INIT. GUESS GENERATION: AFTER CREATING CANONICAL ORBITALS"
+      estate = 1
+      CALL construct_canonical_orbitals(tidft_env, estate = estate, &
+              orbital_set = orbital_set)
+
+      ! Obtain info on the position of orbitals within the matrices
+      DO ispin = 1, nspins
+
+         nmos_stateI = tidft_env%e_states(estate)%slater_det(idet)%nelectrons_ab(ispin)
+         nmos_stateV = tidft_env%e_states(estate)%slater_det(idet)%nvirtuals_ab(ispin)
+
+         IF ( nmos_stateI .GT. 0) THEN
+
+            ! Obtain info on the position of orbitals within the
+            ! occupied-orbital matrix
+            CALL get_orbital_indices(tidft_env%e_states(estate)%slater_det(idet)%mat_t(ispin), &
+                    orbital_set%orbital_list(ispin, 1)%block_within_matrix, &
+                    orbital_set%orbital_list(ispin, 1)%index_within_block)
+
+         ENDIF ! non-zero occupied
+
+         IF ( nmos_stateV .GT. 0) THEN
+
+            ! Obtain info on the position of orbitals within the matrix
+            CALL get_orbital_indices(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                    orbital_set%orbital_list(ispin, 2)%block_within_matrix, &
+                    orbital_set%orbital_list(ispin, 2)%index_within_block)
+
+         ENDIF ! non-zero virtuals
+
+      ENDDO
+
+      ! Update main variables so they are consistent with occupied canonical orbitals
+      CALL MO2Var( &
+              mat_t = tidft_env%e_states(estate)%slater_det(idet)%mat_t, &
+              mat_var = tidft_env%e_states(estate)%slater_det(idet)%mat_var, &
+              ncols_var = tidft_env%e_states(estate)%slater_det(idet)%ncols_var, &
+              mat_s = tidft_env%mat_s, &
+              mat_oo_template = tidft_env%mat_sigma(estate,estate,idet,:), &
+              eps_filter = tidft_env%eps_filter)
 
       ! MAJOR STEP: Find out what orbitals are doubly and singly occupied
       ! For virtual orbitals, find out whether they CAN contain two or one electron(s)
@@ -742,6 +778,7 @@ CONTAINS
 !> \brief Constructs canonical orbitals. They are stored in mat_t of the environment
 !> \param tidft_env ...
 !> \param estate - electronic state for which the orbitals are constructed
+!> \param orbital_set - storage for orbital energies
 !> \par History
 !>       2022.06 created [Rustam Z Khaliullin]
 !> \author Rustam Z Khaliullin
@@ -852,41 +889,42 @@ CONTAINS
             CALL dbcsr_filter(tidft_env%mat_sigma_inv(estate,idet,ispin), tidft_env%eps_filter)
             DEALLOCATE (diagonal)
 
-            ! Obtain info on the position of orbitals within the matrix
-            CALL get_orbital_indices(tempNO1, &
-                    orbital_set%orbital_list(ispin, 1)%block_within_matrix, &
-                    orbital_set%orbital_list(ispin, 1)%index_within_block)
-
             CALL dbcsr_release(tempNO1)
             CALL dbcsr_release(tempOO1)
             CALL dbcsr_release(tempOO2)
 
-            nmos_stateV = tidft_env%e_states(estate)%slater_det(idet)%nvirtuals_ab(ispin)
+         ENDIF ! non-zero occupied
 
-            IF ( nmos_stateV .GT. 0) THEN
+         nmos_stateV = tidft_env%e_states(estate)%slater_det(idet)%nvirtuals_ab(ispin)
 
-               ! Virtual orbitals
-               CALL dbcsr_create(tempNV1, &
-                                 template=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                 matrix_type=dbcsr_type_no_symmetry)
+         IF ( nmos_stateV .GT. 0) THEN
+
+            ! Virtual orbitals
+            CALL dbcsr_create(tempNV1, &
+                              template=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                              matrix_type=dbcsr_type_no_symmetry)
+            CALL dbcsr_create(tempVV1, &
+                              template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
+                              matrix_type=dbcsr_type_no_symmetry)
+            CALL dbcsr_create(tempVV2, &
+                              template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
+                              matrix_type=dbcsr_type_no_symmetry)
+
+            ! If there are virtual orbitals, generate random virtual matrix
+            CALL dbcsr_init_random(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                    mini_seed=estate+ispin*2+tidft_env%initial_guess_random_seed)
+
+            ! Project the occupied subspace out if there are any
+            ! occupied orbitals to project out
+            IF ( nmos_stateI .GT. 0) THEN
+
                CALL dbcsr_create(tempVOcc1, &
                                  template=tidft_env%e_states(estate)%slater_det(idet)%mat_vo(ispin), &
                                  matrix_type=dbcsr_type_no_symmetry)
                CALL dbcsr_create(tempVOcc2, &
                                  template=tidft_env%e_states(estate)%slater_det(idet)%mat_vo(ispin), &
                                  matrix_type=dbcsr_type_no_symmetry)
-               CALL dbcsr_create(tempVV1, &
-                                 template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
-                                 matrix_type=dbcsr_type_no_symmetry)
-               CALL dbcsr_create(tempVV2, &
-                                 template=tidft_env%mat_sigma_vv(estate,idet,ispin), &
-                                 matrix_type=dbcsr_type_no_symmetry)
 
-               ! If there are virtual orbitals, generate random virtual matrix
-               CALL dbcsr_init_random(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                       mini_seed=estate+ispin*2+tidft_env%initial_guess_random_seed)
-
-               ! Project the orbital subspace out
                CALL dbcsr_multiply("N", "N", 1.0_dp, &
                                    tidft_env%mat_s, &
                                    tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
@@ -913,69 +951,55 @@ CONTAINS
 
                CALL dbcsr_add(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1, 1.0_dp, -1.0_dp)
 
-               CALL orthogonalize_mos(ket=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                      overlap=tempVV1, &
-                                      metric=tidft_env%mat_s, &
-                                      retain_locality=.FALSE., &
-                                      only_normalize=.FALSE., &
-                                      nocc_of_domain=fake_e_per_block, &
-                                      eps_filter=tidft_env%eps_filter, &
-                                      order_lanczos=tidft_env%order_lanczos, &
-                                      eps_lanczos=tidft_env%eps_lanczos, &
-                                      max_iter_lanczos=tidft_env%max_iter_lanczos)
-
-               ! compute VxV block of the KS matrix
-               CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                   tidft_env%e_states(estate)%slater_det(idet)%mat_ks(ispin), &
-                                   tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                   0.0_dp, tempNV1, &
-                                   filter_eps=tidft_env%eps_filter)
-
-               CALL dbcsr_multiply("T", "N", 1.0_dp, &
-                                   tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                   tempNV1, &
-                                   0.0_dp, tempVV1, &
-                                   filter_eps=tidft_env%eps_filter)
-
-               CALL cp_dbcsr_syevd(tempVV1, tempVV2, &
-                                   orbital_set%orbital_list(ispin, 2)%orb_energy, &
-                                   para_env=tidft_env%para_env, &
-                                   blacs_env=tidft_env%blacs_env)
-
-               CALL dbcsr_multiply("N", "N", 1.0_dp, &
-                                   tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
-                                   tempVV2, &
-                                   0.0_dp, tempNV1, &
-                                   filter_eps=tidft_env%eps_filter)
-
-               CALL dbcsr_copy(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1)
-
-               ! Obtain info on the position of orbitals within the matrix
-               CALL get_orbital_indices(tempNV1, &
-                       orbital_set%orbital_list(ispin, 2)%block_within_matrix, &
-                       orbital_set%orbital_list(ispin, 2)%index_within_block)
-
-               CALL dbcsr_release(tempNV1)
                CALL dbcsr_release(tempVOcc1)
                CALL dbcsr_release(tempVOcc2)
-               CALL dbcsr_release(tempVV1)
-               CALL dbcsr_release(tempVV2)
 
-            ENDIF ! non-zero virtuals
+            ENDIF ! project out occupied subspace
 
-         ENDIF ! non-zero occupied
+            CALL orthogonalize_mos(ket=tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                   overlap=tempVV1, &
+                                   metric=tidft_env%mat_s, &
+                                   retain_locality=.FALSE., &
+                                   only_normalize=.FALSE., &
+                                   nocc_of_domain=fake_e_per_block, &
+                                   eps_filter=tidft_env%eps_filter, &
+                                   order_lanczos=tidft_env%order_lanczos, &
+                                   eps_lanczos=tidft_env%eps_lanczos, &
+                                   max_iter_lanczos=tidft_env%max_iter_lanczos)
+
+            ! compute VxV block of the KS matrix
+            CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                tidft_env%e_states(estate)%slater_det(idet)%mat_ks(ispin), &
+                                tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                0.0_dp, tempNV1, &
+                                filter_eps=tidft_env%eps_filter)
+
+            CALL dbcsr_multiply("T", "N", 1.0_dp, &
+                                tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                tempNV1, &
+                                0.0_dp, tempVV1, &
+                                filter_eps=tidft_env%eps_filter)
+
+            CALL cp_dbcsr_syevd(tempVV1, tempVV2, &
+                                orbital_set%orbital_list(ispin, 2)%orb_energy, &
+                                para_env=tidft_env%para_env, &
+                                blacs_env=tidft_env%blacs_env)
+
+            CALL dbcsr_multiply("N", "N", 1.0_dp, &
+                                tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), &
+                                tempVV2, &
+                                0.0_dp, tempNV1, &
+                                filter_eps=tidft_env%eps_filter)
+
+            CALL dbcsr_copy(tidft_env%e_states(estate)%slater_det(idet)%mat_v(ispin), tempNV1)
+
+            CALL dbcsr_release(tempNV1)
+            CALL dbcsr_release(tempVV1)
+            CALL dbcsr_release(tempVV2)
+
+         ENDIF ! non-zero virtuals
 
       ENDDO
-
-      ! Update main variables so they are consistent with canonical
-      ! occupied orbitals
-      CALL MO2Var( &
-              mat_t = tidft_env%e_states(estate)%slater_det(idet)%mat_t, &
-              mat_var = tidft_env%e_states(estate)%slater_det(idet)%mat_var, &
-              ncols_var = tidft_env%e_states(estate)%slater_det(idet)%ncols_var, &
-              mat_s = tidft_env%mat_s, &
-              mat_oo_template = tidft_env%mat_sigma(estate,estate,idet,:), &
-              eps_filter = tidft_env%eps_filter)
 
       DEALLOCATE(fake_e_per_block)
 

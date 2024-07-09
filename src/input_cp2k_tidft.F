@@ -39,6 +39,8 @@ MODULE input_cp2k_tidft
                                               section_create,&
                                               section_release,&
                                               section_type
+   USE input_cp2k_excitation_analysis,  ONLY: create_nto_analysis_section,&
+                                              create_mos_molden_section
    USE kinds,                           ONLY: dp
    USE string_utilities,                ONLY: s2a
    USE dbcsr_api, ONLY: &
@@ -221,9 +223,13 @@ CONTAINS
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
-      !CINDY: create WF_GUESS section
       NULLIFY (subsection)
       CALL create_WF_guess_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      NULLIFY (subsection)
+      CALL create_print_section(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
@@ -554,5 +560,36 @@ CONTAINS
       CALL keyword_release(keyword) 
 
    END SUBROUTINE create_WF_guess_section
+
+! **************************************************************************************************
+!> \brief The section controls TIDFT printing
+!> \param section ...
+!> \par History
+!>       2024.07 created [Rustam Z Khaliullin]
+!> \author Rustam Z Khaliullin
+! **************************************************************************************************
+   SUBROUTINE create_print_section(section)
+
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(section_type), POINTER                        :: subsection
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      NULLIFY (section)
+
+      CALL section_create(section, __LOCATION__, name="PRINT", &
+                          description="Printing of information during the TIDFT run.", repeats=.FALSE.)
+
+      NULLIFY (subsection)
+      CALL create_nto_analysis_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      NULLIFY (subsection)
+      CALL create_mos_molden_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+   END SUBROUTINE create_print_section
 
 END MODULE input_cp2k_tidft

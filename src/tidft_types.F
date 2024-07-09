@@ -15,6 +15,7 @@ MODULE tidft_types
    USE cp_para_types,                   ONLY: cp_para_env_type
    USE dbcsr_api,                       ONLY: dbcsr_type
    USE kinds,                           ONLY: dp
+   USE input_section_types,             ONLY: section_vals_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -111,6 +112,7 @@ MODULE tidft_types
       INTEGER                                            :: nslater
       TYPE(slater_det_type), DIMENSION(:), ALLOCATABLE   :: slater_det
       REAL(KIND=dp)                                      :: state_energy
+      REAL(KIND=dp)                                      :: excitation_energy
 
    END TYPE e_state_type
 
@@ -211,6 +213,9 @@ MODULE tidft_types
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi_inv
       REAL(KIND=dp)                                      :: det_mat_phi
+
+      ! Pointers to input sections
+      TYPE(section_vals_type), POINTER                   :: tidft_print_section
 
    END TYPE tidft_env_type
 

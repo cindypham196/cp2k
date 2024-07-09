@@ -246,7 +246,7 @@ CONTAINS
       CALL section_vals_val_get(penalty_section, &
                                 "LOOSE_EPS_SCF", &
                                 r_val=tidft_env%loose_eps_scf)
-      
+
       ! CINDY: Pass input from WF_GUESS section
       WF_guess_section => section_vals_get_subs_vals(tidft_section, "WF_GUESS")
 
@@ -262,6 +262,8 @@ CONTAINS
                               r_val=tidft_env%guess_min_excitation_energy)
       tidft_env%guess_min_excitation_energy = cp_unit_to_cp2k( &
                               tidft_env%guess_min_excitation_energy, "eV")
+
+      tidft_env%tidft_print_section => section_vals_get_subs_vals(tidft_section, "PRINT")
 
       ! check for conflicts between options
 

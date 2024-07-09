@@ -48,6 +48,8 @@ MODULE input_cp2k_properties_dft
    USE input_cp2k_loc, ONLY: create_localize_section
    USE input_cp2k_resp, ONLY: create_resp_section
    USE input_cp2k_xc, ONLY: create_xc_section
+   USE input_cp2k_excitation_analysis,  ONLY: create_nto_analysis_section,&
+                                              create_mos_molden_section
    USE input_keyword_types, ONLY: keyword_create, &
                                   keyword_release, &
                                   keyword_type
@@ -1750,71 +1752,11 @@ CONTAINS
       CALL section_add_subsection(subsection, print_key)
       CALL section_release(print_key)
 
-      CALL cp_print_key_section_create(print_key, __LOCATION__, name="NTO_ANALYSIS", &
-                                       description="Perform a natural transition orbital analysis.", &
-                                       print_level=medium_print_level)
-      CALL keyword_create(keyword, __LOCATION__, name="THRESHOLD", &
-                          description="Threshold for sum of NTO eigenvalues considered", &
-                          usage="Threshold 0.95", &
-                          n_var=1, &
-                          type_of_var=real_t, &
-                          default_r_val=0.975_dp)
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
-      CALL keyword_create(keyword, __LOCATION__, name="INTENSITY_THRESHOLD", &
-                          description="Threshold for oscillator strength to screen states.", &
-                          usage="Intensity_threshold 0.01", &
-                          n_var=1, &
-                          type_of_var=real_t, &
-                          default_r_val=0.0_dp)
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
-      CALL keyword_create(keyword, __LOCATION__, name="STATE_LIST", &
-                          description="Specifies a list of states for the NTO calculations.", &
-                          usage="STATE_LIST {integer} {integer} .. {integer}", &
-                          n_var=-1, type_of_var=integer_t)
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
-      CALL keyword_create(keyword, __LOCATION__, name="CUBE_FILES", &
-                          description="Print NTOs on Cube Files", &
-                          usage="CUBE_FILES {logical}", repeats=.FALSE., n_var=1, &
-                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE., type_of_var=logical_t)
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
-      CALL keyword_create(keyword, __LOCATION__, name="STRIDE", &
-                          description="The stride (X,Y,Z) used to write the cube file "// &
-                          "(larger values result in smaller cube files). Provide 3 numbers (for X,Y,Z) or"// &
-                          " 1 number valid for all components.", &
-                          usage="STRIDE 2 2 2", n_var=-1, default_i_vals=(/2, 2, 2/), type_of_var=integer_t)
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
-      CALL keyword_create(keyword, __LOCATION__, name="APPEND", &
-                          description="append the cube files when they already exist", &
-                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
+      CALL create_nto_analysis_section(print_key)
       CALL section_add_subsection(subsection, print_key)
       CALL section_release(print_key)
 
-      CALL cp_print_key_section_create(print_key, __LOCATION__, "MOS_MOLDEN", &
-                                       description="Write the NTO in Molden file format, for visualisation.", &
-                                       print_level=debug_print_level + 1, add_last=add_last_numeric, filename="MOS")
-      CALL keyword_create(keyword, __LOCATION__, name="NDIGITS", &
-                          description="Specifies the number of significant digits retained. 3 is OK for visualization.", &
-                          usage="NDIGITS {int}", &
-                          default_i_val=3)
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
-      CALL keyword_create(keyword, __LOCATION__, name="GTO_KIND", &
-                          description="Representation of Gaussian-type orbitals", &
-                          default_i_val=gto_spherical, &
-                          enum_c_vals=s2a("CARTESIAN", "SPHERICAL"), &
-                          enum_desc=s2a( &
-                          "Cartesian Gaussian orbitals. Use with caution", &
-                          "Spherical Gaussian orbitals. Incompatible with VMD"), &
-                          enum_i_vals=(/gto_cartesian, gto_spherical/))
-      CALL section_add_keyword(print_key, keyword)
-      CALL keyword_release(keyword)
+      CALL create_mos_molden_section(print_key)
       CALL section_add_subsection(subsection, print_key)
       CALL section_release(print_key)
 

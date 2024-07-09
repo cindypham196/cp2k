@@ -31,7 +31,7 @@
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              10
+      N_EXCITED_STATES              2
       SUGGESTED_MO_BLOCK_SIZE       10
       EPS_FILTER                    1.0E-10
       SPIN_PURE                     F
@@ -73,6 +73,11 @@
         MAX_EXC_ORDER    1
       &END WF_GUESS
 
+      &PRINT
+        &NTO_ANALYSIS
+          CUBE_FILES T
+        &END
+      &END PRINT
     &END TIDFT
 
     &SCF
@@ -134,18 +139,18 @@
     &KIND He
       BASIS_SET QZV3P-GTH !DZVP-GTH !SZV-GTH !TZVP-GTH !
       POTENTIAL GTH-BLYP-q2
-      &BS
-        &ALPHA
-           NEL     +1
-           N        1
-           L        0
-        &END ALPHA
-        &BETA
-           NEL     -1
-           N        1
-           L        0
-        &END BETA
-      &END BS
+      !&BS
+      !  &ALPHA
+      !     NEL     +1
+      !     N        1
+      !     L        0
+      !  &END ALPHA
+      !  &BETA
+      !     NEL     -1
+      !     N        1
+      !     L        0
+      !  &END BETA
+      !&END BS
     &END KIND
   &END SUBSYS
 &END FORCE_EVAL
