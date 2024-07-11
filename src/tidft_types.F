@@ -165,7 +165,7 @@ MODULE tidft_types
       REAL(KIND=dp),  DIMENSION(:), ALLOCATABLE          :: intrastate_nonorthogonality_penalty_coeff
       REAL(KIND=dp)                                      :: interstate_nonorthogonality_penalty_coeff
       REAL(KIND=dp)                                      :: penalty_strength_inc_factor
-      REAL(KIND=dp)                                      :: allowed_determinant_deviaion
+      REAL(KIND=dp)                                      :: allowed_max_norm_phi_mI
       REAL(KIND=dp)                                      :: initial_guess_random_fraction
       INTEGER                                            :: initial_guess_type
       INTEGER                                            :: initial_guess_random_seed
@@ -213,6 +213,7 @@ MODULE tidft_types
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi_inv
       REAL(KIND=dp)                                      :: det_mat_phi
+      REAL(KIND=dp)                                      :: max_norm_mat_phi_mI
 
       ! Pointers to input sections
       TYPE(section_vals_type), POINTER                   :: tidft_print_section

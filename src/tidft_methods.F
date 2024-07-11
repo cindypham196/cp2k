@@ -96,6 +96,7 @@ MODULE tidft_methods
           dbcsr_set_element, &
           project_out, &
           copy_columns, &
+          max_norm_phi_minusI, &
           tidft_optimizer_gradient_norm, &
           tidft_mainvar_orthonormalize, &
           swap_columns
@@ -861,6 +862,53 @@ CONTAINS
       ENDDO
 
       CALL timestop(handle)
+
+   END SUBROUTINE
+
+! **************************************************************************************************
+!> \brief Computes the max norm of the overlap matrix between normalized
+!         electronic states minus identity. That is,
+!         norm = ( phi_diag^(-1/2) * phi * phi_diag^(-1/2) - I)
+!> \param matrix_phi ...
+!> \param maxnorm ...
+!> \param n0 - dimnesion of matrix phi
+!> \par History
+!>       2024.07 created [Rustam Z Khaliullin]
+!> \author Rustam Z. Khaliullin
+! **************************************************************************************************
+   SUBROUTINE max_norm_phi_minusI(matrix_phi, maxnorm, n0)
+
+      REAL(KIND=dp), DIMENSION(:,:), INTENT(IN)          :: matrix_phi
+      REAL(KIND=dp), INTENT(INOUT)                       :: maxnorm
+      INTEGER, OPTIONAL, INTENT(IN)                      :: n0
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'max_norm_phi_minusI'
+
+      INTEGER                                            :: i, n, &
+                                                            m, j
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: matrix_a
+
+      IF (.NOT.PRESENT(n0)) THEN
+         n = SIZE(matrix_phi,1)
+         m = SIZE(matrix_phi,2)
+         IF (m .NE. n) CPABORT("Matrix is not square")
+      ELSE
+         n = n0
+      ENDIF
+
+      ALLOCATE(matrix_a(n,n))
+
+      DO i = 1, n
+         matrix_a(i,i) = 0.0_dp
+         DO j = i+1, n
+            matrix_a(i,j) = matrix_phi(i,j) / SQRT(matrix_phi(i,i) * matrix_phi(j,j))
+            matrix_a(j,i) = matrix_a(i,j)
+         ENDDO
+      ENDDO
+
+      maxnorm = MAXVAL(ABS(matrix_a))
+
+      DEALLOCATE(matrix_a)
 
    END SUBROUTINE
 

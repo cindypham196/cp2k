@@ -27,13 +27,13 @@
     !UKS                             TRUE
     &QS
       TIDFT                         T !F
-      EPS_DEFAULT                   1.0E-12
+      EPS_DEFAULT                   1.0E-10
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              2
+      N_EXCITED_STATES              10
       SUGGESTED_MO_BLOCK_SIZE       10
-      EPS_FILTER                    1.0E-10
+      EPS_FILTER                    1.0E-09
       SPIN_PURE                     F
       MAX_UNPAIR                    1
       MO_GUESS_RANDOM_FRAC          0.1
@@ -47,7 +47,7 @@
       INTERSTATE_COMPONENT          TRUE
 
       &TIDFT_OPTIMIZER_PCG
-        PRECONDITIONER              QHQ_S
+        PRECONDITIONER              S
         PREC_WEIGHT_OVERLAP         0.85  !0.65 use 0.85 to avoid precond failure
         EPS_ERROR                   1.0E-6
         MAX_ITER                    50
@@ -61,7 +61,7 @@
         INTRASTATE_NON_PENALTY_STRENGTH    1.0E-5
         INTERSTATE_NON_PENALTY_STRENGTH    1.0
         PENALTY_STRENGTH_INCREASE_FACTOR   2 !1.414213562373095
-        ALLOWED_DETERMINANT_DEVIATION      1.0E-5
+        MAX_NORM_PHI_OFF_DIAG              1.0E-2
         MAX_CP_STEP                        1
         LOOSE_EPS_SCF                      1.0E-3
       &END PENALTY

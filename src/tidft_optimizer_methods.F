@@ -78,6 +78,7 @@ MODULE tidft_optimizer_methods
                                               split_columns, &
                                               determinant_local, &
                                               matrix_invert_local, &
+                                              max_norm_phi_minusI, &
                                               project_out, &
                                               gradVAR_scale_split_increment, &
                                               precMO_to_precVAR_increment
@@ -141,9 +142,6 @@ CONTAINS
       ALLOCATE(save_component_flags(SIZE(tidft_env%loss_function_components)))
       ALLOCATE(save_initial_intra(nstates))
 
-      ! CINDY: tighten the convergence of 1s2s and 2s1s
-      !new_det_deviation = tidft_env%allowed_determinant_deviaion/10.0_dp
-
       IF (tidft_env%state_by_state) THEN
 
          save_initial_intra(:) = tidft_env%intrastate_nonorthogonality_penalty_coeff(:)
@@ -152,19 +150,6 @@ CONTAINS
          DO current_no_of_states = 1, nstates
 
             tidft_env%nstates = current_no_of_states
-
-            ! CINDY: Hack to optimize 2s2s being orthogonal with simultaneously 1s2s, 2s1s and GS
-!            IF (current_no_of_states .EQ. 2 .OR. current_no_of_states .EQ. 3) THEN
-!               tidft_env%allowed_determinant_deviaion = new_det_deviation
-!               WRITE(*,*) "Current state:",current_no_of_states
-!               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion 
-!            ELSE
-!               IF (tidft_env%allowed_determinant_deviaion .LT. 0.0001_dp) THEN
-!                  tidft_env%allowed_determinant_deviaion = 0.0001_dp
-!               ENDIF
-!               WRITE(*,*) "Current state:",current_no_of_states
-!               WRITE(*,*) "Allowed det deviation:",tidft_env%allowed_determinant_deviaion
-!            ENDIF
 
             ! RZK-WARNING: This should not be necessary with 
             ! the canonical excited-state guess (orthogonal by construction)
@@ -361,8 +346,6 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
 
          ENDIF
 
-         !SELECT CASE (almo_scf_env%construct_nlmos)
-         !CASE (almo_scf_pcg)
          IF (unit_nr > 0) THEN
             WRITE (unit_nr, '(T2,A13,A6,A23,A14,A14,A9)') "Method", "Iter", &
                "Objective Function", "Change", "Convergence", "Time"
@@ -379,11 +362,17 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
             WRITE (unit_nr, '(T2,A19,F30.10,F30.10)') "CP-DEVIATION:", &
                tidft_env%interstate_nonorthogonality_penalty_coeff, &
                ABS(1.0_dp - tidft_env%det_mat_phi)
+            WRITE (unit_nr, '(T2,A19,F30.10,F30.10)') "|Phi-I|_max:", &
+               tidft_env%interstate_nonorthogonality_penalty_coeff, &
+               tidft_env%max_norm_mat_phi_mI
          ENDIF
 
          ! INTER term condition: Check whether the determinant of PHI is sufficiently close to 1
+         ! UPDATE: Use max norm of (normalized phi - I) instead of
+         ! determinant as a convergence criterion that does not depend
+         ! on the number of excited states
          IF ( iteration .GE. tidft_env%nsteps_penalty_strength .AND. &
-              ( ABS(1.0_dp - tidft_env%det_mat_phi) .LE. tidft_env%allowed_determinant_deviaion &
+              ( tidft_env%max_norm_mat_phi_mI .LE. tidft_env%allowed_max_norm_phi_mI &
               .OR. .NOT.tidft_env%loss_function_components(3) ) ) THEN
             EXIT
          ENDIF
@@ -431,7 +420,7 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
             interAlpha = ( LOG(interDEV2/interDEV1) )/( LOG(interCP2/interCP1) )
             interBeta = LOG(interDEV2) - interAlpha * LOG(interCP2)
             tidft_env%interstate_nonorthogonality_penalty_coeff = &
-               EXP(( LOG(tidft_env%allowed_determinant_deviaion/2.0_dp) - interBeta ) / interAlpha)
+               EXP(( LOG(tidft_env%allowed_max_norm_phi_mI/2.0_dp) - interBeta ) / interAlpha)
             ! Limit the multiplicative increase
             IF (tidft_env%interstate_nonorthogonality_penalty_coeff .GT. interCP2 * g_max_interstate) &
                tidft_env%interstate_nonorthogonality_penalty_coeff = interCP2 * g_max_interstate
@@ -1581,9 +1570,13 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
 
          tidft_env%det_mat_phi = determinant_spd/DetDiagonalSigma
 
+         CALL max_norm_phi_minusI(tidft_env%mat_phi, tidft_env%max_norm_mat_phi_mI, nstates)
+
          IF (unit_nr > 0) THEN
             WRITE (unit_nr, '(T2,A38,F40.10)') "Normalized determinant of PHI: ", &
                tidft_env%det_mat_phi
+            WRITE (unit_nr, '(T2,A38,F40.10)') "Max norm of normalized PHI: ", &
+               tidft_env%max_norm_mat_phi_mI
          ENDIF
 
          interstate_nonorthogonality_penalty = &

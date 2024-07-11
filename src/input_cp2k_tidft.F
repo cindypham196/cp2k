@@ -498,10 +498,10 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="ALLOWED_DETERMINANT_DEVIATION", &
-                          description="Maximum allowed deviation of the final determinant "// &
-                          "of the interstate overlap matrix from the ideal value of 1.0.", &
-                          usage="ALLOWED_DETERMINANT_DEVIATION 0.001", default_r_val=0.01_dp)
+      CALL keyword_create(keyword, __LOCATION__, name="MAX_NORM_PHI_OFF_DIAG", &
+                          description="Maximum allowed deviation from orthogonality for electronic states. "// &
+                          "measured as the max norm of the off-diagonal elements of the interstate overlap matrix.", &
+                          usage="MAX_NORM_PHI_OFF_DIAG 0.01", default_r_val=0.005_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

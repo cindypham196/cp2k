@@ -237,8 +237,8 @@ CONTAINS
                                 "PENALTY_STRENGTH_INCREASE_FACTOR", &
                                 r_val=tidft_env%penalty_strength_inc_factor)
       CALL section_vals_val_get(penalty_section, &
-                                "ALLOWED_DETERMINANT_DEVIATION", &
-                                r_val=tidft_env%allowed_determinant_deviaion)
+                                "MAX_NORM_PHI_OFF_DIAG", &
+                                r_val=tidft_env%allowed_max_norm_phi_mI)
 
       ! CINDY 
       CALL section_vals_val_get(penalty_section, "NSTEPS_STRENGTH", &
