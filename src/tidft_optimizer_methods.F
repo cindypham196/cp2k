@@ -26,6 +26,7 @@ MODULE tidft_optimizer_methods
                                               cp_logger_type
    USE tidft_guess_methods,             ONLY: construct_canonical_orbitals,&
                                               guess_excited_states_orbitals
+   USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_syevd
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_dot, dbcsr_filter, dbcsr_multiply, dbcsr_norm, &
         dbcsr_norm_maxabsnorm, dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, &
@@ -2942,8 +2943,10 @@ WRITE(*,*)
       CHARACTER(len=*), PARAMETER :: routineN = 'tidft_compute_invert_preconditioner'
 
       INTEGER                                            :: handle
+      INTEGER                                            :: unit_nr
       TYPE(dbcsr_type)                                   :: temp_NN1
       TYPE(dbcsr_type)                                   :: temp_NO1
+      TYPE(dbcsr_type)                                   :: temp_OO1
       TYPE(dbcsr_type)                                   :: temp_ST
       TYPE(dbcsr_type)                                   :: temp_FTsiginv
       TYPE(dbcsr_type)                                   :: temp_siginvTFTsiginv
@@ -2953,6 +2956,7 @@ WRITE(*,*)
       INTEGER                                            :: ispin
       INTEGER                                            :: ivar
       INTEGER                                            :: nmos_stateI
+      INTEGER                                            :: nbasis
       INTEGER                                            :: first_state
       INTEGER                                            :: nstates
       INTEGER                                            :: ndets
@@ -2962,15 +2966,38 @@ WRITE(*,*)
       REAL(KIND=dp)                                      :: scaling_factor_slater_determinant
       REAL(KIND=dp)                                      :: scaling_factor_spin
       REAL(KIND=dp)                                      :: zero_eigenvalue_eps_factor
+      REAL(KIND=dp)                                      :: auto_scale_factor_S
+      REAL(KIND=dp)                                      :: auto_scale_factor_SRS
+      REAL(KIND=dp)                                      :: auto_scale_factor_KS
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: o_eigenvalues
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: h_eigenvalues
       LOGICAL                                            :: energy_component
       LOGICAL                                            :: hamiltonian_project_R_out
       LOGICAL                                            :: overlap_project_R_out
       LOGICAL                                            :: failed
+      LOGICAL                                            :: auto_scale
       CHARACTER                                          :: mtype
+      TYPE(cp_logger_type), POINTER                      :: logger
 
       CALL timeset(routineN, handle)
 
-      alpha = tidft_env%weight_alpha_prec 
+      ! get a useful output_unit
+      logger => cp_get_default_logger()
+      IF (logger%para_env%ionode) THEN
+         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
+      ELSE
+         unit_nr = -1
+      ENDIF
+
+      auto_scale_factor_KS = 0.0_dp
+      auto_scale_factor_S = 0.0_dp
+      auto_scale_factor_SRS = 0.0_dp
+      auto_scale = .FALSE.
+      alpha = tidft_env%weight_alpha_prec
+      IF (alpha .LT. 0.0_dp) auto_scale = .TRUE.
+
+      ! multiplies filter_eps to determine the
+      ! threshold for the pseudoinverse
       zero_eigenvalue_eps_factor = 100.0_dp
 
       SELECT CASE (precond)
@@ -3055,7 +3082,7 @@ WRITE(*,*)
                      CALL dbcsr_create(temp_prec, &
                              template=tidft_env%mat_s, matrix_type = dbcsr_type_no_symmetry)
 
-                     IF (hamiltonian_project_R_out) THEN
+                     IF (hamiltonian_project_R_out .OR. auto_scale) THEN
                         ! T.siginv
                         CALL dbcsr_multiply("N", "N", 1.0_dp, &
                                 tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
@@ -3117,17 +3144,120 @@ WRITE(*,*)
                                 filter_eps=tidft_env%eps_filter)
                      ENDIF
 
-                     ! prec = (1 - alpha)*(1-SR)F(1-RS) + alpha * S
-                     ! increase alpha to guarantee positive definiteness (increase S, decrease QHQ)
                      CALL dbcsr_create(temp_NN1, &
                              template=tidft_env%mat_s, matrix_type = dbcsr_type_no_symmetry)
-                     CALL dbcsr_desymmetrize( &
-                             tidft_env%mat_s, &
+
+                     ! Determine mixing coefficients automatically
+                     IF (auto_scale) THEN
+
+                        IF (unit_nr > 0) THEN
+                           WRITE(unit_nr, '(T2,A58,I20)') &
+                              "Autoscaling preconditioner, spin:", ispin
+                        ENDIF
+
+                        CALL dbcsr_create(temp_OO1, &
+                                template=tidft_env%mat_sigma_inv(stateI,idet,ispin))
+
+                        ALLOCATE(o_eigenvalues(nmos_stateI))
+
+                        CALL cp_dbcsr_syevd(temp_siginvTFTsiginv, &
+                                temp_OO1, &
+                                o_eigenvalues, &
+                                para_env=tidft_env%para_env, &
+                                blacs_env=tidft_env%blacs_env)
+
+                        auto_scale_factor_S = MAXVAL(o_eigenvalues)
+                        auto_scale_factor_SRS = auto_scale_factor_S
+
+                        ! Positive occupied eigenvalues are problematic
+                        IF (auto_scale_factor_S .GT. 0.0_dp) THEN
+
+                           IF (unit_nr > 0) THEN
+                              WRITE(unit_nr, '(T2,A58)') &
+                                 "Positive occupied eigenvalues, flipping sign"
+                                 !"Positive occupied eigenvalues, switching to S"
+                           ENDIF
+
+                           ! Switch to S instead of S-SRS
+                           !auto_scale_factor_S = -1.0_dp
+                           !auto_scale_factor_SRS = 0.0_dp
+
+                           ! Flip the sign
+                           auto_scale_factor_S = -1.0_dp * auto_scale_factor_S
+                           auto_scale_factor_SRS = auto_scale_factor_S
+
+                           ! Turn of the Hamiltonian term
+                           !auto_scale_factor_KS = 0.0_dp
+                           !auto_scale_factor_S = MIN(0.0_dp,auto_scale_factor_S)
+
+                           !! Check the minimal eigenvalue of the
+                           !! Hamiltonian term
+                           !CALL dbcsr_get_info(temp_prec, &
+                           !        nfullrows_total=nbasis)
+                           !ALLOCATE(h_eigenvalues(nbasis))
+
+                           !CALL cp_dbcsr_syevd(temp_prec, &
+                           !        temp_NN1, &
+                           !        h_eigenvalues, &
+                           !        para_env=tidft_env%para_env, &
+                           !        blacs_env=tidft_env%blacs_env)
+
+                           !auto_scale_factor_KS = MINVAL(h_eigenvalues)
+
+                           !! Negative Hamiltonian eigenvalues are problematic
+                           !IF (auto_scale_factor_KS .LT. 0.0_dp) THEN
+
+                           !   IF (unit_nr > 0) THEN
+                           !      WRITE(unit_nr, '(T2,A58)') &
+                           !         "Negative Hamiltonian eigenvalues, flipping sign"
+                           !   ENDIF
+
+                           !   auto_scale_factor_KS = -1.0_dp * auto_scale_factor_KS
+
+                           !ENDIF
+
+                           !DEALLOCATE(h_eigenvalues)
+
+                        ENDIF
+
+                        CALL cp_dbcsr_syevd( &
+                                tidft_env%mat_sigma_inv(stateI,idet,ispin), &
+                                temp_OO1, &
+                                o_eigenvalues, &
+                                para_env=tidft_env%para_env, &
+                                blacs_env=tidft_env%blacs_env)
+
+                        auto_scale_factor_KS = MAXVAL(o_eigenvalues)
+
+                        DEALLOCATE(o_eigenvalues)
+
+                        CALL dbcsr_release(temp_OO1)
+
+                        IF (unit_nr > 0) THEN
+                           WRITE(unit_nr, '(T2,A58,F20.10)') &
+                              "Overlap term:", auto_scale_factor_S
+                           WRITE(unit_nr, '(T2,A58,F20.10)') &
+                              "Hamiltonian term:", auto_scale_factor_KS
+                        ENDIF
+
+                     ENDIF
+
+                     CALL dbcsr_desymmetrize(tidft_env%mat_s, &
                              temp_NN1)
 
+                     ! Combine Hamiltonian and overlap terms
+                     IF (auto_scale) THEN
+                        ! prec = MAX_EIG(si)*(1-SR)F(1-RS) - MAX_EIG(si.T.F.T.si) * S
+                        ! increase alpha to guarantee positive definiteness (increase S, decrease QHQ)
+                        CALL dbcsr_add(temp_prec, &
+                                temp_NN1, auto_scale_factor_KS, -1.0_dp * auto_scale_factor_S)
+                     ELSE
+                        ! prec = (1 - alpha)*(1-SR)F(1-RS) + alpha * S
+                        ! increase alpha to guarantee positive definiteness (increase S, decrease QHQ)
+                        CALL dbcsr_add(temp_prec, &
+                                temp_NN1, 1.0_dp - alpha, alpha)
+                     ENDIF
 
-                     CALL dbcsr_add(temp_prec, &
-                             temp_NN1, 1.0_dp - alpha, alpha)
                      CALL dbcsr_release(temp_NN1)
 
                      IF (overlap_project_R_out) THEN
@@ -3137,12 +3267,22 @@ WRITE(*,*)
                                 tidft_env%mat_sigma_inv(stateI,idet,ispin), &
                                 0.0_dp, temp_NO1, &
                                 filter_eps=tidft_env%eps_filter)
-                        ! prec = prec - alpha * ST.(STsiginv)^t
-                        CALL dbcsr_multiply("N", "T", -alpha, &
-                                temp_ST, &
-                                temp_NO1, &
-                                1.0_dp, temp_prec, &
-                                filter_eps=tidft_env%eps_filter)
+                        IF (auto_scale) THEN
+                           ! prec = prec + MAX_EIG(si.T.F.T.si) * ST.(STsiginv)^t
+                           CALL dbcsr_multiply("N", "T", &
+                                   auto_scale_factor_SRS, &
+                                   temp_ST, &
+                                   temp_NO1, &
+                                   1.0_dp, temp_prec, &
+                                   filter_eps=tidft_env%eps_filter)
+                        ELSE
+                           ! prec = prec - alpha * ST.(STsiginv)^t
+                           CALL dbcsr_multiply("N", "T", -alpha, &
+                                   temp_ST, &
+                                   temp_NO1, &
+                                   1.0_dp, temp_prec, &
+                                   filter_eps=tidft_env%eps_filter)
+                        ENDIF
                      ENDIF
 
                      ! Scale by the required factors
