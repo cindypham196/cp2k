@@ -1,0 +1,186 @@
+&GLOBAL
+  PROJECT N-pp
+  RUN_TYPE ENERGY  !GEO_OPT !
+  PRINT_LEVEL LOW
+&END GLOBAL
+
+!&MOTION
+!  &GEO_OPT
+!     OPTIMIZER  LBFGS
+!     MAX_ITER  2000
+!     MAX_DR     3.000000000000000E-03
+!     MAX_FORCE     4.5000000000000000E-04
+!     RMS_DR     1.5000000000000000E-03
+!     RMS_FORCE    3.00000000000000E-04
+!  &END GEO_OPT
+!
+!&END MOTION
+
+&FORCE_EVAL
+  METHOD QS
+!  STRESS_TENSOR  ANALYTICAL
+
+!  &PROPERTIES
+!    &TDDFPT
+!      NSTATES     30             # number of excited states
+!      MAX_ITER    50             # maximum number of Davidson iterations
+!      CONVERGENCE [eV] 1.0e-6    # convergence on maximum energy change between iterations
+!      &MGRID
+!          CUTOFF 300              # separate cutoff for TDDFPT calc
+!      &END
+!    &END TDDFPT
+!  &END PROPERTIES
+
+
+  &DFT
+    BASIS_SET_FILE_NAME GTH_BASIS_SETS
+    POTENTIAL_FILE_NAME POTENTIAL
+    &MGRID
+      CUTOFF 300
+      NGRIDS 4
+    &END MGRID
+    CHARGE               0
+    !MULTIPLICITY         1 !3
+    UKS                  T ! RZK: Perform the same calculations as for CH2, NH2+, OH+ diradicals
+    !ROKS                 T
+    &QS
+      TIDFT  T
+      EPS_DEFAULT 1.0E-12
+    &END QS
+
+    &TIDFT
+      N_EXCITED_STATES           10
+      SUGGESTED_MO_BLOCK_SIZE    5
+      EPS_FILTER                 1.0E-11
+      SPIN_PURE                  FALSE
+      MAX_UNPAIR                 1
+      MO_GUESS_RANDOM_FRAC       0.05
+      MO_GUESS_RANDOM_SEED       30304
+      STATE_BY_STATE             TRUE
+      PRE_ORTHOGONALIZE_STATES   FALSE
+      NUMERICAL_GRADIENT         FALSE
+      NUMERICAL_GRADIENT_DX      1E-6
+      ENERGY_COMPONENT           TRUE
+      INTRASTATE_COMPONENT       TRUE
+      INTERSTATE_COMPONENT       TRUE
+
+      &TIDFT_OPTIMIZER_PCG
+        PRECONDITIONER             QHQ_S
+        PREC_WEIGHT_OVERLAP       0.85
+        EPS_ERROR                  1.0E-6
+        MAX_ITER                   50
+        MAX_ITER_OUTER_LOOP        20
+        LIN_SEARCH_EPS_ERROR       0.2
+        LIN_SEARCH_STEP_SIZE_GUESS 0.05
+        CONJUGATOR                 FLETCHER
+      &END TIDFT_OPTIMIZER_PCG
+
+      &PENALTY
+        INTRASTATE_NON_PENALTY_STRENGTH    1E-5
+        INTERSTATE_NON_PENALTY_STRENGTH    0.01
+        PENALTY_STRENGTH_INCREASE_FACTOR   2.0
+        MAX_NORM_PHI_OFF_DIAG              5.0E-3
+        MAX_CP_STEP                        1
+        LOOSE_EPS_SCF                     1E-2
+      &END PENALTY
+
+      &WF_GUESS
+        MAX_EXC_ENERGY    800
+        MIN_EXC_ENERGY    0.00
+        MAX_EXC_ORDER     2 !10
+        EXCITE_ALPHA_ONLY T 
+      &END WF_GUESS
+
+    &END TIDFT
+
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+      &OT ON
+        !ALGORITHM IRAC
+        !MINIMIZER DIIS
+        PRECONDITIONER FULL_SINGLE_INVERSE !FULL_ALL
+        ROTATION T
+      &END OT
+      &OUTER_SCF
+         EPS_SCF 1.0E-6
+         MAX_SCF 50
+      &END
+      &PRINT
+        &RESTART OFF  !ON !
+        &END
+      &END
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC  20 20 20 !15.0 15.0 15.0  
+      MULTIPLE_UNIT_CELL 1 1 1 ! RZK: No need to multiply the cell for gas-phase molecules
+    &END CELL
+    &TOPOLOGY
+      MULTIPLE_UNIT_CELL 1 1 1
+    &END
+    &COORD  ! optimized coords 
+C   -2.532567 -1.184562 0.265369
+C   -1.129106 -1.188494 0.277088
+C   -0.419072 -0.000061 0.000040
+C   -1.129024 1.188418 -0.276983
+C   -2.532486 1.184570 -0.265296
+C   -3.241842 0.000024 0.000019
+H   -3.071980 -2.110265 0.481821
+H   -0.581265 -2.099876 0.523438
+H   -0.581103 2.099768 -0.523291
+H   -3.071837 2.110310 -0.481738
+H   -4.334356 0.000061 0.000013
+N   1.007917 -0.000045 0.000020
+C   1.825934 -1.055559 -0.415408
+C   1.825868 1.055825 0.414662
+C   3.147200 -0.666305 -0.265371
+H   1.389800 -1.958478 -0.830614
+C   3.147156 0.666166 0.265859
+H   1.389653 1.958947 0.829343
+H   4.016696 -1.267834 -0.520598
+H   4.016603 1.267542 0.521617
+    !not yet optimized coords
+! C                 -2.71921445    0.46621876    0.85372321
+! C                 -1.32405459    0.46567962    0.85403070
+! C                 -0.62599845    1.31924328    0.00000000
+! C                 -1.32313398    2.17303397   -0.85572194
+! C                 -2.71795894    2.17317906   -0.85631283
+! C                 -3.41607816    1.31999818   -0.00125621
+! H                 -3.26938196   -0.20650179    1.52744838
+! H                 -0.77495519   -0.20699252    1.52874829
+! H                 -0.77252551    2.84590788   -1.52904753
+! H                 -3.26767240    2.84594345   -1.53061055
+! H                 -4.51568199    1.32042518   -0.00175524
+! N                  0.84400130    1.31935022    0.00084750
+! C                  1.65372806    0.51927984    0.80167906
+! C                  1.65475910    2.11911670   -0.79925484
+! C                  2.99308936    0.81183500    0.50940207
+! H                  1.22918319   -0.18983005    1.51120551
+! C                  2.99380941    1.82614102   -0.50550618
+! H                  1.23095491    2.82824295   -1.50915324
+! H                  3.86624502    0.35692562    0.96491165
+! H                  3.86760061    2.28072614   -0.96010183
+
+    &END COORD
+    &KIND C
+      BASIS_SET DZVP-GTH
+      POTENTIAL GTH-BLYP-q4
+    &END KIND
+    &KIND H
+      BASIS_SET DZVP-GTH
+      POTENTIAL GTH-BLYP-q1
+    &END KIND
+    &KIND N
+      BASIS_SET DZVP-GTH
+      POTENTIAL GTH-BLYP-q5
+    &END KIND 
+  &END SUBSYS
+&END FORCE_EVAL
+

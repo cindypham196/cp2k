@@ -1,5 +1,5 @@
 &GLOBAL
-  PROJECT                           BE
+  PROJECT                           Li
   RUN_TYPE                          ENERGY
   PRINT_LEVEL                       MEDIUM
 &END GLOBAL
@@ -10,7 +10,7 @@
 
 !&PROPERTIES
 !  &TDDFPT
-!     NSTATES     20             # number of excited states
+!     NSTATES     10             # number of excited states
 !     MAX_ITER    500             # maximum number of Davidson iterations
 !     CONVERGENCE [eV] 1.0e-6    # convergence on maximum energy change between iterations
 !     &MGRID
@@ -22,33 +22,33 @@
   &DFT
     POTENTIAL_FILE_NAME             GTH_POTENTIALS
     BASIS_SET_FILE_NAME             GTH_BASIS_SETS
-    MULTIPLICITY                    1
+    MULTIPLICITY                    2
     !ROKS                            TRUE
     UKS                             TRUE
     &QS
-      TIDFT                         T !F
-      EPS_DEFAULT                   1.0E-12
+      TIDFT                         T
+      EPS_DEFAULT                   1.0E-10
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              4
+      N_EXCITED_STATES              10
       SUGGESTED_MO_BLOCK_SIZE       10
       EPS_FILTER                    1.0E-10
       SPIN_PURE                     F
-      MAX_UNPAIR                    1 !2
+      MAX_UNPAIR                    1
       MO_GUESS_RANDOM_FRAC          0.1
       MO_GUESS_RANDOM_SEED          301
       STATE_BY_STATE                TRUE
       PRE_ORTHOGONALIZE_STATES      FALSE
       NUMERICAL_GRADIENT            FALSE
-      NUMERICAL_GRADIENT_DX         1E-9
+      NUMERICAL_GRADIENT_DX         1E-9  !1E-6
       ENERGY_COMPONENT              TRUE
       INTRASTATE_COMPONENT          TRUE
       INTERSTATE_COMPONENT          TRUE
 
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             QHQ_S
-        PREC_WEIGHT_OVERLAP        0.85
+        PREC_WEIGHT_OVERLAP        0.85 !0.5
         EPS_ERROR                  1.0E-6
         WHICH_GRADIENT_NORM        RMS
         MAX_ITER                   50
@@ -62,23 +62,25 @@
         INTRASTATE_NON_PENALTY_STRENGTH    1.0E-5
         INTERSTATE_NON_PENALTY_STRENGTH   10 ! 1.0E-1 !1.0E-3
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
-        ALLOWED_DETERMINANT_DEVIATION      1E-4
-        MAX_CP_STEP                         1
+        MAX_NORM_PHI_OFF_DIAG              5.0E-3
+        MAX_CP_STEP                         1 !4
         LOOSE_EPS_SCF                     1E-2
       &END PENALTY
 
       &WF_GUESS
-        MAX_EXC_ENERGY    800
+        MAX_EXC_ENERGY    80
         MIN_EXC_ENERGY    0.00
-        MAX_EXC_ORDER     2
+        MAX_EXC_ORDER     3 !2
+        EXCITE_ALPHA_ONLY T 
+
       &END WF_GUESS
 
     &END TIDFT
 
     &SCF
       SCF_GUESS ATOMIC
-      EPS_SCF 1.0E-8
-      MAX_SCF 30
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
       &OT ON
         !ALGORITHM IRAC
         !MINIMIZER DIIS
@@ -86,8 +88,8 @@
         ROTATION T
       &END OT
       &OUTER_SCF
-         EPS_SCF 1.0E-8
-         MAX_SCF 5
+         EPS_SCF 1.0E-6
+         MAX_SCF 1
       &END
       &PRINT
         &RESTART OFF
@@ -97,12 +99,12 @@
 
     &POISSON
       PERIODIC NONE
-      PSOLVER  IMPLICIT ! WAVELET
+      PSOLVER WAVELET !  MULTIPOLE  ! IMPLICIT ! 
     &END POISSON
 
     &MGRID
-      CUTOFF 300
-      NGRIDS 5
+      CUTOFF 500 !200
+      NGRIDS 4
     &END MGRID
     &XC
       &XC_FUNCTIONAL PBE
@@ -115,26 +117,25 @@
   &SUBSYS
 
     &CELL
-      ABC 4.6 4.6 7.2 !2.28 2.28 3.58 ! 
-      ALPHA_BETA_GAMMA 90.0 90.0 120.0
+      ABC 15 15 15 !5.0 5.0 5.0
       MULTIPLE_UNIT_CELL 1 1 1
       PERIODIC NONE
     &END CELL
 
     &TOPOLOGY
+      &CENTER_COORDINATES
+      &END CENTER_COORDINATES
       MULTIPLE_UNIT_CELL 1 1 1
     &END
 
     &COORD
-      SCALED T 
-      Be        0.00000000    1.31970725    2.68822500
-!      Be        1.14290000    0.65985362    0.89607500
-
+      Li         0.000000      0.000000      0.000000
+!      Li         0.500000      0.500000      0.500000 
     &END COORD
 
-    &KIND Be
-      BASIS_SET DZVP-GTH-q4
-      POTENTIAL GTH-PBE-q4
+    &KIND Li
+      BASIS_SET DZVP-GTH-q3
+      POTENTIAL GTH-PBE-q3
     &END KIND
 
   &END SUBSYS

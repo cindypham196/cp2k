@@ -10,7 +10,7 @@
 
 !&PROPERTIES
 !  &TDDFPT
-!     NSTATES     20             # number of excited states
+!     NSTATES     6             # number of excited states
 !     MAX_ITER    500             # maximum number of Davidson iterations
 !     CONVERGENCE [eV] 1.0e-6    # convergence on maximum energy change between iterations
 !     &MGRID
@@ -26,7 +26,7 @@
     !ROKS                            TRUE
     UKS                             TRUE
     &QS
-      TIDFT                         T !F
+      TIDFT                         T
       EPS_DEFAULT                   1.0E-12
     &END QS
 
@@ -62,7 +62,8 @@
         INTRASTATE_NON_PENALTY_STRENGTH    1.0E-5
         INTERSTATE_NON_PENALTY_STRENGTH   10 ! 1.0E-1 !1.0E-3
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
-        ALLOWED_DETERMINANT_DEVIATION      1E-4
+        MAX_NORM_PHI_OFF_DIAG              5.0E-3
+        !ALLOWED_DETERMINANT_DEVIATION      1E-4
         MAX_CP_STEP                         1
         LOOSE_EPS_SCF                     1E-2
       &END PENALTY
@@ -70,7 +71,8 @@
       &WF_GUESS
         MAX_EXC_ENERGY    800
         MIN_EXC_ENERGY    0.00
-        MAX_EXC_ORDER     3
+        MAX_EXC_ORDER     2 !3
+        EXCITE_ALPHA_ONLY T 
       &END WF_GUESS
 
     &END TIDFT
@@ -95,10 +97,10 @@
       &END
     &END SCF
 
-!    &POISSON
-!      PERIODIC NONE
-!      PSOLVER  IMPLICIT ! MULTIPOLE !WAVELET !
-!    &END POISSON
+     &POISSON
+      PERIODIC NONE
+      PSOLVER  IMPLICIT !MULTIPOLE !WAVELET !
+    &END POISSON
 
     &MGRID
       CUTOFF 300
@@ -115,7 +117,7 @@
   &SUBSYS
 
     &CELL
-      ABC 5.0 5.0 5.0
+      ABC 20 20 20 !5.0 5.0 5.0
       ALPHA_BETA_GAMMA 58.060  58.060  58.060
       MULTIPLE_UNIT_CELL 1 1 1
       PERIODIC NONE
@@ -123,6 +125,8 @@
 
     &TOPOLOGY
       MULTIPLE_UNIT_CELL 1 1 1
+      &CENTER_COORDINATES T
+      &END
     &END
 
     &COORD
@@ -134,7 +138,7 @@
     &END COORD
 
     &KIND B
-      BASIS_SET SZV-GTH-q3  !DZVP-GTH-q3 !
+      BASIS_SET DZVP-GTH-q3 !SZV-GTH-q3
       POTENTIAL GTH-PBE-q3
     &END KIND
 
