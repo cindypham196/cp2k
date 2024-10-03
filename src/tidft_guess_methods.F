@@ -1376,7 +1376,8 @@ CONTAINS
          IF ( norm_of_next .LT. (1.0_dp - warning_threshold) ) THEN
 
             IF (unit_nr > 0) THEN
-               WRITE(unit_nr, '(T2,F10.5,T50, 2I6)') norm_of_next, &
+!               WRITE(unit_nr, '(T2,F10.5,T50, 2I6)') norm_of_next, &
+               WRITE(*, *) norm_of_next, &
                   " norm for orbital ", NUnpaired+1, &
                   "(spin ", ispin , &
                   ") is too low to be considered spin paired."

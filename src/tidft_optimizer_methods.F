@@ -1003,8 +1003,8 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
 
       ! CINDY-
       TYPE(dbcsr_type)                                   :: tempB, projected_var_3
-      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE       :: energy_grad
-      REAL(KIND=dp)                                      :: E_grad_norm
+      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE       :: energy_grad, interstate_grad
+      REAL(KIND=dp)                                      :: E_grad_norm, interstate_norm
 
       CALL timeset(routineN, handle)
 
@@ -1612,8 +1612,9 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
       ! GRADIENT CALCULATIONS
 
       ! Nullify the gradient before accumulation
-      !CINDY: make a copy for energy grad component
+      !CINDY: make a copy for energy grad and interstate components
       ALLOCATE(energy_grad(nstates, 3))
+      ALLOCATE(interstate_grad(nstates, 3))
       DO stateI = 1, nstates
          DO ivar = 1, 3
             IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
@@ -1622,6 +1623,9 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
                !CINDY: make a copy for energy grad component
                CALL dbcsr_create(energy_grad(stateI,ivar), template = gradient_convergence_out(stateI,ivar))
                IF (my_grad_conv) CALL dbcsr_set(energy_grad(stateI, ivar), 0.0_dp)
+
+               CALL dbcsr_create(interstate_grad(stateI,ivar), template = gradient_convergence_out(stateI,ivar))
+               IF (my_grad_conv) CALL dbcsr_set(interstate_grad(stateI, ivar), 0.0_dp)
                !IF (gradient_components) THEN
                !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 1), 0.0_dp)
                !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 2), 0.0_dp)
@@ -2076,9 +2080,13 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
                            IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
                               CALL dbcsr_add(gradient_out(stateI,ivar), &
                                       gradient_temp(ivar), 1.0_dp, 1.0_dp)
+                              
                               IF (my_grad_conv) &
                                  CALL dbcsr_add(gradient_convergence_out(stateI,ivar), &
                                          gradient_temp(ivar), 1.0_dp, 1.0_dp)
+                                 ! CINDY: copy the interstate_grad component
+                                 CALL dbcsr_add(interstate_grad(stateI, ivar), &
+                                      gradient_temp(ivar), 1.0_dp, 1.0_dp)
                               CALL dbcsr_release(gradient_temp(ivar))
                            ENDIF
                         ENDDO ! ivar
@@ -2108,8 +2116,16 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
             tidft_env%e_states(1)%slater_det(1)%ncols_var, &
             metric_inv = tidft_env%mat_s_inv)
       WRITE(*,*) "Norm of energy gradient:", E_grad_norm
+      ! CINDY: compute interstate grad component norm
+      CALL tidft_optimizer_gradient_norm(interstate_grad, &
+            tidft_env%tidft_optimizer_pcg%which_gnorm, &
+            interstate_norm, &
+            tidft_env%e_states(1)%slater_det(1)%ncols_var, &
+            metric_inv = tidft_env%mat_s_inv)
+      WRITE(*,*) "Norm of interstate gradient:", interstate_norm
 
       DEALLOCATE(energy_grad)
+      DEALLOCATE(interstate_grad)
 
       ! Release derivatives wrt T
       DO ispin = 1, nspins
