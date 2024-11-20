@@ -187,14 +187,16 @@ CONTAINS
             ENDIF
 
             IF (current_no_of_states .EQ. 2) THEN
-            ! CINDY: put back init value for tidft_env%nstates
+               ! CINDY: put back init value for tidft_env%nstates
                tidft_env%nstates = nstates
-            ! Done with the ground state
-            ! Generate MO-based guess for the excited states
-!CINDY
-WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
+
+               IF (unit_nr > 0) THEN
+                  WRITE(*,*) "Ground state optimization is done"
+                  WRITE(*,*) "Generating initial guess for excited states..."
+               ENDIF
+
                CALL guess_excited_states_orbitals(tidft_env)
-            ! CINDY: keep going with state-by-state optimization
+               ! CINDY: keep going with the state-by-state optimization
                tidft_env%nstates = current_no_of_states
             ENDIF
 
@@ -1003,7 +1005,7 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
 
       ! CINDY-
       TYPE(dbcsr_type)                                   :: tempB, projected_var_3
-      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE       :: energy_grad, interstate_grad
+      TYPE(dbcsr_type), DIMENSION(:,:), ALLOCATABLE      :: energy_grad, interstate_grad
       REAL(KIND=dp)                                      :: E_grad_norm, interstate_norm
 
       CALL timeset(routineN, handle)
@@ -1616,16 +1618,19 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
       ALLOCATE(energy_grad(nstates, 3))
       ALLOCATE(interstate_grad(nstates, 3))
       DO stateI = 1, nstates
+      !RZK-WARNING: The loop here is from 1, not first_state
+      ! Is it essential to nullify gradients for all previously optimized states?
+      ! It might be important because of the norm calculation - only
+      ! current state is of interest, not the old ones
          DO ivar = 1, 3
             IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
                CALL dbcsr_set(gradient_out(stateI, ivar), 0.0_dp)
                IF (my_grad_conv) CALL dbcsr_set(gradient_convergence_out(stateI, ivar), 0.0_dp)
                !CINDY: make a copy for energy grad component
                CALL dbcsr_create(energy_grad(stateI,ivar), template = gradient_convergence_out(stateI,ivar))
-               IF (my_grad_conv) CALL dbcsr_set(energy_grad(stateI, ivar), 0.0_dp)
-
+               CALL dbcsr_set(energy_grad(stateI, ivar), 0.0_dp)
                CALL dbcsr_create(interstate_grad(stateI,ivar), template = gradient_convergence_out(stateI,ivar))
-               IF (my_grad_conv) CALL dbcsr_set(interstate_grad(stateI, ivar), 0.0_dp)
+               CALL dbcsr_set(interstate_grad(stateI, ivar), 0.0_dp)
                !IF (gradient_components) THEN
                !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 1), 0.0_dp)
                !   CALL dbcsr_set(gradient_components_out(stateI, ivar, 2), 0.0_dp)
@@ -1880,11 +1885,11 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
                      DO ivar = 1, 3
                         IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
                            CALL dbcsr_add(gradient_out(stateI, ivar), gradient_temp(ivar), 1.0_dp, 1.0_dp)
+                           ! CINDY: copy the E_grad component from the total grad
+                           CALL dbcsr_add(energy_grad(stateI, ivar), &
+                                   gradient_temp(ivar), 1.0_dp, 1.0_dp)
                            IF (my_grad_conv) &
                               CALL dbcsr_add(gradient_convergence_out(stateI, ivar), &
-                                      gradient_temp(ivar), 1.0_dp, 1.0_dp)
-                              ! CINDY: copy the E_grad component from the total grad
-                              CALL dbcsr_add(energy_grad(stateI, ivar), &
                                       gradient_temp(ivar), 1.0_dp, 1.0_dp)
                            CALL dbcsr_release(gradient_temp(ivar))
                         ENDIF
@@ -2106,7 +2111,7 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
          ENDDO ! idet
       ENDDO ! stateI
       DEALLOCATE(gradient_temp)
-      
+
       ! CINDY: compute energy grad component norm
       E_grad_norm = 0.0_dp
       interstate_norm = 0.0_dp
@@ -2115,14 +2120,27 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
             E_grad_norm, &
             tidft_env%e_states(1)%slater_det(1)%ncols_var, &
             metric_inv = tidft_env%mat_s_inv)
-      WRITE(*,*) "Norm of energy gradient:", E_grad_norm
+      IF (unit_nr > 0) WRITE(*,*) "Norm of energy gradient:", E_grad_norm
       ! CINDY: compute interstate grad component norm
       CALL tidft_optimizer_gradient_norm(interstate_grad, &
             tidft_env%tidft_optimizer_pcg%which_gnorm, &
             interstate_norm, &
             tidft_env%e_states(1)%slater_det(1)%ncols_var, &
             metric_inv = tidft_env%mat_s_inv)
-      WRITE(*,*) "Norm of interstate gradient:", interstate_norm
+      IF (unit_nr > 0) WRITE(*,*) "Norm of interstate gradient:", interstate_norm
+
+      DO stateI = first_state, nstates
+         DO ivar = 1, 3
+            IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
+IF (unit_nr > 0) WRITE(*,*) "Energy gradient"
+CALL dbcsr_print(energy_grad(stateI,ivar))
+IF (unit_nr > 0) WRITE(*,*) "INTERstate gradient"
+CALL dbcsr_print(interstate_grad(stateI,ivar))
+               CALL dbcsr_release(energy_grad(stateI,ivar))
+               CALL dbcsr_release(interstate_grad(stateI,ivar))
+            ENDIF
+         ENDDO ! ivar
+      ENDDO ! stateI
 
       DEALLOCATE(energy_grad)
       DEALLOCATE(interstate_grad)
@@ -2238,9 +2256,11 @@ WRITE(*,*) "DONE GS OPTIMIZATION, ENTER GUESS ES ORBS"
               gradient_out = grad )
       y0 = SUM(loss_components_out)
 
-WRITE(*,*)
-WRITE(*,*) "ANALYTICAL GRADIENT"
-WRITE(*,*)
+      IF (unit_nr > 0) THEN
+         WRITE(*,*)
+         WRITE(*,*) "ANALYTICAL GRADIENT"
+         WRITE(*,*)
+      ENDIF
       CALL tidft_optimizer_mainvar_print(grad, &
               tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
@@ -2329,9 +2349,12 @@ WRITE(*,*)
          ENDDO ! ivar
       ENDDO ! stateI
 
-WRITE(*,*)
-WRITE(*,*) "NUMERICAL GRADIENT"
-WRITE(*,*)
+      IF (unit_nr > 0) THEN
+         WRITE(*,*)
+         WRITE(*,*) "NUMERICAL GRADIENT"
+         WRITE(*,*)
+      ENDIF
+
       CALL tidft_optimizer_mainvar_print(gradient_out, &
               tidft_env%e_states(1)%slater_det(1)%ncols_var)
 
