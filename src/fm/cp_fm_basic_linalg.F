@@ -470,7 +470,7 @@ CONTAINS
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:) :: work
       INTEGER                                  :: i, j, info, liwork, lwork
 
-#if defined(__SCALAPACK)
+#if defined(__parallel)
       INTEGER, DIMENSION(9)                    :: desca
 #else
       INTEGER                                  :: lda, ldu, ldvt
@@ -496,7 +496,7 @@ CONTAINS
       ALLOCATE (diag(n))
       diag(:) = 0.0_dp
 
-#if defined(__SCALAPACK)
+#if defined(__parallel)
 
       ! Run workspace query
       ALLOCATE (work(1))
