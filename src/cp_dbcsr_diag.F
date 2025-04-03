@@ -34,8 +34,7 @@ MODULE cp_dbcsr_diag
    USE cp_fm_types,                     ONLY: cp_fm_create,&
                                               cp_fm_release,&
                                               cp_fm_type
-   USE cp_para_types,                   ONLY: cp_para_env_type
-   USE dbcsr_api,                       ONLY: dbcsr_get_info,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_get_info,&
                                               dbcsr_type,&
                                               dbcsr_create,&
                                               dbcsr_set,&
@@ -293,7 +292,7 @@ CONTAINS
 
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
       REAL(KIND=dp), INTENT(IN)                          :: new_min_eigenvalue
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'cp_dbcsr_shift_inverse'

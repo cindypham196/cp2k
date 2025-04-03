@@ -71,8 +71,7 @@ MODULE tidft_post_scf
    USE qs_operators_ao,                 ONLY: rRc_xyz_ao
    USE moments_utils,                   ONLY: get_reference_point
    USE kahan_sum,                       ONLY: accurate_dot_product
-   USE cp_blacs_env,                    ONLY: cp_blacs_env_release,&
-                                              cp_blacs_env_retain
+   USE cp_blacs_env,                    ONLY: cp_blacs_env_release
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_syevd
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm, &
@@ -82,10 +81,7 @@ MODULE tidft_post_scf
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE cp_para_env,                     ONLY: cp_para_env_release,&
-                                              cp_para_env_retain
-   USE cp_para_types,                   ONLY: cp_para_env_type
-   USE dbcsr_api,                       ONLY: &
+   USE cp_dbcsr_api,                    ONLY: &
         dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
         dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
         dbcsr_get_info, dbcsr_get_stored_coordinates, dbcsr_init_p, dbcsr_dot, &
@@ -114,7 +110,6 @@ MODULE tidft_post_scf
    USE kinds,                           ONLY: default_path_length,&
                                               dp
    USE mathlib,                         ONLY: binomial
-   USE message_passing,                 ONLY: mp_sum
    USE molecule_types,                  ONLY: get_molecule_set_info,&
                                               molecule_type
    USE mscfg_types,                     ONLY: get_matrix_from_submatrices,&
@@ -449,10 +444,11 @@ CONTAINS
          excitationE = energies(indexES) - energies(indexGS)
          tidft_env%e_states(indexES)%excitation_energy = excitationE
 
-         IF (unit_nr > 0) THEN
+         osc_strength = 2.0_dp/3.0_dp * excitationE * &
+            accurate_dot_product(trans_dipoles_from_GS(indexES, :, 1), trans_dipoles_from_GS(indexES, :, 1))
+         tidft_env%e_states(indexES)%osc_strength = osc_strength
 
-            osc_strength = 2.0_dp/3.0_dp * excitationE * &
-               accurate_dot_product(trans_dipoles_from_GS(indexES, :, 1), trans_dipoles_from_GS(indexES, :, 1))
+         IF (unit_nr > 0) THEN
 
             WRITE (unit_nr, '(1X,A6,I5,I5,F20.10,F7.2,3ES9.1E2,ES9.2E2)') &
                "TIDFT|", &
@@ -609,8 +605,6 @@ CONTAINS
 
 ! *****************************************************************************
 !> \brief NTO analysis
-!> \param matrix - input: initial matrix, output: the adjugate
-!> \param det - determinant
 !> \par History
 !>       2024.07 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
@@ -639,7 +633,8 @@ CONTAINS
       TYPE(cp_fm_type), ALLOCATABLE, DIMENSION(:, :)     :: evects
       TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
       REAL(kind=dp), DIMENSION(:), ALLOCATABLE           :: excitation_energies, &
-                                                            energies_temp
+                                                            energies_temp, &
+                                                            ostrength
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: index_true
       TYPE(tddfpt_ground_state_mos), DIMENSION(:), &
          POINTER                                         :: gs_mos
@@ -652,7 +647,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -726,6 +721,7 @@ CONTAINS
 
       ALLOCATE (evects(nspins, nstates - 1))
       ALLOCATE (excitation_energies(nstates - 1))
+      ALLOCATE (ostrength(nstates - 1))
 
       DO istate = 2, nstates
 
@@ -735,6 +731,10 @@ CONTAINS
          ! Store excitation energy in the correct order
          excitation_energies(istate - 1) = &
             tidft_env%e_states(indexES)%excitation_energy
+
+         ! Store oscillator strengths in the correct order
+         ostrength(istate - 1) = &
+            tidft_env%e_states(indexES)%osc_strength
 
          ! STEP 2. Compute canonical orbitals. Perhaps, it is better to do
          ! this outside NTO subroutine.
@@ -825,6 +825,7 @@ CONTAINS
               qs_env = qs_env, &
               evects = evects, &
               evals = excitation_energies, &
+              ostrength = ostrength, &
               gs_mos = gs_mos, &
               !matrix_s = tidft_env%mat_s, &
               matrix_s = matrix_s(1)%matrix, &
@@ -846,6 +847,7 @@ CONTAINS
       DEALLOCATE (evects)
 
       DEALLOCATE(excitation_energies)
+      DEALLOCATE(ostrength)
 
       DO ispin = nspins, 1, -1
          IF (ASSOCIATED(gs_mos(ispin)%mos_occ)) THEN

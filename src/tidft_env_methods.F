@@ -20,17 +20,16 @@ MODULE tidft_env_methods
                                               tidft_init_ks_matrices
    USE cp_dbcsr_cholesky,               ONLY: cp_dbcsr_cholesky_decompose,&
                                               cp_dbcsr_cholesky_invert
-   USE cp_para_env,                     ONLY: cp_para_env_release,&
-                                              cp_para_env_retain
-   USE cp_para_types,                   ONLY: cp_para_env_type
-   USE cp_blacs_env,                    ONLY: cp_blacs_env_release,&
-                                              cp_blacs_env_retain
+   USE message_passing,                 ONLY: mp_comm_type,&
+                                              mp_para_env_release,&
+                                              mp_para_env_type
+   USE cp_blacs_env,                    ONLY: cp_blacs_env_release
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_complete_redistribute, dbcsr_copy, dbcsr_copy_into_existing, dbcsr_create, &
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, &
         dbcsr_desymmetrize, dbcsr_distribution_get, dbcsr_distribution_new, &
         dbcsr_distribution_release, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
         dbcsr_get_block_p, dbcsr_get_info, dbcsr_get_num_blocks, dbcsr_get_stored_coordinates, &
@@ -302,7 +301,7 @@ CONTAINS
 
       ! define the output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -323,8 +322,8 @@ CONTAINS
                       has_unit_metric=tidft_env%orthogonal_basis, &
                       para_env=tidft_env%para_env, &
                       blacs_env=tidft_env%blacs_env)
-      CALL cp_para_env_retain(tidft_env%para_env)
-      CALL cp_blacs_env_retain(tidft_env%blacs_env)
+      CALL tidft_env%para_env%retain()
+      CALL tidft_env%blacs_env%retain()
 
       ! copy basic quantities
       IF (dft_control%uks) THEN
@@ -701,7 +700,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -794,7 +793,7 @@ CONTAINS
       DEALLOCATE(tidft_env%mat_phi_spin)
       DEALLOCATE(tidft_env%e_states)
 
-      CALL cp_para_env_release(tidft_env%para_env)
+      CALL mp_para_env_release(tidft_env%para_env)
       CALL cp_blacs_env_release(tidft_env%blacs_env)
 
       CALL timestop(handle)
@@ -831,7 +830,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -927,7 +926,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -1002,8 +1001,8 @@ CONTAINS
             ENDIF
          ENDDO
       ENDDO
-      
-      IF(unit_nr > 0) WRITE (*,*) "Start deallocating others"
+
+      IF(unit_nr > 0) WRITE (*,*) "Start deallocating other matrices"
       DEALLOCATE(tidft_env%intrastate_nonorthogonality_penalty_coeff)
       DEALLOCATE(tidft_env%grad_wrt_penalty_coeff)
       DEALLOCATE(tidft_env%mat_phi_inv)

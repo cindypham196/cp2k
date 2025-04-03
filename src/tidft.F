@@ -65,8 +65,6 @@ MODULE tidft
    USE qs_operators_ao,                 ONLY: rRc_xyz_ao
    USE moments_utils,                   ONLY: get_reference_point
    USE kahan_sum,                       ONLY: accurate_dot_product
-   USE cp_blacs_env,                    ONLY: cp_blacs_env_release,&
-                                              cp_blacs_env_retain
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_syevd
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm, &
@@ -76,12 +74,10 @@ MODULE tidft
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE cp_para_env,                     ONLY: cp_para_env_release,&
-                                              cp_para_env_retain
-   USE cp_para_types,                   ONLY: cp_para_env_type
+   USE message_passing,                 ONLY: mp_para_env_type
 ! CINDY: avoid using dbcsr_local
 !   USE dbcsr_local,                     ONLY: dbcsr_init_random
-   USE dbcsr_api,                       ONLY: &
+   USE cp_dbcsr_api,                    ONLY: &
         dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
         dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
         dbcsr_get_info, dbcsr_get_stored_coordinates, dbcsr_init_p, dbcsr_dot, &
@@ -107,7 +103,6 @@ MODULE tidft
    USE kinds,                           ONLY: default_path_length,&
                                               dp
    USE mathlib,                         ONLY: binomial
-   USE message_passing,                 ONLY: mp_sum
    USE molecule_types,                  ONLY: get_molecule_set_info,&
                                               molecule_type
    USE mscfg_types,                     ONLY: get_matrix_from_submatrices,&
@@ -224,7 +219,7 @@ CONTAINS
 !                                                           overlap_element
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cp_logger_type), POINTER                      :: logger
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(dbcsr_distribution_type)                      :: dist
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao 
       TYPE(dft_control_type), POINTER                    :: dft_control
@@ -243,7 +238,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -282,7 +277,7 @@ CONTAINS
                     para_env)
          ELSE
             CALL calculate_atomic_block_dm(rho_ao, &
-                    matrix_s(1)%matrix, particle_set, atomic_kind_set, qs_kind_set, &
+                    matrix_s(1)%matrix, atomic_kind_set, qs_kind_set, &
                     nspins, nelectron_spin, unit_nr, para_env)
          ENDIF
 
@@ -423,7 +418,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1

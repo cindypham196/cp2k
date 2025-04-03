@@ -29,8 +29,8 @@ MODULE cp_dbcsr_singular
    USE cp_fm_types,                     ONLY: cp_fm_create,&
                                               cp_fm_release,&
                                               cp_fm_type
-   USE cp_para_types,                   ONLY: cp_para_env_type
-   USE dbcsr_api,                       ONLY: &
+   USE message_passing,                 ONLY: mp_para_env_type
+   USE cp_dbcsr_api,                    ONLY: &
                                               dbcsr_create, dbcsr_multiply, dbcsr_add_on_diag, &
                                               dbcsr_release, dbcsr_set, dbcsr_type, &
                                               dbcsr_type_no_symmetry, dbcsr_get_info, dbcsr_get_diag, &
@@ -69,7 +69,7 @@ CONTAINS
       REAL(KIND=dp), INTENT(IN)                          :: zero_eps
       LOGICAL, INTENT(IN)                                :: spd_expected
       INTEGER, OPTIONAL, INTENT(IN)                      :: min_eigenvalues_to_nullify
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'cp_dbcsr_pseudoinverse'
@@ -168,7 +168,7 @@ CONTAINS
 
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
       REAL(KIND=dp), INTENT(INOUT)                       :: det
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'cp_dbcsr_adjugate'
@@ -214,7 +214,7 @@ CONTAINS
 
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
       REAL(KIND=dp), INTENT(INOUT)                       :: det
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'cp_dbcsr_determinant_generalized'

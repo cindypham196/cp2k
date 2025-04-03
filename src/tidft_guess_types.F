@@ -10,7 +10,7 @@
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
 MODULE tidft_guess_types
-   USE dbcsr_api,                       ONLY: dbcsr_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_type
    USE kinds,                           ONLY: dp
 #include "./base/base_uses.f90"
 

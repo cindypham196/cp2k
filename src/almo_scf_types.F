@@ -15,6 +15,7 @@
 MODULE almo_scf_types
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_dbcsr_api,                    ONLY: dbcsr_release,&
+                                              dbcsr_norm_maxabsnorm,&
                                               dbcsr_type
    USE domain_submatrix_types,          ONLY: domain_map_type,&
                                               domain_submatrix_type
@@ -87,6 +88,7 @@ MODULE almo_scf_types
                         max_iter_early = 0, &
                         max_iter_outer_loop = 0, &
                         trustr_algorithm = 0, &
+                        which_gnorm = dbcsr_norm_maxabsnorm, &
                         ndiis = 0 ! diis history length
 
       LOGICAL        :: early_stopping_on = .FALSE.

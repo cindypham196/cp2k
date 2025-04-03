@@ -12,8 +12,8 @@
 MODULE tidft_types
    USE almo_scf_types,                  ONLY: optimizer_options_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
-   USE cp_para_types,                   ONLY: cp_para_env_type
-   USE dbcsr_api,                       ONLY: dbcsr_type
+   USE message_passing,                 ONLY: mp_para_env_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_type
    USE kinds,                           ONLY: dp
    USE input_section_types,             ONLY: section_vals_type
 #include "./base/base_uses.f90"
@@ -113,13 +113,14 @@ MODULE tidft_types
       TYPE(slater_det_type), DIMENSION(:), ALLOCATABLE   :: slater_det
       REAL(KIND=dp)                                      :: state_energy
       REAL(KIND=dp)                                      :: excitation_energy
+      REAL(kind=dp)                                      :: osc_strength
 
    END TYPE e_state_type
 
    ! the structure contains general info about the system
    TYPE tidft_env_type
 
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
 
       LOGICAL                                            :: calc_forces, &

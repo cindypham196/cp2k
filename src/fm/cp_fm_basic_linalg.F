@@ -410,8 +410,9 @@ CONTAINS
             pivot_global(row_indices(i)) = 1
          END IF
       ENDDO
-      group = matrix_a%matrix_struct%para_env%group
-      CALL mp_sum(pivot_global, group)
+      !group = matrix_a%matrix_struct%para_env%group
+      !CALL mp_sum(pivot_global, group)
+      CALL matrix_a%matrix_struct%para_env%sum(pivot_global)
       exponent_of_minus_one = 0
       DO i = 1, n
          IF (pivot_global(i) .NE. 0) THEN
@@ -1803,8 +1804,9 @@ CONTAINS
                   pivot_global(row_indices(i)) = 1
                END IF
             ENDDO
-            group = matrix_lu%matrix_struct%para_env%group
-            CALL mp_sum(pivot_global, group)
+            !group = matrix_lu%matrix_struct%para_env%group
+            !CALL mp_sum(pivot_global, group)
+            CALL matrix_lu%matrix_struct%para_env%sum(pivot_global)
             exponent_of_minus_one = 0
             DO i = 1, n
                IF (pivot_global(i) .NE. 0) THEN

@@ -43,8 +43,8 @@ MODULE input_cp2k_tidft
                                               create_mos_molden_section
    USE kinds,                           ONLY: dp
    USE string_utilities,                ONLY: s2a
-   USE dbcsr_api, ONLY: &
-      dbcsr_norm_frobenius, dbcsr_norm_maxabsnorm
+   USE cp_dbcsr_api,                    ONLY: dbcsr_norm_frobenius, &
+                                              dbcsr_norm_maxabsnorm
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE

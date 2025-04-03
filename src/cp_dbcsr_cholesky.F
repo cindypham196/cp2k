@@ -30,6 +30,8 @@ MODULE cp_dbcsr_cholesky
    USE cp_fm_types,                     ONLY: cp_fm_create,&
                                               cp_fm_release,&
                                               cp_fm_type
+   USE kinds,                           ONLY: dp,&
+                                              sp
    USE message_passing,                 ONLY: mp_para_env_type
 #include "base/base_uses.f90"
 
@@ -60,7 +62,7 @@ CONTAINS
    SUBROUTINE cp_dbcsr_cholesky_decompose(matrix, n, para_env, blacs_env, failed)
       TYPE(dbcsr_type)                      :: matrix
       INTEGER, INTENT(in), OPTIONAL            :: n
-      TYPE(cp_para_env_type), POINTER          :: para_env
+      TYPE(mp_para_env_type), POINTER          :: para_env
       TYPE(cp_blacs_env_type), POINTER         :: blacs_env
       LOGICAL, INTENT(INOUT), OPTIONAL         :: failed
 

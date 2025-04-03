@@ -37,8 +37,8 @@ MODULE tidft_methods
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE cp_para_types,                   ONLY: cp_para_env_type
-   USE dbcsr_api,                       ONLY: &
+   USE message_passing,                 ONLY: mp_para_env_type
+   USE cp_dbcsr_api,                    ONLY: &
         dbcsr_add, dbcsr_add_on_diag, dbcsr_copy, dbcsr_create, dbcsr_distribution_get, &
         dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, dbcsr_frobenius_norm, &
         dbcsr_get_block_p, dbcsr_get_diag, dbcsr_get_info, dbcsr_get_stored_coordinates, &
@@ -1081,7 +1081,7 @@ CONTAINS
       CALL timeset(routineN, handle)
 
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -1318,8 +1318,7 @@ CONTAINS
       CALL dbcsr_filter(matrix_dest_selected_cols,HUGE(1.0_dp))
       CALL dbcsr_complete_redistribute( &
               matrix_source_selected_cols, &
-              matrix_dest_selected_cols, &
-              keep_sparsity=.FALSE.)
+              matrix_dest_selected_cols)
 
       ! now the data can be copied to matrix_dest
       CALL dbcsr_work_create(matrix_dest, work_mutable=.TRUE.)
@@ -1469,7 +1468,7 @@ CONTAINS
       !  C. copy_data_from_selected_columns_matrix
 
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -1748,8 +1747,7 @@ CONTAINS
          CALL dbcsr_filter(matrix_B_selected_cols,HUGE(1.0_dp))
          CALL dbcsr_complete_redistribute( &
                  matrix_A_selected_cols, &
-                 matrix_B_selected_cols, &
-                 keep_sparsity=.FALSE.)
+                 matrix_B_selected_cols)
 
          ! now the data can be copied to matrix_B
          CALL dbcsr_work_create(matrix_B, work_mutable=.TRUE.)
@@ -1787,8 +1785,7 @@ CONTAINS
          CALL dbcsr_filter(matrix_A_selected_cols,HUGE(1.0_dp))
          CALL dbcsr_complete_redistribute( &
                  matrix_B_selected_cols_copy, &
-                 matrix_A_selected_cols, &
-                 keep_sparsity=.FALSE.)
+                 matrix_A_selected_cols)
 
          ! now the data can be copied to matrix_A
          CALL dbcsr_work_create(matrix_A, work_mutable=.TRUE.)
@@ -1928,8 +1925,7 @@ CONTAINS
       !CALL dbcsr_print(matrix_intermediate)
       CALL dbcsr_set(matrix_stitched, 0.0_dp)
       CALL dbcsr_filter(matrix_stitched,HUGE(1.0_dp))
-      CALL dbcsr_complete_redistribute(matrix_intermediate, matrix_stitched, &
-              keep_sparsity=.FALSE.)
+      CALL dbcsr_complete_redistribute(matrix_intermediate, matrix_stitched)
 
       CALL dbcsr_release(matrix_intermediate)
 
@@ -1980,8 +1976,7 @@ CONTAINS
 
       CALL create_matrix_column_stitched(matrix_left, matrix_right, matrix_intermediate)
       CALL dbcsr_set(matrix_intermediate, 0.0_dp)
-      CALL dbcsr_complete_redistribute(matrix_stitched, matrix_intermediate, &
-              keep_sparsity=.FALSE.)
+      CALL dbcsr_complete_redistribute(matrix_stitched, matrix_intermediate)
 
       CALL dbcsr_get_info(matrix_left, nblkcols_total=nblocks_offset)
       CALL dbcsr_set(matrix_left, 0.0_dp)
@@ -2120,7 +2115,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -2310,7 +2305,7 @@ CONTAINS
                                                                       template_sigma, mat_s
       LOGICAL                                                      :: covariant_input
       REAL(KIND=dp), INTENT(IN)                                    :: eps_filter
-      TYPE(cp_para_env_type), POINTER                              :: para_env
+      TYPE(mp_para_env_type), POINTER                              :: para_env
       TYPE(cp_blacs_env_type), POINTER                             :: blacs_env
       LOGICAL, OPTIONAL                                            :: post_multiply
 

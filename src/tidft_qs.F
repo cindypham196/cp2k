@@ -35,8 +35,8 @@ MODULE tidft_qs
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
    USE cp_units,                        ONLY: cp_unit_to_cp2k
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_complete_redistribute, dbcsr_copy, dbcsr_copy_into_existing, dbcsr_create, &
+   USE cp_dbcsr_api,                       ONLY: &
+        dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, &
         dbcsr_desymmetrize, dbcsr_distribution_get, dbcsr_distribution_new, &
         dbcsr_distribution_release, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
         dbcsr_get_block_p, dbcsr_get_info, dbcsr_get_num_blocks, dbcsr_get_stored_coordinates, &
@@ -52,7 +52,6 @@ MODULE tidft_qs
                                               do_bondparm_covalent,&
                                               do_bondparm_vdw
    USE kinds,                           ONLY: dp
-   USE message_passing,                 ONLY: mp_allgather
    USE molecule_types,                  ONLY: get_molecule_set_info,&
                                               molecule_type
    USE particle_types,                  ONLY: particle_type
@@ -131,7 +130,7 @@ CONTAINS
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
-      IF (logger%para_env%ionode) THEN
+      IF (logger%para_env%is_source()) THEN
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
@@ -808,7 +807,7 @@ CONTAINS
 !tidft
 !tidft      ! get a useful output_unit
 !tidft      logger => cp_get_default_logger()
-!tidft      IF (logger%para_env%ionode) THEN
+!tidft      IF (logger%para_env%is_source()) THEN
 !tidft         unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
 !tidft      ELSE
 !tidft         unit_nr = -1

@@ -906,11 +906,12 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief ...
 ! **************************************************************************************************
-   SUBROUTINE dbcsr_init_random(matrix, keep_sparsity)
+   SUBROUTINE dbcsr_init_random(matrix, keep_sparsity, mini_seed)
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
       LOGICAL, OPTIONAL                                  :: keep_sparsity
+      INTEGER, INTENT(IN), OPTIONAL                      :: mini_seed
 
-      CALL dbcsr_init_random_prv(matrix%prv, keep_sparsity=keep_sparsity)
+      CALL dbcsr_init_random_prv(matrix%prv, keep_sparsity=keep_sparsity, mini_seed=mini_seed)
    END SUBROUTINE dbcsr_init_random
 
 ! **************************************************************************************************
