@@ -2115,10 +2115,10 @@ CONTAINS
       DO stateI = first_state, nstates
          DO ivar = 1, 3
             IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
-IF (unit_nr > 0) WRITE(*,*) "Energy gradient"
-CALL dbcsr_print(energy_grad(stateI,ivar))
-IF (unit_nr > 0) WRITE(*,*) "INTERstate gradient"
-CALL dbcsr_print(interstate_grad(stateI,ivar))
+!IF (unit_nr > 0) WRITE(*,*) "Energy gradient"
+!CALL dbcsr_print(energy_grad(stateI,ivar))
+!IF (unit_nr > 0) WRITE(*,*) "INTERstate gradient"
+!CALL dbcsr_print(interstate_grad(stateI,ivar))
                CALL dbcsr_release(energy_grad(stateI,ivar))
                CALL dbcsr_release(interstate_grad(stateI,ivar))
             ENDIF

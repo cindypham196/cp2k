@@ -28,15 +28,15 @@
     ROKS                            TRUE
     !UKS                             TRUE
     &QS
-      TIDFT                         T !F
+      TIDFT                         T
       EPS_DEFAULT                   1.0E-11
     &END QS
 
     &TIDFT
-      N_EXCITED_STATES              4 !10 ! 5!2
+      N_EXCITED_STATES              1 !10 ! 5!2
       SUGGESTED_MO_BLOCK_SIZE       10
       EPS_FILTER                    1.0E-12
-      SPIN_PURE                     F
+      SPIN_PURE                     T
       MAX_UNPAIR                    1
       MO_GUESS_RANDOM_FRAC          0.1
       MO_GUESS_RANDOM_SEED          301
@@ -49,11 +49,11 @@
       INTERSTATE_COMPONENT          TRUE
 
       &TIDFT_OPTIMIZER_PCG
-        PRECONDITIONER             QHQ_S
-        PREC_WEIGHT_OVERLAP        0.85 !0.5
+        PRECONDITIONER             S !QHQ_S
+        PREC_WEIGHT_OVERLAP        0.95 !0.5
         EPS_ERROR                  1.0E-6
         WHICH_GRADIENT_NORM        RMS
-        MAX_ITER                   50
+        MAX_ITER                   500
         MAX_ITER_OUTER_LOOP        20
         LIN_SEARCH_EPS_ERROR       0.2
         LIN_SEARCH_STEP_SIZE_GUESS 0.05
@@ -64,7 +64,7 @@
         INTRASTATE_NON_PENALTY_STRENGTH    1.0E-5
         INTERSTATE_NON_PENALTY_STRENGTH    10 !1.0E-1 !1.0E-3
         PENALTY_STRENGTH_INCREASE_FACTOR   2.0
-        ALLOWED_DETERMINANT_DEVIATION      1E-4
+        MAX_NORM_PHI_OFF_DIAG              1E-4
         MAX_CP_STEP                         1 !4
         LOOSE_EPS_SCF                     1E-2
       &END PENALTY
@@ -74,6 +74,13 @@
         MIN_EXC_ENERGY    0.00
         MAX_EXC_ORDER     1 !10
       &END WF_GUESS
+
+      &PRINT
+        &NTO_ANALYSIS
+          CUBE_FILES T
+        &END
+        !INTENSITY_THRESHOLD    0.0001
+      &END PRINT
 
     &END TIDFT
 
@@ -116,7 +123,7 @@
   &END DFT
   &SUBSYS
     &CELL
-      ABC  9 9 9
+      ABC  12 12 12
       MULTIPLE_UNIT_CELL 1 1 1
       PERIODIC NONE
     &END CELL
@@ -138,10 +145,34 @@
     &KIND C
       BASIS_SET DZVP-GTH
       POTENTIAL GTH-BLYP-q4
+      &BS
+        &ALPHA
+           NEL     -1
+           N        2
+           L        1
+        &END ALPHA
+        &BETA
+           NEL     +1
+           N        2
+           L        1
+        &END BETA
+      &END BS
     &END KIND
     &KIND O
       BASIS_SET DZVP-GTH   !aug-TZV2P-GTH !
       POTENTIAL GTH-BLYP-q6
+      &BS
+        &ALPHA
+           NEL     +1
+           N        2
+           L        1
+        &END ALPHA
+        &BETA
+           NEL     -1
+           N        2
+           L        1
+        &END BETA
+      &END BS
     &END KIND
   &END SUBSYS
 &END FORCE_EVAL
