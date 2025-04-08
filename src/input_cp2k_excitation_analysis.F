@@ -68,7 +68,6 @@ CONTAINS
    SUBROUTINE create_nto_analysis_section(section)
 
       TYPE(section_type), POINTER                        :: section
-
       TYPE(keyword_type), POINTER                        :: keyword
 
       CPASSERT(.NOT. ASSOCIATED(section))
@@ -91,6 +90,22 @@ CONTAINS
                           description="Print NTOs on Cube Files", &
                           usage="CUBE_FILES {logical}", repeats=.FALSE., n_var=1, &
                           default_l_val=.FALSE., lone_keyword_l_val=.TRUE., type_of_var=logical_t)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="INTENSITY_THRESHOLD", &
+                          description="Threshold for oscillator strength to screen states.", &
+                          usage="Intensity_threshold 0.01", &
+                          n_var=1, &
+                          type_of_var=real_t, &
+                          default_r_val=0.0_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="STATE_LIST", &
+                          description="Specifies a list of states for the NTO calculations.", &
+                          usage="STATE_LIST {integer} {integer} .. {integer}", &
+                          n_var=-1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

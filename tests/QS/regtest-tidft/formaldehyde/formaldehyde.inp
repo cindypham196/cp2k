@@ -29,13 +29,13 @@
     !UKS                             TRUE
     &QS
       TIDFT                         T
-      EPS_DEFAULT                   1.0E-11
+      EPS_DEFAULT                   1.0E-10
     &END QS
 
     &TIDFT
       N_EXCITED_STATES              1 !10 ! 5!2
       SUGGESTED_MO_BLOCK_SIZE       10
-      EPS_FILTER                    1.0E-12
+      EPS_FILTER                    1.0E-9
       SPIN_PURE                     F
       MAX_UNPAIR                    1
       MO_GUESS_RANDOM_FRAC          0.1
@@ -51,7 +51,7 @@
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             S !QHQ_S
         PREC_WEIGHT_OVERLAP        0.95 !0.5
-        EPS_ERROR                  1.0E-6
+        EPS_ERROR                  1.0E-5
         WHICH_GRADIENT_NORM        RMS
         MAX_ITER                   500
         MAX_ITER_OUTER_LOOP        20
