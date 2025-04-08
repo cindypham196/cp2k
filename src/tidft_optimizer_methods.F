@@ -10,6 +10,9 @@
 !> \author Rustam Z Khaliullin
 ! **************************************************************************************************
 MODULE tidft_optimizer_methods
+   USE input_section_types,             ONLY: section_vals_get_subs_vals,&
+                                              section_vals_type,&
+                                              section_vals_val_get
    USE population_analyses,             ONLY: lowdin_population_analysis,&
                                               mulliken_population_analysis
    USE almo_scf_methods,                ONLY: almo_scf_t_to_proj,&
@@ -24,6 +27,10 @@ MODULE tidft_optimizer_methods
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
+   USE cp_output_handling,              ONLY: cp_p_file,&
+                                              cp_print_key_finished_output,&
+                                              cp_print_key_should_output,&
+                                              cp_print_key_unit_nr
    USE tidft_guess_methods,             ONLY: construct_canonical_orbitals,&
                                               guess_excited_states_orbitals
    USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_syevd
@@ -945,7 +952,9 @@ CONTAINS
                                                             nspins, unit_nr, nmos_stateI, &
                                                             stateI, ivar, nstates, idet, &
                                                             ndets, slaterI, stateJ, &
-                                                            nmos_stateJ, first_state
+                                                            nmos_stateJ, &
+                                                            first_state, &
+                                                            phi_output_unit
       LOGICAL                                            :: aspc_guess, my_silent, &
                                                             my_grad_conv
       REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
@@ -984,6 +993,7 @@ CONTAINS
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:,:,:)    :: mat_g_energy
       INTEGER                                            :: opposite_spin, para_group_handle
       TYPE(mp_comm_type)                                 :: para_group
+      TYPE(section_vals_type), POINTER                   :: input, tidft_section
 
       ! CINDY-
       TYPE(dbcsr_type)                                   :: tempB, projected_var_3
@@ -991,6 +1001,8 @@ CONTAINS
       REAL(KIND=dp)                                      :: E_grad_norm, interstate_norm
 
       CALL timeset(routineN, handle)
+
+      NULLIFY (input, logger, tidft_section)
 
       my_silent=.FALSE.
       IF (PRESENT(silent)) my_silent=silent
@@ -1006,6 +1018,9 @@ CONTAINS
       ELSE
          unit_nr = -1
       ENDIF
+
+      CALL get_qs_env(qs_env, input=input)
+      tidft_section => section_vals_get_subs_vals(input, "DFT%TIDFT")
 
       ! supress output if necessary
       IF (my_silent) unit_nr = -1
@@ -1536,12 +1551,16 @@ CONTAINS
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,1)
          ENDIF
 
+         phi_output_unit = cp_print_key_unit_nr(logger, tidft_section, &
+            "PRINT%INTERSTATE_OVERLAP", &
+            extension=".phiLog")
+
          ! Print phi matrix
-         IF (unit_nr > 0) THEN
-            WRITE (unit_nr, *)
-            WRITE (unit_nr, *) "Phi matrix"
+         IF (phi_output_unit > 0) THEN
+            WRITE (phi_output_unit, *)
+            WRITE (phi_output_unit, *) "Interstate overlap matrix"
             DO ivar = 1, nstates
-               WRITE (unit_nr,'(T2,15ES9.1E2)') tidft_env%mat_phi(ivar, 1:nstates)
+               WRITE (phi_output_unit,'(T2,15ES9.1E2)') tidft_env%mat_phi(ivar, 1:nstates)
             ENDDO
          ENDIF
 

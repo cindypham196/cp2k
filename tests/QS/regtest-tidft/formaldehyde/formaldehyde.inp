@@ -36,7 +36,7 @@
       N_EXCITED_STATES              1 !10 ! 5!2
       SUGGESTED_MO_BLOCK_SIZE       10
       EPS_FILTER                    1.0E-12
-      SPIN_PURE                     T
+      SPIN_PURE                     F
       MAX_UNPAIR                    1
       MO_GUESS_RANDOM_FRAC          0.1
       MO_GUESS_RANDOM_SEED          301
@@ -76,6 +76,8 @@
       &END WF_GUESS
 
       &PRINT
+        &INTERSTATE_OVERLAP ON
+        &END INTERSTATE_OVERLAP
         &NTO_ANALYSIS
           CUBE_FILES T
         &END

@@ -13,7 +13,9 @@ MODULE input_cp2k_tidft
                                               Khaliullin2013,&
                                               Scheiber2018
    USE cp_output_handling,              ONLY: cp_print_key_section_create,&
-                                              low_print_level
+                                              low_print_level,&
+                                              debug_print_level,&
+                                              add_last_numeric
    USE input_constants,                 ONLY: &
         use_mom_ref_coac, use_mom_ref_com, use_mom_ref_user, use_mom_ref_zero, &
         almo_deloc_none, almo_deloc_scf, almo_deloc_x, almo_deloc_x_then_scf, &
@@ -573,12 +575,19 @@ CONTAINS
       TYPE(section_type), POINTER                        :: section
 
       TYPE(section_type), POINTER                        :: subsection
+      TYPE(section_type), POINTER                        :: print_key
 
       CPASSERT(.NOT. ASSOCIATED(section))
-      NULLIFY (section)
+      NULLIFY (section, print_key)
 
       CALL section_create(section, __LOCATION__, name="PRINT", &
-                          description="Printing of information during the TIDFT run.", repeats=.FALSE.)
+                          description="Printing of information during TIDFT runs.", repeats=.FALSE.)
+
+      CALL cp_print_key_section_create(print_key, __LOCATION__, "INTERSTATE_OVERLAP", &
+                                       description="Requests printing of the interstate overlap matrix.", &
+                                       print_level=debug_print_level, add_last=add_last_numeric, filename="__STD_OUT__")
+      CALL section_add_subsection(section, print_key)
+      CALL section_release(print_key)
 
       NULLIFY (subsection)
       CALL create_nto_analysis_section(subsection)
