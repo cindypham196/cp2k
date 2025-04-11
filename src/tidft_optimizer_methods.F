@@ -88,8 +88,7 @@ MODULE tidft_optimizer_methods
 
    PUBLIC :: tidft_variational_optimization
 
-   LOGICAL, PARAMETER :: debug_mode = .TRUE.
-   LOGICAL, PARAMETER :: safe_mode = .FALSE.
+   LOGICAL, PARAMETER :: debug_mode = .FALSE.
 
 CONTAINS
 
@@ -320,7 +319,7 @@ CONTAINS
 
             WRITE (unit_nr,'(T2,A49,I30)') "Iteration for penalty strenght update:", iteration
             DO stateI = first_state, tidft_env%nstates
-               WRITE (unit_nr, '(T2,A49,I6,F24.10)') "State and its INTRAstate penalty strength:", stateI, &
+               WRITE (unit_nr, '(T2,A49,I6,F24.10)') "State and its intrastate penalty strength:", stateI, &
                   tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI)
             ENDDO
             WRITE (unit_nr, '(T2,A49,F30.10)') "INTERstate penalty strength:", &
@@ -806,7 +805,8 @@ CONTAINS
                      ! so it always restarts from a safe step size
                      step_size = optimizer%lin_search_step_size_guess
                   ENDIF
-                  IF (unit_nr > 0) THEN
+                  !IF (unit_nr > 0) THEN
+                  IF (.FALSE.) THEN
                      WRITE (unit_nr, '(T2,A12,A5,4A14)') " ", " ", "Line position", "Line function", &
                         "Line grad", "Next step"
                      WRITE (unit_nr, '(T2,A12,I5,4F14.4)') "Line search", cg_iteration, &
@@ -847,7 +847,8 @@ CONTAINS
                      ENDIF
                   ENDIF
                   ! end alternative LS types
-                  IF (unit_nr > 0) THEN
+                  !IF (unit_nr > 0) THEN
+                  IF (.FALSE.) THEN
                      WRITE (unit_nr, '(T2,A12,A5,4A14)') " ", " ", "Line position", "Line function", &
                         "Line grad", "Next step"
                      WRITE (unit_nr, '(T2,A12,I5,4F14.4)') "Line search", cg_iteration, &
@@ -948,13 +949,16 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       CHARACTER(LEN=default_path_length)                 :: file_name, project_name
+      CHARACTER(LEN=30)                                  :: spinString
       INTEGER                                            :: handle, iaspc, ispin, istore, naspc, &
                                                             nspins, unit_nr, nmos_stateI, &
                                                             stateI, ivar, nstates, idet, &
                                                             ndets, slaterI, stateJ, &
                                                             nmos_stateJ, &
                                                             first_state, &
-                                                            phi_output_unit
+                                                            phi_unit_nr, &
+                                                            debug_unit_nr, &
+                                                            loss_unit_nr
       LOGICAL                                            :: aspc_guess, my_silent, &
                                                             my_grad_conv
       REAL(KIND=dp)                                      :: alpha, cs_pos, energy, kTS_sum, &
@@ -1021,11 +1025,22 @@ CONTAINS
 
       CALL get_qs_env(qs_env, input=input)
       tidft_section => section_vals_get_subs_vals(input, "DFT%TIDFT")
+      phi_unit_nr = cp_print_key_unit_nr(logger, tidft_section, &
+         "PRINT%INTERSTATE_OVERLAP", extension=".phiLog")
+      loss_unit_nr = cp_print_key_unit_nr(logger, tidft_section, &
+         "PRINT%LOSS_FUNCTION_COMPONENTS", extension=".lossLog")
+      debug_unit_nr = cp_print_key_unit_nr(logger, tidft_section, &
+         "PRINT%DEBUG_INFO", extension=".debugLog")
 
       ! supress output if necessary
-      IF (my_silent) unit_nr = -1
+      IF (my_silent) THEN
+         unit_nr = -1
+         phi_unit_nr = -1
+         loss_unit_nr = -1
+         debug_unit_nr = -1
+      ENDIF
 
-      ! to re-use some almo_scf subroutines set 
+      ! to re-use some almo_scf subroutines set
       ! nocc_of_domain to the negative number
       ALLOCATE(fake_e_per_block(1))
       fake_e_per_block(:) = -1
@@ -1251,8 +1266,6 @@ CONTAINS
 
                   ! Create projectors only if there are electrons of this spin
                   IF (tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin).GT.0) THEN
-!WRITE(*,*) "State, Det, Spin: ", stateI, idet, ispin
-!CALL dbcsr_print(tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin))
                      ! compute projectors from electronic states
                      CALL almo_scf_t_to_proj(t=tidft_env%e_states(stateI)%slater_det(idet)%mat_t(ispin), &
                                              p=mat_proj(ispin), &
@@ -1307,9 +1320,9 @@ CONTAINS
                   CALL dbcsr_scale(mat_proj(1), 0.5_dp)
                ENDIF
 
-               IF (unit_nr > 0 .AND. ndets.EQ.2) THEN
-                  WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Energy of Slater determinant", idet, energy
-               ENDIF
+               !IF (unit_nr > 0 .AND. ndets.EQ.2) THEN
+               !   WRITE (unit_nr, '(T2,A28,I10,F40.10)') "Energy of Slater determinant", idet, energy
+               !ENDIF
 
                IF (idet.EQ.1) THEN
                   energy_singlet = energy
@@ -1324,20 +1337,15 @@ CONTAINS
 
             ENDDO ! idet
 
-            state_energy = 2*energy_singlet-energy_triplet
-            IF (unit_nr > 0) THEN
-               WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State", stateI, state_energy
-            ENDIF
+            state_energy = 2.0_dp*energy_singlet-energy_triplet
+            !IF (unit_nr > 0) THEN
+            !   WRITE (unit_nr, '(T2,A28,I10,F40.10)') "State", stateI, state_energy
+            !ENDIF
             tidft_env%e_states(stateI)%state_energy = state_energy
 
             obj_energy = obj_energy + state_energy
 
          ENDDO ! stateI
-
-         !IF (unit_nr > 0) THEN
-         !   WRITE (unit_nr, '(T2,A38,F40.10)') "Sum of energies of all states", obj_energy
-         !   WRITE (unit_nr, '()')
-         !ENDIF
 
          DEALLOCATE(mat_proj)
 
@@ -1348,7 +1356,7 @@ CONTAINS
       qs_energy%total = obj_energy
 
       ! Pass the result up
-      loss_components_out(1) = obj_energy 
+      loss_components_out(1) = obj_energy
 
       DEALLOCATE(fake_e_per_block)
 
@@ -1359,23 +1367,23 @@ CONTAINS
       tidft_env%mat_phi_inv(:,:) = 0.0_dp
 
       intrastate_nonorthogonality_penalty = 0.0_dp
-      IF (intrastate_penalty_component) THEN 
+      IF (intrastate_penalty_component) THEN
       !! compute intrastate nonorthogonality penalty
 
          DO stateI = first_state, nstates
 
             tidft_env%grad_wrt_penalty_coeff(stateI) = 0.0_dp
 
+            ! if tidft_env%triplet_correction only triplet determinant is used
             IF (tidft_env%triplet_correction) THEN
                idet = 2
             ELSE
                idet = 1
             ENDIF
 
-            !DO idet = 1, ndets
-
-            !   IF (tidft_env%triplet_correction .AND. idet.EQ.1) cycle ! only triplet determinant is used
-
+            ! RZK-WARNING: for nspins = 1 should the terms be multiplied
+            ! by 2 for consistency? are gradients multiplied by 2?
+            tidft_env%omega_intra(stateI, :) = 0.0_dp
             DO ispin = 1, nspins
 
                nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
@@ -1398,33 +1406,22 @@ CONTAINS
                           para_env = tidft_env%para_env, &
                           blacs_env = tidft_env%blacs_env)
 
-                  !IF (unit_nr > 0) THEN
-                  !   WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
-                  !                      "Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
-                  !ENDIF
-
                   IF (debug_mode) THEN
                      CALL determinant(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
                              determinant_spd, &
-                             tidft_env%eps_filter)
-                     IF (unit_nr > 0) THEN
-                        WRITE (unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
+                             tidft_env%eps_filter, silent=.TRUE.)
+                     IF (debug_unit_nr > 0) THEN
+                        WRITE (debug_unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
                            "State, Slater, Spin:", stateI, idet, ispin, &
                            "SPD Determinant: ", determinant_spd
-                        WRITE (unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
+                        WRITE (debug_unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
                            "State, Slater, Spin:", stateI, idet, ispin, &
                            "GEN Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
                      ENDIF
                   ENDIF
 
-                  IF (tidft_env%mat_phi_spin(stateI,stateI,ispin) .lt. 0.0_dp) THEN
-                     IF (unit_nr > 0) THEN
-                        WRITE (unit_nr, '(T2,A25,I10,2I2,A25,ES14.7)') &
-                           "State, Slater, Spin:", stateI, idet, ispin, &
-                           "Determinant: ", tidft_env%mat_phi_spin(stateI,stateI,ispin)
-                     ENDIF
-                     CPABORT("Negative determinant of a semi-positive definite matrix")
-                  ENDIF
+                  ! Negative determinant of a semi-positive definite matrix
+                  CPASSERT(tidft_env%mat_phi_spin(stateI,stateI,ispin) .ge. 0.0_dp)
 
                   ! compute the product of the diagonal elements
                   CALL dbcsr_get_info(tidft_env%mat_sigma(stateI,stateI,idet,ispin), &
@@ -1437,27 +1434,32 @@ CONTAINS
                   DetDiagonalSigma = PRODUCT(diagonal)
                   DEALLOCATE(diagonal)
 
+                  tidft_env%det_sig_diagonal(stateI,ispin) = DetDiagonalSigma
+                  tidft_env%det_sig_normalized(stateI,ispin) = &
+                     tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
+
                   IF (unit_nr > 0) THEN
 
                      !WRITE (unit_nr, *) "StateI, Slater, Spin: ", stateI, idet, ispin, &
                      !                   "Det. diagon: ", DetDiagonalSigma
 
-                     ! CINDY:increase decimals from F21.16 to F21.19 in exponent form
-                     WRITE (unit_nr, '(T2,A23,I5,2I2,A25,ES14.7)') & 
-                        "State, Slater, Spin: ", stateI, idet, ispin, &
-                        "Normalized determinant: ", &
-                        tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
+                     !WRITE (unit_nr, '(T2,A23,I5,2I2,A25,ES14.7)') & 
+                     !   "State, Slater, Spin: ", stateI, idet, ispin, &
+                     !   "Normalized determinant: ", &
+                     !   tidft_env%mat_phi_spin(stateI,stateI,ispin) / DetDiagonalSigma
 
                   ENDIF
-                  penalty_stateI = - tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI) * &
-                     ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
+
+                  tidft_env%omega_intra(stateI, ispin) = &
+                     - ( LOG(tidft_env%mat_phi_spin(stateI,stateI,ispin)) - LOG(DetDiagonalSigma) )
 
                   intrastate_nonorthogonality_penalty = intrastate_nonorthogonality_penalty + &
-                     penalty_stateI
+                     tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI) * &
+                     tidft_env%omega_intra(stateI, ispin)
 
                   ! Save each component of the gradient wrt to the INTRAstate penalty stregth
                   tidft_env%grad_wrt_penalty_coeff(stateI) = tidft_env%grad_wrt_penalty_coeff(stateI) + &
-                     penalty_stateI / tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI)
+                     tidft_env%omega_intra(stateI, ispin)
 
                ENDIF ! zero MOs for state I
 
@@ -1535,55 +1537,70 @@ CONTAINS
             ENDDO ! idet
          ENDDO ! stateI
 
-         ! Print phi matrices
-         !DO ispin = 1, nspins
-         !   WRITE (*,*) "Phi matrix, spin ", ispin
-         !   DO ivar = 1, nstates
-         !      WRITE (*,*) tidft_env%mat_phi_spin(ivar, 1:nstates, ispin)
-         !   ENDDO
-         !   WRITE (*,*)
-         !ENDDO
+         idet = 1
+         IF (tidft_env%triplet_correction) idet = 2
+
+         tidft_env%det_phi_diagonal(:) = 1.0_dp
+         DO ispin = 1, nspins
+
+            nmos_stateI = tidft_env%e_states(1)%slater_det(idet)%nelectrons_ab(ispin)
+            IF ( nmos_stateI .GT. 0) THEN
+
+               tidft_env%det_phi_diagonal(ispin) = 1.0_dp
+               DO ivar = 1, nstates
+                  tidft_env%det_phi_diagonal(ispin) = &
+                     tidft_env%det_phi_diagonal(ispin) * &
+                     tidft_env%mat_phi_spin(ivar,ivar,ispin)
+               ENDDO
+               CALL determinant_local(tidft_env%mat_phi_spin(:,:,ispin), &
+                       tidft_env%det_phi_normalized(ispin), &
+                       nstates)
+               tidft_env%det_phi_normalized(ispin) = &
+                  tidft_env%det_phi_normalized(ispin)/tidft_env%det_phi_diagonal(ispin)
+
+               tidft_env%omega_inter(ispin) = -LOG(tidft_env%det_phi_normalized(ispin))
+
+            ENDIF ! zero MOs for state I
+
+         ENDDO ! ispin
 
          ! Hadamard product of spin matrices to obtain full phi
          IF (nspins .EQ. 2) THEN
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,2)
+            tidft_env%det_mat_phi = &
+               tidft_env%det_phi_normalized(1) * &
+               tidft_env%det_phi_normalized(2)
          ELSE
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,1)
-         ENDIF
-
-         phi_output_unit = cp_print_key_unit_nr(logger, tidft_section, &
-            "PRINT%INTERSTATE_OVERLAP", &
-            extension=".phiLog")
-
-         ! Print phi matrix
-         IF (phi_output_unit > 0) THEN
-            WRITE (phi_output_unit, *)
-            WRITE (phi_output_unit, *) "Interstate overlap matrix"
-            DO ivar = 1, nstates
-               WRITE (phi_output_unit,'(T2,15ES9.1E2)') tidft_env%mat_phi(ivar, 1:nstates)
-            ENDDO
+            tidft_env%det_mat_phi = &
+               tidft_env%det_phi_normalized(1) ** 2
          ENDIF
 
          ! compute the product of the diagonal elements
-         DetDiagonalSigma = 1.0_dp
-         DO ivar = 1, nstates
-            DetDiagonalSigma = DetDiagonalSigma * tidft_env%mat_phi(ivar,ivar)
-         ENDDO
-         CALL determinant_local(tidft_env%mat_phi, determinant_spd, nstates)
-         IF (unit_nr > 0) THEN
-            WRITE (unit_nr, '(T2,A38,F40.10)') "Determinant of Diagonal(PHI): ", &
-               DetDiagonalSigma
-         ENDIF
-
-         tidft_env%det_mat_phi = determinant_spd/DetDiagonalSigma
+         !DetDiagonalSigma = 1.0_dp
+         !DO ivar = 1, nstates
+         !   DetDiagonalSigma = DetDiagonalSigma * tidft_env%mat_phi(ivar,ivar)
+         !ENDDO
+         !CALL determinant_local(tidft_env%mat_phi, determinant_spd, nstates)
+         !IF (unit_nr > 0) THEN
+         !   WRITE (unit_nr, '(T2,A38,F40.10)') "Determinant of Diagonal(PHI): ", &
+         !      DetDiagonalSigma
+         !ENDIF
+         !tidft_env%det_mat_phi = determinant_spd/DetDiagonalSigma
 
          CALL max_norm_phi_minusI(tidft_env%mat_phi, tidft_env%max_norm_mat_phi_mI, nstates)
 
-         IF (unit_nr > 0) THEN
-            WRITE (unit_nr, '(T2,A38,F40.10)') "Normalized determinant of PHI: ", &
+         ! Print phi matrix
+         IF (phi_unit_nr > 0) THEN
+            WRITE (phi_unit_nr, *)
+            WRITE (phi_unit_nr, '(T2,A38)') "Phi - INTERstate overlap matrix"
+            WRITE (phi_unit_nr, '(T2,A38,F23.10)') "Determinant of normalized(Phi): ", &
                tidft_env%det_mat_phi
-            WRITE (unit_nr, '(T2,A38,F40.10)') "Max norm of normalized PHI: ", &
+            WRITE (phi_unit_nr, '(T2,A38,F23.10)') "Max norm of normalized(Phi)-I: ", &
                tidft_env%max_norm_mat_phi_mI
+            DO ivar = 1, nstates
+               WRITE (phi_unit_nr,'(T2,15ES9.1E2)') tidft_env%mat_phi(ivar, 1:nstates)
+            ENDDO
          ENDIF
 
          interstate_nonorthogonality_penalty = &
@@ -1591,6 +1608,7 @@ CONTAINS
             ( LOG(tidft_env%det_mat_phi) )
 
          ! Save the gradient wrt to the interstate penalty coefficient
+         ! RZK-WARNING: Replace grad_wrt_inter_penalty_coeff with omega_inter(ispin)
          tidft_env%grad_wrt_inter_penalty_coeff = interstate_nonorthogonality_penalty / &
             tidft_env%interstate_nonorthogonality_penalty_coeff
 
@@ -1599,21 +1617,9 @@ CONTAINS
       ! Pass the result up
       loss_components_out(3) = interstate_nonorthogonality_penalty
 
-      IF (unit_nr > 0) THEN
-         WRITE (unit_nr, '()')
-         WRITE (unit_nr, '(T2,A38,F40.10)') "Sum of energies of all states", obj_energy
-         WRITE (unit_nr, '(T2,A38,F40.10)') "Intrastate nonorthogonality penalty", &
-            intrastate_nonorthogonality_penalty
-         WRITE (unit_nr, '(T2,A38,F40.10)') "Interstate nonorthogonality penalty", &
-            interstate_nonorthogonality_penalty
-         WRITE (unit_nr, '(T2,A38,F40.10)') "Objective function", &
-            obj_energy + &
-            intrastate_nonorthogonality_penalty + &
-            interstate_nonorthogonality_penalty
-         WRITE (unit_nr, '()')
-      ENDIF
-
+      !!!!!!!!!!!!!!!!!!!!!!!!!
       ! GRADIENT CALCULATIONS
+      !!!!!!!!!!!!!!!!!!!!!!!!!
 
       ! Nullify the gradient before accumulation
       !CINDY: make a copy for energy grad and interstate components
@@ -2087,7 +2093,7 @@ CONTAINS
                            IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
                               CALL dbcsr_add(gradient_out(stateI,ivar), &
                                       gradient_temp(ivar), 1.0_dp, 1.0_dp)
-                              
+
                               IF (my_grad_conv) &
                                  CALL dbcsr_add(gradient_convergence_out(stateI,ivar), &
                                          gradient_temp(ivar), 1.0_dp, 1.0_dp)
@@ -2122,22 +2128,16 @@ CONTAINS
             E_grad_norm, &
             tidft_env%e_states(1)%slater_det(1)%ncols_var, &
             metric_inv = tidft_env%mat_s_inv)
-      IF (unit_nr > 0) WRITE(*,*) "Norm of energy gradient:", E_grad_norm
       ! CINDY: compute interstate grad component norm
       CALL tidft_optimizer_gradient_norm(interstate_grad, &
             tidft_env%tidft_optimizer_pcg%which_gnorm, &
             interstate_norm, &
             tidft_env%e_states(1)%slater_det(1)%ncols_var, &
             metric_inv = tidft_env%mat_s_inv)
-      IF (unit_nr > 0) WRITE(*,*) "Norm of interstate gradient:", interstate_norm
 
       DO stateI = first_state, nstates
          DO ivar = 1, 3
             IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
-!IF (unit_nr > 0) WRITE(*,*) "Energy gradient"
-!CALL dbcsr_print(energy_grad(stateI,ivar))
-!IF (unit_nr > 0) WRITE(*,*) "INTERstate gradient"
-!CALL dbcsr_print(interstate_grad(stateI,ivar))
                CALL dbcsr_release(energy_grad(stateI,ivar))
                CALL dbcsr_release(interstate_grad(stateI,ivar))
             ENDIF
@@ -2166,6 +2166,158 @@ CONTAINS
       DEALLOCATE(mat_g_energy)
       DEALLOCATE(mat_g_intra)
       DEALLOCATE(mat_g_inter)
+
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      ! Print detailed objective function info
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      IF (loss_unit_nr > 0) THEN
+
+         ! It is important to write electronic state no.
+         ! even if the optimization is performed state-by-state
+         WRITE (loss_unit_nr, '()')
+         WRITE (loss_unit_nr, '(T2,A)') REPEAT("-", 79)
+         WRITE (loss_unit_nr, '(T2,A17,A3,A10,A19,A10,A10,A10)') &
+            "Term", &
+            "St", &
+            "Coef", &
+            "Value", &
+            "|Grad|", &
+            "Det.diag", &
+            "Det.norm"
+         WRITE (loss_unit_nr, '(T2,A)') REPEAT("-", 79)
+
+         IF (energy_component) THEN
+            DO stateI = first_state, nstates
+               IF (ndets .EQ. 1) THEN
+                  WRITE (loss_unit_nr, '(T2,A17,I3,ES10.2,F19.7,A10)') &
+                     "Energy", &
+                     stateI, &
+                     1.0_dp, &
+                     tidft_env%e_states(stateI)%state_energy, &
+                     "-" !0.0_dp ! gradientE
+               ELSE
+                  idet = 1
+                  WRITE (loss_unit_nr, '(T2,A17,I3,ES10.2,F19.7,A10)') &
+                     "Energy, mixed", &
+                     stateI, &
+                     2.0_dp, &
+                     tidft_env%e_states(stateI)%slater_det(idet)%slater_energy, &
+                     "-" !0.0_dp ! gradientE
+                  idet = 2
+                  WRITE (loss_unit_nr, '(T2,A17,I3,ES10.2,F19.7,A10)') &
+                     "Energy, triplet", &
+                     stateI, &
+                     -1.0_dp, &
+                     tidft_env%e_states(stateI)%slater_det(idet)%slater_energy, &
+                     "-" !0.0_dp ! gradientE
+               ENDIF
+            ENDDO ! stateI
+            !IF (.NOT. tidft_env%state_by_state) THEN
+            !   WRITE (loss_unit_nr, '(T2,A38,F40.10)') &
+            !      "Energy, sum", &
+            !      "-",
+            !      1.0_dp, &
+            !      obj_energy, &
+            !      gradientE
+            !ENDIF
+         ENDIF ! energy_component
+
+         IF (intrastate_penalty_component) THEN
+            DO stateI = first_state, nstates
+
+               idet = 1
+               IF (tidft_env%triplet_correction) idet = 2
+
+               DO ispin = 1, nspins
+
+                  nmos_stateI = tidft_env%e_states(stateI)%slater_det(idet)%nelectrons_ab(ispin)
+
+                  IF ( nmos_stateI .GT. 0) THEN
+
+                     IF (nspins .EQ. 1) THEN
+                        spinString = "Intrastate"
+                     ELSE
+                        IF (ispin .EQ. 1) THEN
+                           spinString = "Intrastate, alph"
+                        ELSE
+                           spinString = "Intrastate, beta"
+                        ENDIF
+                     ENDIF
+                     WRITE (loss_unit_nr, '(T2,A17,I3,ES10.2,F19.7,A10,ES10.2,ES10.2)') &
+                        TRIM(spinString), &
+                        stateI, &
+                        tidft_env%intrastate_nonorthogonality_penalty_coeff(stateI), &
+                        tidft_env%omega_intra(stateI,ispin), &
+                        "-", & !0.0_dp, & !gradientPIntra, &
+                        tidft_env%det_sig_diagonal(stateI,ispin), &
+                        tidft_env%det_sig_normalized(stateI,ispin)
+
+                  ENDIF ! zero MOs for state I
+               ENDDO ! ispin
+            ENDDO ! stateI
+         ENDIF ! intrastate_penalty_component
+
+         IF (interstate_penalty_component) THEN
+
+            idet = 1
+            IF (tidft_env%triplet_correction) idet = 2
+
+            DO ispin = 1, nspins
+
+               nmos_stateI = tidft_env%e_states(1)%slater_det(idet)%nelectrons_ab(ispin)
+
+               IF ( nmos_stateI .GT. 0) THEN
+
+                  IF (nspins .EQ. 1) THEN
+                     spinString = "INTERstate"
+                  ELSE
+                     IF (ispin .EQ. 1) THEN
+                        spinString = "INTERstate, alph"
+                     ELSE
+                        spinString = "INTERstate, beta"
+                     ENDIF
+                  ENDIF
+                  WRITE (loss_unit_nr, '(T2,A17,A3,ES10.2,F19.7,A10,ES10.2,ES10.2)') &
+                     TRIM(spinString), &
+                     "-", &
+                     tidft_env%interstate_nonorthogonality_penalty_coeff, &
+                     tidft_env%omega_inter(ispin), &
+                     "-", & !0.0_dp, & !gradientPInter, &
+                     tidft_env%det_phi_diagonal(ispin), &
+                     tidft_env%det_phi_normalized(ispin)
+
+               ENDIF ! zero electrons
+
+            ENDDO ! ispin
+         ENDIF ! interstate_penalty_component
+
+      ENDIF ! loss_unit_nr
+
+      ! Printed data in this block is local to this function
+      ! It should be saved to tidft_env if printing is done
+      ! from elsewhere
+      IF (loss_unit_nr > 0) THEN
+         WRITE (loss_unit_nr, '(T2,A)') REPEAT("-", 79)
+         WRITE (loss_unit_nr, '(T2,A30,F19.7,ES10.2)') &
+            "Sum energy", &
+            obj_energy, &
+            E_grad_norm
+         WRITE (loss_unit_nr, '(T2,A30,F19.7,A10)') &
+            "Sum intrastate", &
+            intrastate_nonorthogonality_penalty, &
+            "-"
+         WRITE (loss_unit_nr, '(T2,A30,F19.7,ES10.2)') &
+            "Sum INTERstate", &
+            interstate_nonorthogonality_penalty, &
+            interstate_norm
+         WRITE (loss_unit_nr, '(T2,A)') REPEAT("-", 79)
+         WRITE (loss_unit_nr, '(T2,A30,F19.7)') "Loss function", &
+            obj_energy + &
+            intrastate_nonorthogonality_penalty + &
+            interstate_nonorthogonality_penalty
+         !WRITE (loss_unit_nr, '(T2,A)') REPEAT("-", 79)
+         WRITE (loss_unit_nr, '()')
+      ENDIF
 
       CALL timestop(handle)
 

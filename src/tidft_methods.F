@@ -946,7 +946,7 @@ CONTAINS
 
       ALLOCATE(a(n,n))
       a(1:n,1:n)=matrix_a(1:n,1:n)
-      
+
       ALLOCATE (ipivot(n))
       ipivot(:) = 0
 

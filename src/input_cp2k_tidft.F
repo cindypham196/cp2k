@@ -589,6 +589,18 @@ CONTAINS
       CALL section_add_subsection(section, print_key)
       CALL section_release(print_key)
 
+      CALL cp_print_key_section_create(print_key, __LOCATION__, "LOSS_FUNCTION_COMPONENTS", &
+                                       description="Requests printing of the components of the loss function.", &
+                                       print_level=debug_print_level, add_last=add_last_numeric, filename="__STD_OUT__")
+      CALL section_add_subsection(section, print_key)
+      CALL section_release(print_key)
+
+      CALL cp_print_key_section_create(print_key, __LOCATION__, "DEBUG_INFO", &
+                                       description="Requests printing of detailed information for debugging.", &
+                                       print_level=debug_print_level, add_last=add_last_numeric, filename="__STD_OUT__")
+      CALL section_add_subsection(section, print_key)
+      CALL section_release(print_key)
+
       NULLIFY (subsection)
       CALL create_nto_analysis_section(subsection)
       CALL section_add_subsection(section, subsection)

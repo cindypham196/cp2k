@@ -51,7 +51,7 @@
       &TIDFT_OPTIMIZER_PCG
         PRECONDITIONER             S !QHQ_S
         PREC_WEIGHT_OVERLAP        0.95 !0.5
-        EPS_ERROR                  1.0E-5
+        EPS_ERROR                  1.0E-4
         WHICH_GRADIENT_NORM        RMS
         MAX_ITER                   500
         MAX_ITER_OUTER_LOOP        20
@@ -76,8 +76,10 @@
       &END WF_GUESS
 
       &PRINT
-        &INTERSTATE_OVERLAP ON
+        &INTERSTATE_OVERLAP OFF
         &END INTERSTATE_OVERLAP
+        &LOSS_FUNCTION_COMPONENTS ON
+        &END LOSS_FUNCTION_COMPONENTS
         &NTO_ANALYSIS
           CUBE_FILES T
         &END

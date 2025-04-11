@@ -394,6 +394,13 @@ CONTAINS
       ALLOCATE(tidft_env%mat_phi_spin(nstates,nstates,nspins))
       ALLOCATE(tidft_env%mat_phi(nstates,nstates))
       ALLOCATE(tidft_env%mat_phi_inv(nstates,nstates))
+      ALLOCATE(tidft_env%omega_intra(nstates,nspins))
+      ALLOCATE(tidft_env%det_sig_diagonal(nstates,nspins))
+      ALLOCATE(tidft_env%det_sig_normalized(nstates,nspins))
+      ALLOCATE(tidft_env%omega_inter(nspins))
+      ALLOCATE(tidft_env%det_phi_diagonal(nspins))
+      ALLOCATE(tidft_env%det_phi_normalized(nspins))
+
       DO stateI = 1, nstates
 
          tidft_env%e_states(stateI)%nslater = nslater
@@ -792,6 +799,12 @@ CONTAINS
       DEALLOCATE(tidft_env%mat_phi)
       DEALLOCATE(tidft_env%mat_phi_spin)
       DEALLOCATE(tidft_env%e_states)
+      DEALLOCATE(tidft_env%omega_intra)
+      DEALLOCATE(tidft_env%det_sig_diagonal)
+      DEALLOCATE(tidft_env%det_sig_normalized)
+      DEALLOCATE(tidft_env%omega_inter)
+      DEALLOCATE(tidft_env%det_phi_diagonal)
+      DEALLOCATE(tidft_env%det_phi_normalized)
 
       CALL mp_para_env_release(tidft_env%para_env)
       CALL cp_blacs_env_release(tidft_env%blacs_env)

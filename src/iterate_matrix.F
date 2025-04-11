@@ -72,15 +72,17 @@ CONTAINS
 !> \param matrix ...
 !> \param det - determinant
 !> \param threshold ...
+!> \param silent ...
 !> \par History
 !>       2015.04 created [Rustam Z Khaliullin]
 !> \author Rustam Z. Khaliullin
 ! **************************************************************************************************
-   RECURSIVE SUBROUTINE determinant(matrix, det, threshold)
+   RECURSIVE SUBROUTINE determinant(matrix, det, threshold, silent)
 
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix
       REAL(KIND=dp), INTENT(INOUT)                       :: det
       REAL(KIND=dp), INTENT(IN)                          :: threshold
+      LOGICAL, INTENT(IN), OPTIONAL                      :: silent
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'determinant'
 
@@ -102,6 +104,9 @@ CONTAINS
          unit_nr = cp_logger_get_default_unit_nr(logger, local=.TRUE.)
       ELSE
          unit_nr = -1
+      END IF
+      IF (PRESENT(silent)) THEN
+         IF (silent) unit_nr = -1
       END IF
 
       ! Note: tmp1 and tmp2 have the same matrix type as the
@@ -179,7 +184,7 @@ CONTAINS
             order=order_lanczos, &
             eps_lanczos=eps_lanczos, &
             max_iter_lanczos=max_iter_lanczos, &
-            silent=.TRUE.)
+            iounit = -1)
          recursion_depth = recursion_depth + 1
          CALL determinant(tmp3, det0, threshold)
          recursion_depth = recursion_depth - 1
@@ -1625,7 +1630,7 @@ CONTAINS
 !> \author Joost VandeVondele
 ! **************************************************************************************************
    SUBROUTINE matrix_sqrt_Newton_Schulz(matrix_sqrt, matrix_sqrt_inv, matrix, threshold, order, &
-                                eps_lanczos, max_iter_lanczos, symmetrize, converged, iounit, silent)
+                                eps_lanczos, max_iter_lanczos, symmetrize, converged, iounit)
       TYPE(dbcsr_type), INTENT(INOUT)                    :: matrix_sqrt, matrix_sqrt_inv, matrix
       REAL(KIND=dp), INTENT(IN)                          :: threshold
       INTEGER, INTENT(IN)                                :: order
@@ -1633,7 +1638,6 @@ CONTAINS
       INTEGER, INTENT(IN)                                :: max_iter_lanczos
       LOGICAL, OPTIONAL                                  :: symmetrize, converged
       INTEGER, INTENT(IN), OPTIONAL                      :: iounit
-      LOGICAL, INTENT(IN), OPTIONAL                      :: silent
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'matrix_sqrt_Newton_Schulz'
 
@@ -1659,10 +1663,6 @@ CONTAINS
             unit_nr = -1
          END IF
       END IF
-      IF (PRESENT(silent)) THEN
-         IF (silent) unit_nr = -1
-      END IF
-
 
       IF (PRESENT(converged)) converged = .FALSE.
       IF (PRESENT(symmetrize)) THEN

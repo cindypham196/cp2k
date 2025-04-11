@@ -208,6 +208,9 @@ MODULE tidft_types
       TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_inv
       TYPE(dbcsr_type), DIMENSION(:,:,:), ALLOCATABLE    :: mat_sigma_vv
       TYPE(dbcsr_type), DIMENSION(:), ALLOCATABLE        :: mat_var_sigma
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: det_sig_diagonal
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: det_sig_normalized
+      REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: omega_intra
 
       ! Overlap of electronic states (stateI, stateJ)
       REAL(KIND=dp), DIMENSION(:,:,:), ALLOCATABLE       :: mat_phi_spin
@@ -215,6 +218,9 @@ MODULE tidft_types
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi_inv
       REAL(KIND=dp)                                      :: det_mat_phi
       REAL(KIND=dp)                                      :: max_norm_mat_phi_mI
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: det_phi_diagonal
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: det_phi_normalized
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: omega_inter
 
       ! Pointers to input sections
       TYPE(section_vals_type), POINTER                   :: tidft_print_section
