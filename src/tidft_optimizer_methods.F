@@ -254,7 +254,11 @@ CONTAINS
                                                             current_eps_scf, &
                                                             interAlpha, interBeta, &
                                                             interCP1, interCP2, &
-                                                            interDEV1, interDEV2
+                                                            interDEV1, interDEV2, &
+                                                            constraint_c, & ! aeph
+                                                            constraint_c_prev ! aeph: previous outer-iter dummy |c|
+      REAL(KIND=dp), PARAMETER                           :: eps_det = 1.0E-10_dp, & ! aeph for when -log(0)
+                                                            tau_c = 0.25_dp ! aeph: ALM decrease ratio for mu 
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_update
@@ -288,6 +292,11 @@ CONTAINS
       ! loop over the orthogonalization penalty strength
       ! vary both intra and inter strengths together
       iteration = 0
+      constraint_c_prev = -1.0_dp ! aeph: initial, no previous |c| yet
+      ! aeph: we reset mu to the input value at each penalty-strength pass (per state)
+      IF (tidft_env%loss_function_components(4)) THEN
+         tidft_env%augmented_penalty_coeff = tidft_env%augmented_penalty_coeff0
+      ENDIF
       DO
          iteration = iteration + 1
 
@@ -406,6 +415,32 @@ CONTAINS
          ENDIF
 
          g_max_interstate = 1.0E+3_dp
+         ! aeph: augmented Lagrangian dual update. Active when component 4
+         ! is on; component 3 controls the linear interstate term separately.
+         IF (tidft_env%loss_function_components(4)) THEN
+            constraint_c = -LOG(MAX(tidft_env%det_mat_phi, eps_det))
+            ! aeph: always apply the dual lambda update using the floored constraint.
+            ! aeph: original skipped the increment when det(Phi) <= eps_det.
+            IF (tidft_env%det_mat_phi .LE. eps_det .AND. unit_nr > 0) THEN
+               WRITE (unit_nr, '(T2,A)') &
+                  "aeph WARNING: interstate overlap near-singular; "// &
+                  "using floored det for augmented-Lagrangian multiplier update."
+            ENDIF
+            tidft_env%interstate_nonorthogonality_penalty_coeff = &
+               tidft_env%interstate_nonorthogonality_penalty_coeff + &
+               tidft_env%augmented_penalty_coeff * constraint_c
+            ! aeph: conditional mu growth ALM safeguard. Only grow the
+            ! quadratic penalty when |c| failed to decrease by factor tau_c vs the
+            ! previous outer iteration; otherwise hold mu to avoid runaway growth.
+            ! aeph: original also grew mu too high when max_norm_mat_phi_mI > tolerance.
+            IF (constraint_c_prev .GE. 0.0_dp .AND. &
+                ABS(constraint_c) .GT. tau_c * constraint_c_prev) THEN
+               tidft_env%augmented_penalty_coeff = &
+                  tidft_env%augmented_penalty_coeff * &
+                  ABS(tidft_env%penalty_strength_inc_factor)
+            ENDIF
+            constraint_c_prev = ABS(constraint_c) ! aeph: remember |c| for next outer iter
+         ELSE ! aeph: original penalty-strength update kept intact below
          !IF (iteration.GE.2) THEN
          IF (0.EQ.1) THEN
             interAlpha = ( LOG(interDEV2/interDEV1) )/( LOG(interCP2/interCP1) )
@@ -421,6 +456,7 @@ CONTAINS
                tidft_env%interstate_nonorthogonality_penalty_coeff * &
                ABS(tidft_env%penalty_strength_inc_factor)
          ENDIF
+         ENDIF ! aeph: end augmented and original branch commented
 
       ENDDO
       DEALLOCATE(grad_penalty_update)
@@ -967,8 +1003,12 @@ CONTAINS
                                                             state_energy, obj_energy, &
                                                             interstate_nonorthogonality_penalty, &
                                                             intrastate_nonorthogonality_penalty, &
+                                                            augmented_nonorthogonality_penalty, &
+                                                            constraint_c, lambda_eff, &
                                                             DetDiagonalSigma, penalty_stateI, &
                                                             determinant_spd
+      ! aeph: floor for det(Phi) to stay finite under linear dependence
+      REAL(KIND=dp), PARAMETER                           :: eps_det = 1.0E-10_dp
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_distribution_type)                      :: dist
       TYPE(qs_rho_type), POINTER                         :: rho
@@ -986,6 +1026,7 @@ CONTAINS
       LOGICAL                                            :: energy_component, &
                                                             interstate_penalty_component, &
                                                             intrastate_penalty_component, &
+                                                            augmented_penalty_component, &
                                                             not_evaluated
 
       ! GRADIENT
@@ -1056,6 +1097,7 @@ CONTAINS
       energy_component=tidft_env%loss_function_components(1)
       intrastate_penalty_component=tidft_env%loss_function_components(2)
       interstate_penalty_component=tidft_env%loss_function_components(3)
+      augmented_penalty_component=tidft_env%loss_function_components(4) ! aeph
 
       !! RZK: templates for looping over the key matrices
       !! orbital matrices
@@ -1481,6 +1523,10 @@ CONTAINS
       loss_components_out(2) = intrastate_nonorthogonality_penalty
 
       interstate_nonorthogonality_penalty = 0.0_dp
+      ! aeph: augmented Lagrangian term init
+      augmented_nonorthogonality_penalty = 0.0_dp
+      constraint_c = 0.0_dp
+      lambda_eff = tidft_env%interstate_nonorthogonality_penalty_coeff
       tidft_env%grad_wrt_inter_penalty_coeff = 0.0_dp
       IF (interstate_penalty_component) THEN 
       !! compute interstate nonorthogonality penalty
@@ -1558,7 +1604,13 @@ CONTAINS
                tidft_env%det_phi_normalized(ispin) = &
                   tidft_env%det_phi_normalized(ispin)/tidft_env%det_phi_diagonal(ispin)
 
-               tidft_env%omega_inter(ispin) = -LOG(tidft_env%det_phi_normalized(ispin))
+               ! aeph: floor det only when augmented component is active; otherwise original
+               IF (augmented_penalty_component) THEN ! aeph
+                  tidft_env%omega_inter(ispin) = &
+                     -LOG(MAX(tidft_env%det_phi_normalized(ispin), eps_det)) ! aeph: floor
+               ELSE ! aeph
+                  tidft_env%omega_inter(ispin) = -LOG(tidft_env%det_phi_normalized(ispin)) ! aeph: original
+               ENDIF ! aeph
 
             ENDIF ! zero MOs for state I
 
@@ -1603,9 +1655,26 @@ CONTAINS
             ENDDO
          ENDIF
 
-         interstate_nonorthogonality_penalty = &
-            - tidft_env%interstate_nonorthogonality_penalty_coeff * &
-            ( LOG(tidft_env%det_mat_phi) )
+         ! aeph: when augmented component is off use the original unmodified expression;
+         ! when on, floor det against linear dependence and compute constraint c = -ln(det)
+         IF (augmented_penalty_component) THEN ! aeph
+            constraint_c = -LOG(MAX(tidft_env%det_mat_phi, eps_det)) ! aeph: floored
+            interstate_nonorthogonality_penalty = &
+               tidft_env%interstate_nonorthogonality_penalty_coeff * constraint_c ! aeph
+         ELSE ! aeph: original
+            interstate_nonorthogonality_penalty = &
+               - tidft_env%interstate_nonorthogonality_penalty_coeff * &
+               ( LOG(tidft_env%det_mat_phi) )
+         ENDIF ! aeph
+
+         ! aeph: augmented Lagrangian quadratic term (mu/2)*c^2 and the
+         ! effective uncapped multiplier lambda_eff = lambda + mu*c
+         IF (augmented_penalty_component) THEN
+            augmented_nonorthogonality_penalty = &
+               0.5_dp * tidft_env%augmented_penalty_coeff * constraint_c**2
+            lambda_eff = tidft_env%interstate_nonorthogonality_penalty_coeff + &
+               tidft_env%augmented_penalty_coeff * constraint_c
+         ENDIF
 
          ! Save the gradient wrt to the interstate penalty coefficient
          ! RZK-WARNING: Replace grad_wrt_inter_penalty_coeff with omega_inter(ispin)
@@ -1616,6 +1685,7 @@ CONTAINS
 
       ! Pass the result up
       loss_components_out(3) = interstate_nonorthogonality_penalty
+      loss_components_out(4) = augmented_nonorthogonality_penalty ! aeph
 
       !!!!!!!!!!!!!!!!!!!!!!!!!
       ! GRADIENT CALCULATIONS
@@ -2068,8 +2138,12 @@ CONTAINS
                      IF ( .NOT.(tidft_env%triplet_correction .AND. idet.EQ.1) ) THEN
 
                         CALL dbcsr_add(mat_g_inter(stateI, ispin), STsiginv, 1.0_dp, -1.0_dp)
+                        ! aeph: original scaling kept for reference/testing
+                        !CALL dbcsr_scale(mat_g_inter(stateI, ispin), &
+                        !        -2.0_dp*tidft_env%interstate_nonorthogonality_penalty_coeff)
+                        ! aeph: scale by effective ALM multiplier (lambda_eff == lambda when augmented off)
                         CALL dbcsr_scale(mat_g_inter(stateI, ispin), & 
-                                -2.0_dp*tidft_env%interstate_nonorthogonality_penalty_coeff)
+                                -2.0_dp*lambda_eff)
 
                         DO ivar = 1, 3
                            IF (tidft_env%e_states(stateI)%slater_det(1)%ncols_var(ivar).NE.0) THEN
@@ -2310,11 +2384,21 @@ CONTAINS
             "Sum INTERstate", &
             interstate_nonorthogonality_penalty, &
             interstate_norm
+         WRITE (loss_unit_nr, '(T2,A30,F19.7,A10)') & ! aeph
+            "Sum AUGMENTED", &
+            augmented_nonorthogonality_penalty, &
+            "-"
          WRITE (loss_unit_nr, '(T2,A)') REPEAT("-", 79)
-         WRITE (loss_unit_nr, '(T2,A30,F19.7)') "Loss function", &
+         ! aeph: original loss function total (kept for reference/testing)
+         !WRITE (loss_unit_nr, '(T2,A30,F19.7)') "Loss function", &
+         !   obj_energy + &
+         !   intrastate_nonorthogonality_penalty + &
+         !   interstate_nonorthogonality_penalty
+         WRITE (loss_unit_nr, '(T2,A30,F19.7)') "Loss function", & ! aeph
             obj_energy + &
             intrastate_nonorthogonality_penalty + &
-            interstate_nonorthogonality_penalty
+            interstate_nonorthogonality_penalty + &
+            augmented_nonorthogonality_penalty ! aeph
          !WRITE (loss_unit_nr, '(T2,A)') REPEAT("-", 79)
          WRITE (loss_unit_nr, '()')
       ENDIF

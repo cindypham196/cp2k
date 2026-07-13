@@ -158,6 +158,10 @@ CONTAINS
       CALL section_vals_val_get(tidft_section, &
               "INTERSTATE_COMPONENT", &
               l_val=tidft_env%loss_function_components(3))
+      ! aeph: augmented Lagrangian interstate term toggle (component 4)
+      CALL section_vals_val_get(tidft_section, &
+              "AUGMENTED_COMPONENT", &
+              l_val=tidft_env%loss_function_components(4))
       CALL section_vals_val_get(tidft_section, &
               "STATE_BY_STATE", &
               l_val=tidft_env%state_by_state)
@@ -229,6 +233,14 @@ CONTAINS
                                 r_val=tidft_env%interstate_nonorthogonality_penalty_coeff)
       tidft_env%interstate_nonorthogonality_penalty_coeff = &
          ABS(tidft_env%interstate_nonorthogonality_penalty_coeff)
+      ! aeph: augmented Lagrangian quadratic penalty coefficient (mu)
+      CALL section_vals_val_get(penalty_section, &
+                                "AUGMENTED_PENALTY_STRENGTH", &
+                                r_val=tidft_env%augmented_penalty_coeff)
+      tidft_env%augmented_penalty_coeff = &
+         ABS(tidft_env%augmented_penalty_coeff)
+      ! aeph: store the input mu for per-pass reset in penalty_strength_variation
+      tidft_env%augmented_penalty_coeff0 = tidft_env%augmented_penalty_coeff
       CALL section_vals_val_get(penalty_section, &
                                 "INTRASTATE_NON_PENALTY_STRENGTH", &
                                 r_val=tidft_env%intrastate_penalty_coeff)

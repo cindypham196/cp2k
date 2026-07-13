@@ -165,6 +165,10 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: intrastate_penalty_coeff
       REAL(KIND=dp),  DIMENSION(:), ALLOCATABLE          :: intrastate_nonorthogonality_penalty_coeff
       REAL(KIND=dp)                                      :: interstate_nonorthogonality_penalty_coeff
+      ! aeph: augmented Lagrangian quadratic penalty coefficient (mu)
+      REAL(KIND=dp)                                      :: augmented_penalty_coeff
+      ! aeph: input value of mu, used to reset each penalty-strength pass
+      REAL(KIND=dp)                                      :: augmented_penalty_coeff0
       REAL(KIND=dp)                                      :: penalty_strength_inc_factor
       REAL(KIND=dp)                                      :: allowed_max_norm_phi_mI
       REAL(KIND=dp)                                      :: initial_guess_random_fraction

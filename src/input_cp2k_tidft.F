@@ -158,6 +158,15 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      ! aeph: toggle the second-order augmented Lagrangian interstate term (component 4)
+      CALL keyword_create(keyword, __LOCATION__, name="AUGMENTED_COMPONENT", &
+                          description="Turn on the second-order augmented Lagrangian term for the "// &
+                          "interstate nonorthogonality penalty (loss function component 4).", &
+                          usage="AUGMENTED_COMPONENT .TRUE.", default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL keyword_create(keyword, __LOCATION__, name="INTRASTATE_COMPONENT", &
                           description="Turn on the intrastate nonorthogonality peanlty.", &
                           usage="INTRASTATE_COMPONENT .FALSE.", default_l_val=.TRUE., &
@@ -484,6 +493,16 @@ CONTAINS
                           description="Strength of the interstate nonorthogonality penalty term.", &
                           usage="INTERSTATE_NON_PENALTY_STRENGTH 0.5", &
                           default_r_val=0.1_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      ! aeph: quadratic penalty coefficient (mu) of the augmented Lagrangian interstate term
+      CALL keyword_create(keyword, __LOCATION__, name="AUGMENTED_PENALTY_STRENGTH", &
+                          description="Quadratic penalty coefficient (mu) of the augmented Lagrangian "// &
+                          "interstate term. Only used when AUGMENTED_COMPONENT is enabled; it is grown "// &
+                          "across outer iterations by PENALTY_STRENGTH_INCREASE_FACTOR.", &
+                          usage="AUGMENTED_PENALTY_STRENGTH 0.5", &
+                          default_r_val=0.5_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
