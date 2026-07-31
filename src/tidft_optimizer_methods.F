@@ -44,8 +44,7 @@ MODULE tidft_optimizer_methods
         cg_hager_zhang, cg_hestenes_stiefel, cg_liu_storey, cg_polak_ribiere, cg_zero, &
         tidft_prec_zero, tidft_prec_s, tidft_prec_h_s, tidft_prec_qhq_s, tidft_prec_qhq_qsq
    USE iterate_matrix,                  ONLY: determinant
-   USE kinds,                           ONLY: default_path_length,&
-                                              dp
+   USE kinds,                           ONLY: default_path_length, default_string_length, dp
    USE machine,                         ONLY: m_walltime
    USE message_passing,                 ONLY: mp_comm_type
    USE qs_environment_types,            ONLY: get_qs_env,&
@@ -115,8 +114,10 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: save_initial_intra
-      REAL(KIND=dp)                                      :: save_initial_inter, new_det_deviation
+      REAL(KIND=dp)                                      :: save_initial_inter, new_det_deviation 
+      REAL(KIND=dp)                                      :: warm_inter ! aeph: warm-start lambda across states
       LOGICAL, DIMENSION(:), ALLOCATABLE                 :: save_component_flags
+   
 
       ! get a useful output_unit
       logger => cp_get_default_logger()
@@ -135,6 +136,7 @@ CONTAINS
 
          save_initial_intra(:) = tidft_env%intrastate_nonorthogonality_penalty_coeff(:)
          save_initial_inter = tidft_env%interstate_nonorthogonality_penalty_coeff
+         warm_inter = save_initial_inter !aeph: initialize from input
 
          DO current_no_of_states = 1, nstates
 
@@ -162,15 +164,23 @@ CONTAINS
                save_component_flags(:)=tidft_env%loss_function_components(:)
                tidft_env%loss_function_components(1) = .FALSE. ! energy is off
                tidft_env%loss_function_components(2:3) = .TRUE. ! nonorthogonality penalty is on
-
+               !aeph: When component(3) True component (4) will restore from initial
+               tidft_env%loss_function_components(4) = save_component_flags(4)
+               
                CALL penalty_strength_variation(qs_env, tidft_env)
+
+               ! aeph: capture lambda from pre-orth before restoring flags
+               IF (tidft_env%loss_function_components(4) .AND. &
+                   tidft_env%loss_function_components(3)) THEN
+                  warm_inter = tidft_env%interstate_nonorthogonality_penalty_coeff
+               ENDIF
 
                tidft_env%loss_function_components(:)=save_component_flags(:)
 
                tidft_env%intrastate_nonorthogonality_penalty_coeff(:) = &
                   save_initial_intra(:)
                tidft_env%interstate_nonorthogonality_penalty_coeff = &
-                  save_initial_inter
+                  warm_inter
 
             ENDIF
 
@@ -193,10 +203,18 @@ CONTAINS
 
                save_component_flags(:)=tidft_env%loss_function_components(:)
                tidft_env%loss_function_components(3) = .FALSE.
-
+               tidft_env%loss_function_components(4) = .FALSE.
+               !aeph clearing of component (4) ALM
             ENDIF
 
             CALL penalty_strength_variation(qs_env, tidft_env)
+
+            ! aeph: capture lambda from main pass for the next state
+            IF (current_no_of_states .GE. 2 .AND. &
+                tidft_env%loss_function_components(4) .AND. &
+                tidft_env%loss_function_components(3)) THEN
+               warm_inter = tidft_env%interstate_nonorthogonality_penalty_coeff
+            ENDIF
 
             IF (current_no_of_states .EQ. 1) THEN
                tidft_env%loss_function_components(:)=save_component_flags(:)
@@ -205,7 +223,7 @@ CONTAINS
             tidft_env%intrastate_nonorthogonality_penalty_coeff(:) = &
                save_initial_intra(:)
             tidft_env%interstate_nonorthogonality_penalty_coeff = &
-               save_initial_inter
+               warm_inter
 
             ! CINDY: clean mem after each state
 !            IF (current_no_of_states .GE. 2) THEN
@@ -245,6 +263,10 @@ CONTAINS
          routineP = moduleN//':'//routineN
 
       CHARACTER(LEN=59)                                  :: print_string
+      !aeph: tau is now in tidft_env%alm_ratio
+      LOGICAL                                            :: alm_on, alm_deferred ! aeph
+      !aeph: declare to write eps_det value when it aborts 
+      CHARACTER(LEN=default_path_length)                 :: errmsg ! aeph: 1024 char longer msg 
       INTEGER                                            :: unit_nr, istep, &
                                                             iteration, first_state, &
                                                             stateI
@@ -257,8 +279,8 @@ CONTAINS
                                                             interDEV1, interDEV2, &
                                                             constraint_c, & ! aeph
                                                             constraint_c_prev ! aeph: previous outer-iter dummy |c|
-      REAL(KIND=dp), PARAMETER                           :: eps_det = 1.0E-10_dp, & ! aeph for when -log(0)
-                                                            tau_c = 0.25_dp ! aeph: ALM decrease ratio for mu 
+      ! aeph: the det(phi) threshold is read from input (tidft_env%eps_det, default 1.0E-10)
+      !REAL(KIND=dp), PARAMETER                           :: tau_c  ! aeph: ALM decrease ratio for mu in tidft_env%alm_decrease_ratio
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: grad_penalty_update
@@ -294,9 +316,13 @@ CONTAINS
       iteration = 0
       constraint_c_prev = -1.0_dp ! aeph: initial, no previous |c| yet
       ! aeph: we reset mu to the input value at each penalty-strength pass (per state)
-      IF (tidft_env%loss_function_components(4)) THEN
-         tidft_env%augmented_penalty_coeff = tidft_env%augmented_penalty_coeff0
+      IF (tidft_env%loss_function_components(4) .AND. &
+         tidft_env%loss_function_components(3)) THEN
+         IF (.NOT. tidft_env%state_by_state .OR. tidft_env%nstates .LE. 2) THEN
+            tidft_env%augmented_penalty_coeff = tidft_env%augmented_penalty_coeff0
+         ENDIF
       ENDIF
+      ! aeph same condition for both components (3) (4)
       DO
          iteration = iteration + 1
 
@@ -333,6 +359,11 @@ CONTAINS
             ENDDO
             WRITE (unit_nr, '(T2,A49,F30.10)') "INTERstate penalty strength:", &
                tidft_env%interstate_nonorthogonality_penalty_coeff
+            IF (tidft_env%loss_function_components(4) .AND. &
+                tidft_env%loss_function_components(3)) THEN
+               WRITE (unit_nr, '(T2,A49,F30.10)') "Augmented penalty strength:", &
+                  tidft_env%augmented_penalty_coeff
+            ENDIF
             WRITE (unit_nr, '(T2,A49,F30.10)') "INTERstate penalty update factor:", &
                ABS(tidft_env%penalty_strength_inc_factor)
             WRITE (unit_nr, '(T2,A49,F30.10)') "Current SCF convergence criterion:" , &
@@ -357,7 +388,22 @@ CONTAINS
                  qs_env=qs_env, &
                  tidft_env=tidft_env, &
                  optimizer=tidft_env%tidft_optimizer_pcg)
-
+         ! aeph:  The constraint is measurable only when det(Phi) is above EPS_DET; otherwise it uses 
+         ! in ALM warm-up and behave like the plain penalty method.
+         alm_on = tidft_env%loss_function_components(4) .AND. &
+                  tidft_env%loss_function_components(3)
+         alm_deferred = .FALSE.
+         IF (alm_on) THEN
+            IF (tidft_env%det_mat_phi .GE. tidft_env%eps_det) THEN
+               constraint_c = -LOG(tidft_env%det_mat_phi)
+            ELSE
+               alm_deferred = .TRUE.
+               IF (unit_nr > 0) THEN
+                  WRITE (unit_nr, '(T2,A,ES12.5,A)') "WARNING: det(Phi)=", &
+                     tidft_env%det_mat_phi, " below EPS_DET; ALM warm-up."
+               ENDIF
+            ENDIF
+         ENDIF         
          IF (unit_nr > 0) THEN
             WRITE (unit_nr, '(T2,A19,F30.10,F30.10)') "CP-DEVIATION:", &
                tidft_env%interstate_nonorthogonality_penalty_coeff, &
@@ -365,22 +411,61 @@ CONTAINS
             WRITE (unit_nr, '(T2,A19,F30.10,F30.10)') "|Phi-I|_max:", &
                tidft_env%interstate_nonorthogonality_penalty_coeff, &
                tidft_env%max_norm_mat_phi_mI
+            IF (tidft_env%loss_function_components(4) .AND. &
+               tidft_env%loss_function_components(3)) THEN
+               !aeph:  det_mat_phi already checked / deferred if < eps_det later; for print, guard:
+               IF (tidft_env%det_mat_phi .GT. 0.0_dp) THEN
+                  WRITE (unit_nr, '(T2,A33,F23.10,F23.10)') "Augmented constraint=-ln(detPhi):", &
+                     tidft_env%augmented_penalty_coeff, &
+                     -LOG(tidft_env%det_mat_phi)
+               ENDIF
+            ENDIF
+
          ENDIF
 
          ! INTER term condition: Check whether the determinant of PHI is sufficiently close to 1
          ! UPDATE: Use max norm of (normalized phi - I) instead of
          ! determinant as a convergence criterion that does not depend
          ! on the number of excited states
-         IF ( iteration .GE. tidft_env%nsteps_penalty_strength .AND. &
-              ( tidft_env%max_norm_mat_phi_mI .LE. tidft_env%allowed_max_norm_phi_mI &
-              .OR. .NOT.tidft_env%loss_function_components(3) ) ) THEN
-            EXIT
+!         IF ( iteration .GE. tidft_env%nsteps_penalty_strength .AND. &
+!              ( tidft_env%max_norm_mat_phi_mI .LE. tidft_env%allowed_max_norm_phi_mI &
+!              .OR. .NOT.tidft_env%loss_function_components(3) ) ) THEN
+!            EXIT
+!         ENDIF
+         ! aeph: original waits until NSTEPS_STRENGTH, then checks |Phi-I|_max;
+         ! aeph: ALM exits as soon as the constraint is satisfied, but only
+         ! aeph: after a final pass at the tight EPS_ERROR (jump to it if still loose)
+         IF (tidft_env%max_norm_mat_phi_mI .LE. tidft_env%allowed_max_norm_phi_mI &
+             .OR. .NOT. tidft_env%loss_function_components(3)) THEN
+            IF (tidft_env%loss_function_components(4)) THEN
+               IF (current_eps_scf .LE. save_eps_scf*(1.0_dp + 1.0E-12_dp)) THEN
+                  EXIT
+               ELSE
+                  ! aeph: constraint ok but orbitals only loosely converged;
+                  ! aeph: skip penalty updates and re-polish at the tight tolerance
+                  current_eps_scf = save_eps_scf
+                  CYCLE
+               ENDIF
+            ELSE IF (iteration .GE. tidft_env%nsteps_penalty_strength) THEN
+               EXIT
+            ENDIF
+         ENDIF
+
+         ! aeph: inexact ALM - the dual step only needs the primal solve to be
+         ! about as accurate as the current constraint violation. Converging
+         ! orbitals beyond |c| wastes PCG iterations: the next lambda update
+         ! moves the minimum by that much anyway.
+         IF (alm_on .AND. .NOT. alm_deferred) THEN
+            current_eps_scf = MAX(save_eps_scf, &
+                                 MIN(tidft_env%loose_eps_scf, ABS(constraint_c)))
+         ELSE IF (iteration .LT. tidft_env%nsteps_penalty_strength) THEN
+            current_eps_scf = current_eps_scf * ABS(beta)
          ENDIF
 
          ! INTRA term condition: EPS_SCF should not be lower than the default SCF
-         IF (iteration .LT. tidft_env%nsteps_penalty_strength) THEN
-            current_eps_scf = current_eps_scf * ABS(beta)
-         ENDIF
+         !IF (iteration .LT. tidft_env%nsteps_penalty_strength) THEN
+            !current_eps_scf = current_eps_scf * ABS(beta)
+         !ENDIF
 
          ! Update the INTRAstate penalty strength by adding the gradient wrt Cp
          ! The gradient is the values of the constraint
@@ -416,32 +501,31 @@ CONTAINS
 
          g_max_interstate = 1.0E+3_dp
          ! aeph: augmented Lagrangian dual update. Active when component 4
-         ! is on; component 3 controls the linear interstate term separately.
-         IF (tidft_env%loss_function_components(4)) THEN
-            constraint_c = -LOG(MAX(tidft_env%det_mat_phi, eps_det))
-            ! aeph: always apply the dual lambda update using the floored constraint.
-            ! aeph: original skipped the increment when det(Phi) <= eps_det.
-            IF (tidft_env%det_mat_phi .LE. eps_det .AND. unit_nr > 0) THEN
-               WRITE (unit_nr, '(T2,A)') &
-                  "aeph WARNING: interstate overlap near-singular; "// &
-                  "using floored det for augmented-Lagrangian multiplier update."
-            ENDIF
+         ! is on; component 3 controls the linear interstate term separately
+         ! aeph: Compare component (3) (4) both of them need to be present 
+
+         IF (alm_on .AND. .NOT. alm_deferred) THEN
+            !aeph: ALM active dual ascent step
             tidft_env%interstate_nonorthogonality_penalty_coeff = &
                tidft_env%interstate_nonorthogonality_penalty_coeff + &
                tidft_env%augmented_penalty_coeff * constraint_c
-            ! aeph: conditional mu growth ALM safeguard. Only grow the
-            ! quadratic penalty when |c| failed to decrease by factor tau_c vs the
-            ! previous outer iteration; otherwise hold mu to avoid runaway growth.
-            ! aeph: original also grew mu too high when max_norm_mat_phi_mI > tolerance.
             IF (constraint_c_prev .GE. 0.0_dp .AND. &
-                ABS(constraint_c) .GT. tau_c * constraint_c_prev) THEN
+               ABS(constraint_c) .GT. tidft_env%alm_ratio * constraint_c_prev) THEN
                tidft_env%augmented_penalty_coeff = &
                   tidft_env%augmented_penalty_coeff * &
                   ABS(tidft_env%penalty_strength_inc_factor)
             ENDIF
-            constraint_c_prev = ABS(constraint_c) ! aeph: remember |c| for next outer iter
-         ELSE ! aeph: original penalty-strength update kept intact below
-         !IF (iteration.GE.2) THEN
+            constraint_c_prev = ABS(constraint_c)
+      ELSE
+            ! aeph: warm-up (alm_on but deferred) OR plain penalty (alm off)
+            IF (alm_on) THEN
+               IF (iteration .GT. tidft_env%nsteps_penalty_strength) THEN
+                  WRITE (errmsg, '(A,I0,A)') &
+                     "det(Phi) below EPS_DET after ", iteration, " iterations."
+                  CPABORT(TRIM(errmsg))
+               ENDIF
+            ENDIF
+            ! aeph: multiplicative lambda growth — plain penalty method
          IF (0.EQ.1) THEN
             interAlpha = ( LOG(interDEV2/interDEV1) )/( LOG(interCP2/interCP1) )
             interBeta = LOG(interDEV2) - interAlpha * LOG(interCP2)
@@ -456,7 +540,7 @@ CONTAINS
                tidft_env%interstate_nonorthogonality_penalty_coeff * &
                ABS(tidft_env%penalty_strength_inc_factor)
          ENDIF
-         ENDIF ! aeph: end augmented and original branch commented
+      ENDIF ! aeph: end augmented and original branch commented
 
       ENDDO
       DEALLOCATE(grad_penalty_update)
@@ -627,7 +711,7 @@ CONTAINS
             ENDIF
 
             energy_function = loss_components(1)
-            penalty_func_new = loss_components(2) + loss_components(3)
+            penalty_func_new = loss_components(2) + loss_components(3) + loss_components(4)
             objf_new = SUM(loss_components)
 
             ! STEP 6: Convergence
@@ -986,6 +1070,8 @@ CONTAINS
 
       CHARACTER(LEN=default_path_length)                 :: file_name, project_name
       CHARACTER(LEN=30)                                  :: spinString
+      !aeph: declare to write eps_det value when it aborts 
+      CHARACTER(LEN=default_path_length)                 :: errmsg !aeph: 1024 chars, longer msg 
       INTEGER                                            :: handle, iaspc, ispin, istore, naspc, &
                                                             nspins, unit_nr, nmos_stateI, &
                                                             stateI, ivar, nstates, idet, &
@@ -1007,8 +1093,8 @@ CONTAINS
                                                             constraint_c, lambda_eff, &
                                                             DetDiagonalSigma, penalty_stateI, &
                                                             determinant_spd
-      ! aeph: floor for det(Phi) to stay finite under linear dependence
-      REAL(KIND=dp), PARAMETER                           :: eps_det = 1.0E-10_dp
+      ! aeph: old floor for det(Phi) 
+      !REAL(KIND=dp), PARAMETER                          :: eps_det = 1.0E-10_dp
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_distribution_type)                      :: dist
       TYPE(qs_rho_type), POINTER                         :: rho
@@ -1025,8 +1111,9 @@ CONTAINS
       TYPE(qs_energy_type), POINTER                      :: qs_energy
       LOGICAL                                            :: energy_component, &
                                                             interstate_penalty_component, &
-                                                            intrastate_penalty_component, &
-                                                            augmented_penalty_component, &
+                                                            intrastate_penalty_component, & 
+                                                            augmented_penalty_component,  &
+                                                            alm_active, & ! aeph: ALM gate warm up
                                                             not_evaluated
 
       ! GRADIENT
@@ -1604,14 +1691,8 @@ CONTAINS
                tidft_env%det_phi_normalized(ispin) = &
                   tidft_env%det_phi_normalized(ispin)/tidft_env%det_phi_diagonal(ispin)
 
-               ! aeph: floor det only when augmented component is active; otherwise original
-               IF (augmented_penalty_component) THEN ! aeph
-                  tidft_env%omega_inter(ispin) = &
-                     -LOG(MAX(tidft_env%det_phi_normalized(ispin), eps_det)) ! aeph: floor
-               ELSE ! aeph
-                  tidft_env%omega_inter(ispin) = -LOG(tidft_env%det_phi_normalized(ispin)) ! aeph: original
-               ENDIF ! aeph
-
+               ! aeph:removed flooring component, otherwise original
+               tidft_env%omega_inter(ispin) = -LOG(tidft_env%det_phi_normalized(ispin))
             ENDIF ! zero MOs for state I
 
          ENDDO ! ispin
@@ -1626,6 +1707,21 @@ CONTAINS
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,1)
             tidft_env%det_mat_phi = &
                tidft_env%det_phi_normalized(1) ** 2
+         ENDIF
+         
+         ! aeph: abort if det(Phi) LE 0.0
+         IF (tidft_env%det_mat_phi .LE. 0.0_dp) THEN
+            WRITE (errmsg, '(A,ES12.5)') &
+               "Non-positive normalized det(Phi)=", tidft_env%det_mat_phi
+            CPABORT(TRIM(errmsg))
+         ENDIF
+
+         alm_active = augmented_penalty_component .AND. &
+             (tidft_env%det_mat_phi .GE. tidft_env%eps_det)
+         IF (augmented_penalty_component .AND. .NOT. alm_active &
+            .AND. unit_nr > 0) THEN
+            WRITE (unit_nr, '(T2,A,ES12.5,A)') "WARNING: det(Phi)=", &
+               tidft_env%det_mat_phi, " below EPS_DET; ALM warm-up."
          ENDIF
 
          ! compute the product of the diagonal elements
@@ -1656,20 +1752,18 @@ CONTAINS
          ENDIF
 
          ! aeph: when augmented component is off use the original unmodified expression;
-         ! when on, floor det against linear dependence and compute constraint c = -ln(det)
-         IF (augmented_penalty_component) THEN ! aeph
-            constraint_c = -LOG(MAX(tidft_env%det_mat_phi, eps_det)) ! aeph: floored
+         IF (alm_active) THEN ! aeph: warm-up gate
+            constraint_c = -LOG(tidft_env%det_mat_phi) ! aeph: No max value 
             interstate_nonorthogonality_penalty = &
                tidft_env%interstate_nonorthogonality_penalty_coeff * constraint_c ! aeph
          ELSE ! aeph: original
             interstate_nonorthogonality_penalty = &
-               - tidft_env%interstate_nonorthogonality_penalty_coeff * &
-               ( LOG(tidft_env%det_mat_phi) )
+               - tidft_env%interstate_nonorthogonality_penalty_coeff * LOG(tidft_env%det_mat_phi) 
          ENDIF ! aeph
 
          ! aeph: augmented Lagrangian quadratic term (mu/2)*c^2 and the
          ! effective uncapped multiplier lambda_eff = lambda + mu*c
-         IF (augmented_penalty_component) THEN
+         IF (alm_active) THEN ! aeph: warm-up gate
             augmented_nonorthogonality_penalty = &
                0.5_dp * tidft_env%augmented_penalty_coeff * constraint_c**2
             lambda_eff = tidft_env%interstate_nonorthogonality_penalty_coeff + &

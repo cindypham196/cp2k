@@ -14,7 +14,7 @@ MODULE tidft_types
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE message_passing,                 ONLY: mp_para_env_type
    USE cp_dbcsr_api,                    ONLY: dbcsr_type
-   USE kinds,                           ONLY: dp
+   USE kinds,                           ONLY: default_path_length, default_string_length, dp
    USE input_section_types,             ONLY: section_vals_type
 #include "./base/base_uses.f90"
 
@@ -169,6 +169,10 @@ MODULE tidft_types
       REAL(KIND=dp)                                      :: augmented_penalty_coeff
       ! aeph: input value of mu, used to reset each penalty-strength pass
       REAL(KIND=dp)                                      :: augmented_penalty_coeff0
+      ! aeph: threshold for normalized det(phi), read from PENALTY%EPS_DET
+      REAL(KIND=dp)                                      :: eps_det
+      ! aeph: safeguard ratio tau 
+      REAL(KIND=dp)                                      :: alm_ratio
       REAL(KIND=dp)                                      :: penalty_strength_inc_factor
       REAL(KIND=dp)                                      :: allowed_max_norm_phi_mI
       REAL(KIND=dp)                                      :: initial_guess_random_fraction

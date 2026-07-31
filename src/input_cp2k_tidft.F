@@ -161,12 +161,12 @@ CONTAINS
       ! aeph: toggle the second-order augmented Lagrangian interstate term (component 4)
       CALL keyword_create(keyword, __LOCATION__, name="AUGMENTED_COMPONENT", &
                           description="Turn on the second-order augmented Lagrangian term for the "// &
-                          "interstate nonorthogonality penalty (loss function component 4).", &
+                          "interstate nonorthogonality penalty (loss function component 4). "// &
+                          "Requires INTERSTATE_COMPONENT=.TRUE., else will abort.", &
                           usage="AUGMENTED_COMPONENT .TRUE.", default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
-
       CALL keyword_create(keyword, __LOCATION__, name="INTRASTATE_COMPONENT", &
                           description="Turn on the intrastate nonorthogonality peanlty.", &
                           usage="INTRASTATE_COMPONENT .FALSE.", default_l_val=.TRUE., &
@@ -523,6 +523,22 @@ CONTAINS
                           description="Maximum allowed deviation from orthogonality for electronic states. "// &
                           "measured as the max norm of the off-diagonal elements of the interstate overlap matrix.", &
                           usage="MAX_NORM_PHI_OFF_DIAG 0.01", default_r_val=0.005_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+                  ! aeph: input threshold for normalized det(phi) "EPS_DET" in penalty section
+      CALL keyword_create(keyword, __LOCATION__, name="EPS_DET", &
+                          description="Defers ALM if the normalized interstate overlap determinant "// &
+                          "det(phi) falls under the set threshold. Prevents near-singular interstates.", &
+                          usage="EPS_DET 1.0E-10", &
+                          default_r_val=1.0E-10_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+      ! aeph: added tau as a input keyword 
+      CALL keyword_create(keyword, __LOCATION__, name="AUGMENTED_RATIO", &
+                          description="Grow mu only if the constraint |c| failed to decrease by this "// &
+                          "factor relative to the previous outer iteration (ALM safeguard ratio).", &
+                          usage="AUGMENTED_RATIO 0.25", &
+                          default_r_val=0.25_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

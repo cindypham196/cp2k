@@ -162,6 +162,11 @@ CONTAINS
       CALL section_vals_val_get(tidft_section, &
               "AUGMENTED_COMPONENT", &
               l_val=tidft_env%loss_function_components(4))
+      ! aeph: ALM (component 4) requires the interstate component (3); abort otherwise
+      IF (tidft_env%loss_function_components(4) .AND. &
+          .NOT. tidft_env%loss_function_components(3)) THEN
+         CPABORT("AUGMENTED_COMPONENT requires INTERSTATE_COMPONENT=.TRUE.")
+      ENDIF
       CALL section_vals_val_get(tidft_section, &
               "STATE_BY_STATE", &
               l_val=tidft_env%state_by_state)
@@ -233,6 +238,10 @@ CONTAINS
                                 r_val=tidft_env%interstate_nonorthogonality_penalty_coeff)
       tidft_env%interstate_nonorthogonality_penalty_coeff = &
          ABS(tidft_env%interstate_nonorthogonality_penalty_coeff)
+      !aeph store the input tau for per-pass reset in penalty_strength_variation
+      CALL section_vals_val_get(penalty_section, "AUGMENTED_RATIO", &
+                          r_val=tidft_env%alm_ratio)
+      tidft_env%alm_ratio = ABS(tidft_env%alm_ratio)
       ! aeph: augmented Lagrangian quadratic penalty coefficient (mu)
       CALL section_vals_val_get(penalty_section, &
                                 "AUGMENTED_PENALTY_STRENGTH", &
@@ -250,6 +259,12 @@ CONTAINS
       CALL section_vals_val_get(penalty_section, &
                                 "MAX_NORM_PHI_OFF_DIAG", &
                                 r_val=tidft_env%allowed_max_norm_phi_mI)
+      ! aeph: read "EPS_DET", the threshold for normalized det(phi)
+      CALL section_vals_val_get(penalty_section, &
+                                "EPS_DET", &
+                                r_val=tidft_env%eps_det)
+      ! aeph: same abs as previous penalties                          
+      tidft_env%eps_det = ABS(tidft_env%eps_det)
 
       ! CINDY 
       CALL section_vals_val_get(penalty_section, "NSTEPS_STRENGTH", &
