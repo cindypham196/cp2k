@@ -226,9 +226,6 @@ MODULE tidft_types
       REAL(KIND=dp), DIMENSION(:,:), ALLOCATABLE         :: mat_phi_inv
       REAL(KIND=dp)                                      :: det_mat_phi
       REAL(KIND=dp)                                      :: max_norm_mat_phi_mI
-      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: det_phi_diagonal
-      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: det_phi_normalized
-      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: omega_inter
 
       ! Pointers to input sections
       TYPE(section_vals_type), POINTER                   :: tidft_print_section

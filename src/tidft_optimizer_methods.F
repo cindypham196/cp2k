@@ -1092,6 +1092,7 @@ CONTAINS
                                                             augmented_nonorthogonality_penalty, &
                                                             constraint_c, lambda_eff, &
                                                             DetDiagonalSigma, penalty_stateI, &
+                                                            DetDiagonalPhi, &
                                                             determinant_spd
       ! aeph: old floor for det(Phi) 
       !REAL(KIND=dp), PARAMETER                          :: eps_det = 1.0E-10_dp
@@ -1670,44 +1671,20 @@ CONTAINS
             ENDDO ! idet
          ENDDO ! stateI
 
-         idet = 1
-         IF (tidft_env%triplet_correction) idet = 2
-
-         tidft_env%det_phi_diagonal(:) = 1.0_dp
-         DO ispin = 1, nspins
-
-            nmos_stateI = tidft_env%e_states(1)%slater_det(idet)%nelectrons_ab(ispin)
-            IF ( nmos_stateI .GT. 0) THEN
-
-               tidft_env%det_phi_diagonal(ispin) = 1.0_dp
-               DO ivar = 1, nstates
-                  tidft_env%det_phi_diagonal(ispin) = &
-                     tidft_env%det_phi_diagonal(ispin) * &
-                     tidft_env%mat_phi_spin(ivar,ivar,ispin)
-               ENDDO
-               CALL determinant_local(tidft_env%mat_phi_spin(:,:,ispin), &
-                       tidft_env%det_phi_normalized(ispin), &
-                       nstates)
-               tidft_env%det_phi_normalized(ispin) = &
-                  tidft_env%det_phi_normalized(ispin)/tidft_env%det_phi_diagonal(ispin)
-
-               ! aeph:removed flooring component, otherwise original
-               tidft_env%omega_inter(ispin) = -LOG(tidft_env%det_phi_normalized(ispin))
-            ENDIF ! zero MOs for state I
-
-         ENDDO ! ispin
-
          ! Hadamard product of spin matrices to obtain full phi
          IF (nspins .EQ. 2) THEN
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,2)
-            tidft_env%det_mat_phi = &
-               tidft_env%det_phi_normalized(1) * &
-               tidft_env%det_phi_normalized(2)
          ELSE
             tidft_env%mat_phi(:,:) = tidft_env%mat_phi_spin(:,:,1) * tidft_env%mat_phi_spin(:,:,1)
-            tidft_env%det_mat_phi = &
-               tidft_env%det_phi_normalized(1) ** 2
          ENDIF
+
+         ! determinant of Phi normalized by the product of its diagonal elements
+         DetDiagonalPhi = 1.0_dp
+         DO ivar = 1, nstates
+            DetDiagonalPhi = DetDiagonalPhi * tidft_env%mat_phi(ivar,ivar)
+         ENDDO
+         CALL determinant_local(tidft_env%mat_phi, tidft_env%det_mat_phi, nstates)
+         tidft_env%det_mat_phi = tidft_env%det_mat_phi/DetDiagonalPhi
          
          ! aeph: abort if det(Phi) LE 0.0
          IF (tidft_env%det_mat_phi .LE. 0.0_dp) THEN
@@ -1723,18 +1700,6 @@ CONTAINS
             WRITE (unit_nr, '(T2,A,ES12.5,A)') "WARNING: det(Phi)=", &
                tidft_env%det_mat_phi, " below EPS_DET; ALM warm-up."
          ENDIF
-
-         ! compute the product of the diagonal elements
-         !DetDiagonalSigma = 1.0_dp
-         !DO ivar = 1, nstates
-         !   DetDiagonalSigma = DetDiagonalSigma * tidft_env%mat_phi(ivar,ivar)
-         !ENDDO
-         !CALL determinant_local(tidft_env%mat_phi, determinant_spd, nstates)
-         !IF (unit_nr > 0) THEN
-         !   WRITE (unit_nr, '(T2,A38,F40.10)') "Determinant of Diagonal(PHI): ", &
-         !      DetDiagonalSigma
-         !ENDIF
-         !tidft_env%det_mat_phi = determinant_spd/DetDiagonalSigma
 
          CALL max_norm_phi_minusI(tidft_env%mat_phi, tidft_env%max_norm_mat_phi_mI, nstates)
 
@@ -1771,7 +1736,6 @@ CONTAINS
          ENDIF
 
          ! Save the gradient wrt to the interstate penalty coefficient
-         ! RZK-WARNING: Replace grad_wrt_inter_penalty_coeff with omega_inter(ispin)
          tidft_env%grad_wrt_inter_penalty_coeff = interstate_nonorthogonality_penalty / &
             tidft_env%interstate_nonorthogonality_penalty_coeff
 
@@ -2427,36 +2391,15 @@ CONTAINS
 
          IF (interstate_penalty_component) THEN
 
-            idet = 1
-            IF (tidft_env%triplet_correction) idet = 2
+            WRITE (loss_unit_nr, '(T2,A17,A3,ES10.2,F19.7,A10,ES10.2,ES10.2)') &
+               "INTERstate", &
+               "-", &
+               tidft_env%interstate_nonorthogonality_penalty_coeff, &
+               -LOG(tidft_env%det_mat_phi), &
+               "-", & !0.0_dp, & !gradientPInter, &
+               DetDiagonalPhi, &
+               tidft_env%det_mat_phi
 
-            DO ispin = 1, nspins
-
-               nmos_stateI = tidft_env%e_states(1)%slater_det(idet)%nelectrons_ab(ispin)
-
-               IF ( nmos_stateI .GT. 0) THEN
-
-                  IF (nspins .EQ. 1) THEN
-                     spinString = "INTERstate"
-                  ELSE
-                     IF (ispin .EQ. 1) THEN
-                        spinString = "INTERstate, alph"
-                     ELSE
-                        spinString = "INTERstate, beta"
-                     ENDIF
-                  ENDIF
-                  WRITE (loss_unit_nr, '(T2,A17,A3,ES10.2,F19.7,A10,ES10.2,ES10.2)') &
-                     TRIM(spinString), &
-                     "-", &
-                     tidft_env%interstate_nonorthogonality_penalty_coeff, &
-                     tidft_env%omega_inter(ispin), &
-                     "-", & !0.0_dp, & !gradientPInter, &
-                     tidft_env%det_phi_diagonal(ispin), &
-                     tidft_env%det_phi_normalized(ispin)
-
-               ENDIF ! zero electrons
-
-            ENDDO ! ispin
          ENDIF ! interstate_penalty_component
 
       ENDIF ! loss_unit_nr
